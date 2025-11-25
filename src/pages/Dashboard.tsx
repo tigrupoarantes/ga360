@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 
 export default function Dashboard() {
   return (
-    <MainLayout userRole="Gerente">
+    <MainLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="animate-fade-in">

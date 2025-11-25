@@ -4,13 +4,12 @@ import { TopBar } from "./TopBar";
 
 interface MainLayoutProps {
   children: ReactNode;
-  userRole?: string;
 }
 
-export function MainLayout({ children, userRole }: MainLayoutProps) {
+export function MainLayout({ children }: MainLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar userRole={userRole} />
+      <Sidebar />
       <TopBar />
       <main className="ml-64 pt-16">
         <div className="p-6">

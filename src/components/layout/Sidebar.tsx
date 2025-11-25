@@ -8,9 +8,13 @@ import {
   ShoppingCart,
   BarChart3,
   Settings,
-  Target
+  Target,
+  LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { RoleGuard } from "@/components/auth/RoleGuard";
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -26,12 +30,21 @@ const ceoNavigation = [
   { name: 'Administração', href: '/admin', icon: Settings },
 ];
 
-interface SidebarProps {
-  userRole?: string;
-}
+export function Sidebar() {
+  const { profile, role, signOut } = useAuth();
 
-export function Sidebar({ userRole }: SidebarProps) {
-  const isCEO = userRole === 'CEO';
+  const displayName = profile?.first_name && profile?.last_name
+    ? `${profile.first_name} ${profile.last_name}`
+    : 'Usuário';
+
+  const initials = profile?.first_name && profile?.last_name
+    ? `${profile.first_name[0]}${profile.last_name[0]}`.toUpperCase()
+    : 'U';
+
+  const roleDisplay = role === 'ceo' ? 'CEO'
+    : role === 'diretor' ? 'Diretor'
+    : role === 'gerente' ? 'Gerente'
+    : 'Colaborador';
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 bg-sidebar border-r border-sidebar-border animate-fade-in">
@@ -67,45 +80,60 @@ export function Sidebar({ userRole }: SidebarProps) {
             </NavLink>
           ))}
 
-          {isCEO && (
-            <>
-              <div className="my-4 border-t border-sidebar-border" />
-              {ceoNavigation.map((item) => (
-                <NavLink
-                  key={item.name}
-                  to={item.href}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-smooth",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                    )
-                  }
-                >
-                  <item.icon className="h-5 w-5 flex-shrink-0" />
-                  <span>{item.name}</span>
-                </NavLink>
-              ))}
-            </>
-          )}
+          <RoleGuard roles={['ceo']}>
+            <div className="my-4 border-t border-sidebar-border" />
+            {ceoNavigation.map((item) => (
+              <NavLink
+                key={item.name}
+                to={item.href}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-smooth",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  )
+                }
+              >
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                <span>{item.name}</span>
+              </NavLink>
+            ))}
+          </RoleGuard>
         </nav>
 
         {/* User info */}
-        <div className="border-t border-sidebar-border p-4">
+        <div className="border-t border-sidebar-border p-4 space-y-2">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-accent-foreground font-semibold">
-              U
-            </div>
+            {profile?.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt={displayName}
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-accent-foreground font-semibold">
+                {initials}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">
-                Usuário Demo
+                {displayName}
               </p>
               <p className="text-xs text-sidebar-foreground/70 truncate">
-                {userRole || 'Gerente'}
+                {roleDisplay}
               </p>
             </div>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start gap-2 text-sidebar-foreground/80 hover:text-sidebar-foreground"
+            onClick={signOut}
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Sair</span>
+          </Button>
         </div>
       </div>
     </aside>
