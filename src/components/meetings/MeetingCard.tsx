@@ -2,11 +2,12 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, Users, Clock, ExternalLink, Play, FileText, Upload, MessageSquare } from "lucide-react";
+import { Calendar, Users, Clock, ExternalLink, Play, FileText, Upload, MessageSquare, UserPlus } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { RecordingUpload } from "./RecordingUpload";
 import { TranscriptionViewer } from "./TranscriptionViewer";
+import { MeetingParticipants } from "./MeetingParticipants";
 
 interface MeetingCardProps {
   meeting: {
@@ -40,6 +41,7 @@ const aiModeColors: Record<string, string> = {
 export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [transcriptionOpen, setTranscriptionOpen] = useState(false);
+  const [participantsOpen, setParticipantsOpen] = useState(false);
   
   const scheduledDate = new Date(meeting.scheduled_at);
   const canStart = meeting.status === "Agendada";
@@ -82,7 +84,7 @@ export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
           )}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canStart && meeting.meeting_rooms && (
             <>
               <Button
@@ -102,6 +104,16 @@ export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
               </Button>
             </>
           )}
+          
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setParticipantsOpen(true)}
+          >
+            <UserPlus className="h-4 w-4 mr-1" />
+            Participantes
+          </Button>
+
           {canUpload && (
             <>
               <Button
@@ -133,6 +145,14 @@ export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
             </Button>
           )}
         </div>
+
+        <MeetingParticipants
+          open={participantsOpen}
+          onOpenChange={setParticipantsOpen}
+          meetingId={meeting.id}
+          meetingTitle={meeting.title}
+          meetingDate={meeting.scheduled_at}
+        />
 
         <RecordingUpload
           open={uploadOpen}
