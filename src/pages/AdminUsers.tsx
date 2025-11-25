@@ -14,8 +14,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Search, Edit, Loader2, UserCheck, UserX } from 'lucide-react';
+import { ArrowLeft, Search, Edit, Loader2, UserCheck, UserX, UserPlus } from 'lucide-react';
 import { UserEditDialog } from '@/components/admin/UserEditDialog';
+import { UserCreateDialog } from '@/components/admin/UserCreateDialog';
 
 interface Area {
   id: string;
@@ -62,6 +63,7 @@ export default function AdminUsers() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -128,6 +130,48 @@ export default function AdminUsers() {
   const handleEdit = (user: UserWithDetails) => {
     setEditingUser(user);
     setDialogOpen(true);
+  };
+
+  const handleCreate = async (data: {
+    email: string;
+    first_name: string;
+    last_name: string;
+    area_id: string | null;
+    roles: string[];
+  }) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('Sessão não encontrada');
+      }
+
+      const response = await supabase.functions.invoke('create-user', {
+        body: data,
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      toast({
+        title: 'Usuário criado!',
+        description: 'Um email de boas-vindas foi enviado ao novo usuário.',
+      });
+
+      fetchData();
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      toast({
+        title: 'Erro ao criar usuário',
+        description: error.message,
+        variant: 'destructive',
+      });
+      throw error;
+    }
   };
 
   const handleSave = async (data: {
@@ -244,6 +288,10 @@ export default function AdminUsers() {
                 Administre usuários, permissões e acessos
               </p>
             </div>
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Criar Usuário
+            </Button>
           </div>
         </div>
 
@@ -440,6 +488,13 @@ export default function AdminUsers() {
         user={editingUser}
         areas={areas}
         onSave={handleSave}
+      />
+
+      <UserCreateDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        areas={areas}
+        onSave={handleCreate}
       />
     </MainLayout>
   );
