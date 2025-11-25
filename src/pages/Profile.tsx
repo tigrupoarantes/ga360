@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Camera, ArrowLeft, Loader2 } from 'lucide-react';
+import { Camera, ArrowLeft, Loader2, KeyRound } from 'lucide-react';
 import { z } from 'zod';
 
 const profileSchema = z.object({
@@ -298,8 +298,21 @@ export default function Profile() {
               </p>
             </div>
 
+            {/* Password Change Link */}
+            <div className="pt-4 border-t border-border">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate('/change-password')}
+                className="w-full gap-2"
+              >
+                <KeyRound className="h-4 w-4" />
+                Alterar senha
+              </Button>
+            </div>
+
             {/* Submit Button */}
-            <div className="flex justify-end gap-3 pt-4">
+            <div className="flex justify-end gap-3 pt-4 border-t border-border">
               <Button
                 type="button"
                 variant="outline"

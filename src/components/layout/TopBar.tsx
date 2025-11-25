@@ -1,4 +1,4 @@
-import { Bell, Search, Plus, User } from "lucide-react";
+import { Bell, Search, Plus, User, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
@@ -81,6 +81,10 @@ export function TopBar() {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => navigate('/dashboard/me')}>
                 Meu Dashboard
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/change-password')}>
+                <KeyRound className="h-4 w-4 mr-2" />
+                Alterar Senha
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={signOut} className="text-destructive">
