@@ -19,6 +19,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Profile from "./pages/Profile";
 import ChangePassword from "./pages/ChangePassword";
 import AdminAreas from "./pages/AdminAreas";
+import AdminUsers from "./pages/AdminUsers";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -111,6 +112,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['ceo']}>
                   <AdminAreas />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/users"
+              element={
+                <ProtectedRoute allowedRoles={['ceo']}>
+                  <AdminUsers />
                 </ProtectedRoute>
               }
             />
