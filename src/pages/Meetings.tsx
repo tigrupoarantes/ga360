@@ -1,184 +1,136 @@
-import { MainLayout } from "@/components/layout/MainLayout";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { 
-  Plus, 
-  Search, 
-  Calendar,
-  Users,
-  Sparkles,
-  FileText
-} from "lucide-react";
-
-const meetings = [
-  {
-    id: 1,
-    title: 'Reunião Estratégica Q1 2024',
-    type: 'Estratégica',
-    area: 'Diretoria',
-    date: '2024-01-15',
-    time: '14:00',
-    participants: 8,
-    aiMode: 'Obrigatória',
-    status: 'Agendada',
-    hasAta: false,
-  },
-  {
-    id: 2,
-    title: 'Ritmo Operacional - Trade Marketing',
-    type: 'Operacional',
-    area: 'Trade',
-    date: '2024-01-16',
-    time: '09:00',
-    participants: 5,
-    aiMode: 'Opcional',
-    status: 'Agendada',
-    hasAta: false,
-  },
-  {
-    id: 3,
-    title: 'Review Semanal - KPIs',
-    type: 'Tática',
-    area: 'Comercial',
-    date: '2024-01-12',
-    time: '15:30',
-    participants: 6,
-    aiMode: 'Obrigatória',
-    status: 'Concluída',
-    hasAta: true,
-  },
-];
-
-const aiModeColors = {
-  'Obrigatória': 'bg-primary text-primary-foreground',
-  'Opcional': 'bg-accent text-accent-foreground',
-  'Desativada': 'bg-muted text-muted-foreground',
-};
-
-const statusColors = {
-  'Agendada': 'bg-info text-info-foreground',
-  'Em Andamento': 'bg-warning text-warning-foreground',
-  'Concluída': 'bg-success text-success-foreground',
-  'Cancelada': 'bg-destructive text-destructive-foreground',
-};
+import { useState, useEffect } from 'react';
+import { MainLayout } from '@/components/layout/MainLayout';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Plus } from 'lucide-react';
+import { MeetingRoomsList } from '@/components/meetings/MeetingRoomsList';
+import { MeetingFormDialog } from '@/components/meetings/MeetingFormDialog';
+import { MeetingCard } from '@/components/meetings/MeetingCard';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Meetings() {
+  const { toast } = useToast();
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const fetchMeetings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('meetings')
+        .select(`
+          *,
+          meeting_rooms(name, teams_link),
+          areas(name)
+        `)
+        .order('scheduled_at', { ascending: false });
+
+      if (error) throw error;
+      setMeetings(data || []);
+    } catch (error: any) {
+      toast({
+        title: "Erro ao carregar reuniões",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMeetings();
+  }, []);
+
+  const handleStart = async (meetingId: string) => {
+    try {
+      const { error } = await supabase
+        .from('meetings')
+        .update({ status: 'Em Andamento' })
+        .eq('id', meetingId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Reunião iniciada",
+        description: "A reunião foi marcada como em andamento.",
+      });
+
+      fetchMeetings();
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleViewAta = (meetingId: string) => {
+    toast({
+      title: "Em desenvolvimento",
+      description: "Visualização de ATA será implementada em breve.",
+    });
+  };
+
   return (
     <MainLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between animate-fade-in">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Reuniões</h1>
-            <p className="text-muted-foreground mt-1">
-              Gerencie reuniões, transcrições e ATAs inteligentes
-            </p>
-          </div>
-          <Button className="gap-2">
-            <Plus className="h-4 w-4" />
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold">Reuniões</h1>
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
             Nova Reunião
           </Button>
         </div>
 
-        {/* Filters */}
-        <Card className="p-4 animate-fade-in-up">
-          <div className="flex flex-wrap gap-4">
-            <div className="flex-1 min-w-[240px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Buscar reuniões..."
-                  className="pl-10"
-                />
+        <Tabs defaultValue="meetings" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="meetings">Reuniões</TabsTrigger>
+            <TabsTrigger value="rooms">Salas de Reunião</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="meetings" className="space-y-4">
+            {loading ? (
+              <div className="text-center py-12">Carregando reuniões...</div>
+            ) : meetings.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <p className="text-muted-foreground mb-4">
+                    Nenhuma reunião agendada
+                  </p>
+                  <Button onClick={() => setDialogOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Criar primeira reunião
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {meetings.map((meeting) => (
+                  <MeetingCard
+                    key={meeting.id}
+                    meeting={meeting}
+                    onStart={handleStart}
+                    onViewAta={handleViewAta}
+                  />
+                ))}
               </div>
-            </div>
-            <Button variant="outline">
-              Tipo
-            </Button>
-            <Button variant="outline">
-              Área
-            </Button>
-            <Button variant="outline">
-              Status
-            </Button>
-            <Button variant="outline">
-              <Calendar className="h-4 w-4 mr-2" />
-              Data
-            </Button>
-          </div>
-        </Card>
+            )}
+          </TabsContent>
 
-        {/* Meetings List */}
-        <div className="space-y-4">
-          {meetings.map((meeting) => (
-            <Card 
-              key={meeting.id}
-              className="p-6 hover:shadow-card-hover transition-smooth cursor-pointer animate-fade-in-up"
-            >
-              <div className="flex items-start gap-4">
-                {/* Icon */}
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                  <Users className="h-6 w-6 text-primary" />
-                </div>
+          <TabsContent value="rooms">
+            <MeetingRoomsList />
+          </TabsContent>
+        </Tabs>
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-foreground">
-                        {meeting.title}
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                        <Badge variant="outline">{meeting.type}</Badge>
-                        <Badge variant="outline">{meeting.area}</Badge>
-                        <Badge className={aiModeColors[meeting.aiMode as keyof typeof aiModeColors]}>
-                          <Sparkles className="h-3 w-3 mr-1" />
-                          IA {meeting.aiMode}
-                        </Badge>
-                      </div>
-                    </div>
-                    <Badge className={statusColors[meeting.status as keyof typeof statusColors]}>
-                      {meeting.status}
-                    </Badge>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-6 mt-4 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      <span>{new Date(meeting.date).toLocaleDateString('pt-BR')} às {meeting.time}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <span>{meeting.participants} participantes</span>
-                    </div>
-                    {meeting.hasAta && (
-                      <div className="flex items-center gap-2 text-success">
-                        <FileText className="h-4 w-4" />
-                        <span>ATA disponível</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex gap-2 mt-4">
-                    {meeting.status === 'Agendada' && (
-                      <Button size="sm">Iniciar Reunião</Button>
-                    )}
-                    {meeting.status === 'Concluída' && meeting.hasAta && (
-                      <>
-                        <Button size="sm" variant="outline">Ver ATA</Button>
-                        <Button size="sm" variant="outline">Ver Transcrição</Button>
-                      </>
-                    )}
-                    <Button size="sm" variant="ghost">Editar</Button>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
+        <MeetingFormDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onSuccess={fetchMeetings}
+        />
       </div>
     </MainLayout>
   );
