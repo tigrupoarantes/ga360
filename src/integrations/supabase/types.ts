@@ -128,6 +128,38 @@ export type Database = {
           },
         ]
       }
+      meeting_reminders: {
+        Row: {
+          created_at: string
+          id: string
+          meeting_id: string
+          reminder_type: string
+          sent_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          meeting_id: string
+          reminder_type: string
+          sent_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          meeting_id?: string
+          reminder_type?: string
+          sent_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_reminders_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_rooms: {
         Row: {
           company: string
