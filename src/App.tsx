@@ -16,6 +16,7 @@ import Reports from "./pages/Reports";
 import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -100,6 +101,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['ceo']}>
                   <Admin />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
                 </ProtectedRoute>
               }
             />
