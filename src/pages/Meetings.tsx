@@ -7,6 +7,7 @@ import { Plus } from 'lucide-react';
 import { MeetingRoomsList } from '@/components/meetings/MeetingRoomsList';
 import { MeetingFormDialog } from '@/components/meetings/MeetingFormDialog';
 import { MeetingCard } from '@/components/meetings/MeetingCard';
+import { AtaViewer } from '@/components/meetings/AtaViewer';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -15,6 +16,8 @@ export default function Meetings() {
   const [meetings, setMeetings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [ataViewerOpen, setAtaViewerOpen] = useState(false);
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
 
   const fetchMeetings = async () => {
     try {
@@ -69,10 +72,8 @@ export default function Meetings() {
   };
 
   const handleViewAta = (meetingId: string) => {
-    toast({
-      title: "Em desenvolvimento",
-      description: "Visualização de ATA será implementada em breve.",
-    });
+    setSelectedMeetingId(meetingId);
+    setAtaViewerOpen(true);
   };
 
   return (
@@ -131,6 +132,14 @@ export default function Meetings() {
           onOpenChange={setDialogOpen}
           onSuccess={fetchMeetings}
         />
+
+        {selectedMeetingId && (
+          <AtaViewer
+            open={ataViewerOpen}
+            onOpenChange={setAtaViewerOpen}
+            meetingId={selectedMeetingId}
+          />
+        )}
       </div>
     </MainLayout>
   );
