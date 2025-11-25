@@ -6,9 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Edit, Save, X, CheckCircle, FileText, Sparkles, AlertCircle } from "lucide-react";
+import { Edit, Save, X, CheckCircle, FileText, Sparkles, AlertCircle, Download } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { generateAtaPDF } from "@/lib/pdfGenerator";
 
 interface AtaViewerProps {
   open: boolean;
@@ -224,6 +225,40 @@ export function AtaViewer({ open, onOpenChange, meetingId }: AtaViewerProps) {
   const removeActionItem = (index: number) => {
     const newItems = editedData.action_items.filter((_, i) => i !== index);
     setEditedData({ ...editedData, action_items: newItems });
+  };
+
+  const handleGeneratePDF = async () => {
+    if (!ata || !meeting) return;
+
+    try {
+      await generateAtaPDF({
+        meeting: {
+          title: meeting.title,
+          type: meeting.type,
+          scheduled_at: meeting.scheduled_at,
+          duration_minutes: meeting.duration_minutes,
+          areas: meeting.areas,
+          meeting_rooms: meeting.meeting_rooms,
+        },
+        ata: {
+          summary: ata.summary,
+          decisions: ata.decisions as string[],
+          action_items: ata.action_items as { task: string; responsible: string; deadline: string }[],
+          approved_at: ata.approved_at || undefined,
+        },
+      });
+
+      toast({
+        title: "PDF gerado com sucesso",
+        description: "O PDF da ATA foi baixado.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao gerar PDF",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   if (loading) {
@@ -476,46 +511,56 @@ export function AtaViewer({ open, onOpenChange, meetingId }: AtaViewerProps) {
           </Card>
 
           {/* Action Buttons */}
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            {editing ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setEditing(false);
-                    setEditedData({
-                      summary: ata.summary || "",
-                      decisions: (ata.decisions as string[]) || [],
-                      action_items: (ata.action_items as { task: string; responsible: string; deadline: string }[]) || [],
-                      content: ata.content || "",
-                    });
-                  }}
-                >
-                  <X className="mr-2 h-4 w-4" />
-                  Cancelar
+          <div className="flex justify-between gap-3 pt-4 border-t">
+            <div>
+              {ata.status === "approved" && (
+                <Button variant="outline" onClick={handleGeneratePDF}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Baixar PDF
                 </Button>
-                <Button onClick={handleSave} disabled={saving}>
-                  <Save className="mr-2 h-4 w-4" />
-                  {saving ? "Salvando..." : "Salvar Alterações"}
-                </Button>
-              </>
-            ) : ata.status === "draft" ? (
-              <>
-                <Button variant="outline" onClick={handleReject}>
+              )}
+            </div>
+            <div className="flex gap-3">
+              {editing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setEditing(false);
+                      setEditedData({
+                        summary: ata.summary || "",
+                        decisions: (ata.decisions as string[]) || [],
+                        action_items: (ata.action_items as { task: string; responsible: string; deadline: string }[]) || [],
+                        content: ata.content || "",
+                      });
+                    }}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Cancelar
+                  </Button>
+                  <Button onClick={handleSave} disabled={saving}>
+                    <Save className="mr-2 h-4 w-4" />
+                    {saving ? "Salvando..." : "Salvar Alterações"}
+                  </Button>
+                </>
+              ) : ata.status === "draft" ? (
+                <>
+                  <Button variant="outline" onClick={handleReject}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Editar
+                  </Button>
+                  <Button onClick={handleApprove}>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Aprovar ATA
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" onClick={() => setEditing(true)}>
                   <Edit className="mr-2 h-4 w-4" />
                   Editar
                 </Button>
-                <Button onClick={handleApprove}>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Aprovar ATA
-                </Button>
-              </>
-            ) : (
-              <Button variant="outline" onClick={() => setEditing(true)}>
-                <Edit className="mr-2 h-4 w-4" />
-                Editar
-              </Button>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </DialogContent>
