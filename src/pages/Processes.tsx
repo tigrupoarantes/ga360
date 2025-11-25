@@ -5,7 +5,7 @@ import { Plus } from "lucide-react";
 
 export default function Processes() {
   return (
-    <MainLayout userRole="Gerente">
+    <MainLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between animate-fade-in">
           <div>

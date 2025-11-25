@@ -26,7 +26,7 @@ const priorityColors = {
 
 export default function DashboardMe() {
   return (
-    <MainLayout userRole="Gerente">
+    <MainLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="animate-fade-in">

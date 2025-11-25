@@ -34,7 +34,7 @@ export default function Calendar() {
   const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
   return (
-    <MainLayout userRole="Gerente">
+    <MainLayout>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between animate-fade-in">
