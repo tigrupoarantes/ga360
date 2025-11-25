@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, Users, Clock, ExternalLink, Play, FileText } from "lucide-react";
+import { Calendar, Users, Clock, ExternalLink, Play, FileText, Upload, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { RecordingUpload } from "./RecordingUpload";
+import { TranscriptionViewer } from "./TranscriptionViewer";
 
 interface MeetingCardProps {
   meeting: {
@@ -35,9 +38,13 @@ const aiModeColors: Record<string, string> = {
 };
 
 export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [transcriptionOpen, setTranscriptionOpen] = useState(false);
+  
   const scheduledDate = new Date(meeting.scheduled_at);
   const canStart = meeting.status === "Agendada";
   const hasAta = meeting.status === "Concluída";
+  const canUpload = meeting.status === "Em Andamento" || meeting.status === "Concluída";
 
   return (
     <Card className="hover:shadow-lg transition-shadow">
@@ -95,6 +102,26 @@ export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
               </Button>
             </>
           )}
+          {canUpload && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setUploadOpen(true)}
+              >
+                <Upload className="h-4 w-4 mr-1" />
+                Upload
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setTranscriptionOpen(true)}
+              >
+                <MessageSquare className="h-4 w-4 mr-1" />
+                Transcrição
+              </Button>
+            </>
+          )}
           {hasAta && (
             <Button
               size="sm"
@@ -106,6 +133,19 @@ export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
             </Button>
           )}
         </div>
+
+        <RecordingUpload
+          open={uploadOpen}
+          onOpenChange={setUploadOpen}
+          meetingId={meeting.id}
+          onSuccess={() => {}}
+        />
+
+        <TranscriptionViewer
+          open={transcriptionOpen}
+          onOpenChange={setTranscriptionOpen}
+          meetingId={meeting.id}
+        />
       </CardContent>
     </Card>
   );
