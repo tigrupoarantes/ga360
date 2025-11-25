@@ -8,6 +8,7 @@ import { MeetingRoomsList } from '@/components/meetings/MeetingRoomsList';
 import { MeetingFormDialog } from '@/components/meetings/MeetingFormDialog';
 import { MeetingCard } from '@/components/meetings/MeetingCard';
 import { AtaViewer } from '@/components/meetings/AtaViewer';
+import { MeetingDashboard } from '@/components/meetings/MeetingDashboard';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -89,9 +90,14 @@ export default function Meetings() {
 
         <Tabs defaultValue="meetings" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="meetings">Reuniões</TabsTrigger>
             <TabsTrigger value="rooms">Salas de Reunião</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="dashboard">
+            <MeetingDashboard />
+          </TabsContent>
 
           <TabsContent value="meetings" className="space-y-4">
             {loading ? (
