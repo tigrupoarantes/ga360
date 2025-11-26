@@ -29,7 +29,8 @@ export default function Meetings() {
           meeting_rooms(name, teams_link),
           areas(name)
         `)
-        .order('scheduled_at', { ascending: false });
+        .order('scheduled_at', { ascending: false })
+        .neq('status', 'Cancelada');
 
       if (error) throw error;
       setMeetings(data || []);
@@ -122,6 +123,7 @@ export default function Meetings() {
                     meeting={meeting}
                     onStart={handleStart}
                     onViewAta={handleViewAta}
+                    onUpdate={fetchMeetings}
                   />
                 ))}
               </div>
