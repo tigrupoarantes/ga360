@@ -26,6 +26,9 @@ interface Participant {
   id: string;
   user_id: string;
   attended: boolean;
+  confirmation_status: string;
+  confirmed_at: string | null;
+  confirmation_reminder_sent_at: string | null;
   profiles: {
     first_name: string;
     last_name: string;
@@ -69,6 +72,9 @@ export function MeetingParticipants({
           id,
           user_id,
           attended,
+          confirmation_status,
+          confirmed_at,
+          confirmation_reminder_sent_at,
           profiles:user_id (
             first_name,
             last_name
@@ -198,29 +204,68 @@ export function MeetingParticipants({
   const handleNotifyParticipants = async () => {
     setNotifying(true);
     try {
-      const { error } = await supabase.functions.invoke('send-meeting-notification', {
+      const { error } = await supabase.functions.invoke('send-attendance-confirmation', {
         body: {
           meetingId,
-          meetingTitle,
-          meetingDate,
-          participantIds: participants.map(p => p.user_id),
         }
       });
 
       if (error) throw error;
 
       toast({
-        title: "Notificações enviadas",
-        description: "Todos os participantes foram notificados por email.",
+        title: "Convites enviados",
+        description: "Todos os participantes receberam o email de confirmação.",
       });
+
+      fetchData();
     } catch (error: any) {
       toast({
-        title: "Erro ao enviar notificações",
+        title: "Erro ao enviar convites",
         description: error.message,
         variant: "destructive",
       });
     } finally {
       setNotifying(false);
+    }
+  };
+
+  const handleResendConfirmation = async (participantId: string) => {
+    try {
+      const participant = participants.find(p => p.id === participantId);
+      if (!participant) return;
+
+      const { error } = await supabase.functions.invoke('send-attendance-confirmation', {
+        body: {
+          meetingId,
+          participantIds: [participant.user_id],
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Convite reenviado",
+        description: "O convite de confirmação foi reenviado.",
+      });
+
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao reenviar convite",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getConfirmationBadge = (status: string) => {
+    switch (status) {
+      case "confirmed":
+        return <Badge className="bg-green-500">Confirmado</Badge>;
+      case "declined":
+        return <Badge variant="destructive">Recusado</Badge>;
+      default:
+        return <Badge variant="outline">Pendente</Badge>;
     }
   };
 
@@ -291,7 +336,7 @@ export function MeetingParticipants({
                     ) : (
                       <>
                         <Mail className="mr-2 h-4 w-4" />
-                        Notificar Todos
+                        Enviar Convites
                       </>
                     )}
                   </Button>
@@ -313,19 +358,32 @@ export function MeetingParticipants({
                     <Card key={participant.id}>
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-1">
                             <div className="flex-1">
                               <p className="font-medium">
                                 {participant.profiles.first_name} {participant.profiles.last_name}
                               </p>
+                              <div className="flex gap-2 mt-1">
+                                {getConfirmationBadge(participant.confirmation_status)}
+                                <Badge 
+                                  variant={participant.attended ? "default" : "secondary"}
+                                >
+                                  {participant.attended ? "Presente" : "Ausente"}
+                                </Badge>
+                              </div>
                             </div>
-                            <Badge 
-                              variant={participant.attended ? "default" : "secondary"}
-                            >
-                              {participant.attended ? "Presente" : "Ausente"}
-                            </Badge>
                           </div>
                           <div className="flex gap-2">
+                            {participant.confirmation_status === "pending" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleResendConfirmation(participant.id)}
+                                title="Reenviar convite"
+                              >
+                                <Mail className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -333,6 +391,7 @@ export function MeetingParticipants({
                                 participant.id, 
                                 participant.attended
                               )}
+                              title={participant.attended ? "Marcar como ausente" : "Marcar como presente"}
                             >
                               {participant.attended ? (
                                 <X className="h-4 w-4" />
@@ -344,6 +403,7 @@ export function MeetingParticipants({
                               size="sm"
                               variant="ghost"
                               onClick={() => handleRemoveParticipant(participant.id)}
+                              title="Remover participante"
                             >
                               <X className="h-4 w-4" />
                             </Button>
