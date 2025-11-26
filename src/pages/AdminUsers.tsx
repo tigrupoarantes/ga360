@@ -38,6 +38,7 @@ interface UserWithDetails extends UserProfile {
 }
 
 const roleLabels: Record<string, string> = {
+  super_admin: 'Super Admin',
   ceo: 'CEO',
   diretor: 'Diretor',
   gerente: 'Gerente',
@@ -45,6 +46,7 @@ const roleLabels: Record<string, string> = {
 };
 
 const roleColors: Record<string, string> = {
+  super_admin: 'bg-destructive text-destructive-foreground',
   ceo: 'bg-primary text-primary-foreground',
   diretor: 'bg-secondary text-secondary-foreground',
   gerente: 'bg-accent text-accent-foreground',
@@ -211,7 +213,7 @@ export default function AdminUsers() {
           .insert(
             data.roles.map((role) => ({
               user_id: editingUser.id,
-              role: role as 'ceo' | 'diretor' | 'gerente' | 'colaborador',
+              role: role as 'ceo' | 'diretor' | 'gerente' | 'colaborador' | 'super_admin',
             }))
           );
 
@@ -344,6 +346,7 @@ export default function AdminUsers() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os roles</SelectItem>
+                <SelectItem value="super_admin">Super Admin</SelectItem>
                 <SelectItem value="ceo">CEO</SelectItem>
                 <SelectItem value="diretor">Diretor</SelectItem>
                 <SelectItem value="gerente">Gerente</SelectItem>

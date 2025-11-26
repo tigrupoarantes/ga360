@@ -65,6 +65,7 @@ const userSchema = z.object({
 });
 
 const availableRoles = [
+  { value: 'super_admin', label: 'Super Admin' },
   { value: 'ceo', label: 'CEO' },
   { value: 'diretor', label: 'Diretor' },
   { value: 'gerente', label: 'Gerente' },
