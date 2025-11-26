@@ -9,20 +9,12 @@ export default function Admin() {
 
   const adminSections = [
     {
-      title: 'Áreas e Departamentos',
-      description: 'Gerencie a estrutura organizacional da empresa',
+      title: 'Estrutura Organizacional',
+      description: 'Gerencie empresas, áreas e departamentos do Grupo Arantes',
       icon: Building2,
-      href: '/admin/areas',
+      href: '/admin/estrutura',
       color: 'text-primary',
       bgColor: 'bg-primary/10',
-    },
-    {
-      title: 'Empresas',
-      description: 'Gerencie as empresas do Grupo Arantes',
-      icon: Building2,
-      href: '/admin/empresas',
-      color: 'text-secondary',
-      bgColor: 'bg-secondary/10',
     },
     {
       title: 'Usuários e Permissões',

@@ -22,6 +22,7 @@ import ChangePassword from "./pages/ChangePassword";
 import AdminAreas from "./pages/AdminAreas";
 import AdminUsers from "./pages/AdminUsers";
 import AdminCompanies from "./pages/AdminCompanies";
+import AdminOrganization from "./pages/AdminOrganization";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -107,6 +108,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={['ceo']}>
                   <Admin />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/estrutura"
+              element={
+                <ProtectedRoute allowedRoles={['ceo']}>
+                  <AdminOrganization />
                 </ProtectedRoute>
               }
             />

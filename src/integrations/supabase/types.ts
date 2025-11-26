@@ -205,6 +205,7 @@ export type Database = {
       }
       meeting_rooms: {
         Row: {
+          area_id: string | null
           company: string
           company_id: string | null
           created_at: string
@@ -218,6 +219,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          area_id?: string | null
           company: string
           company_id?: string | null
           created_at?: string
@@ -231,6 +233,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          area_id?: string | null
           company?: string
           company_id?: string | null
           created_at?: string
@@ -244,6 +247,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "meeting_rooms_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "meeting_rooms_company_id_fkey"
             columns: ["company_id"]

@@ -32,6 +32,7 @@ interface AreaFormDialogProps {
   area: Area | null;
   areas: Area[];
   onSave: (data: { name: string; parent_id: string | null }) => Promise<void>;
+  companyId?: string | null;
 }
 
 const areaSchema = z.object({
@@ -44,7 +45,8 @@ export function AreaFormDialog({
   onOpenChange, 
   area, 
   areas,
-  onSave 
+  onSave,
+  companyId 
 }: AreaFormDialogProps) {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
