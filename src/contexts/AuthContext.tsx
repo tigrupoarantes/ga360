@@ -48,16 +48,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Hierarquia de prioridade das roles (índice menor = maior prioridade)
+  const ROLE_PRIORITY: Record<string, number> = {
+    super_admin: 0,
+    ceo: 1,
+    diretor: 2,
+    gerente: 3,
+    colaborador: 4,
+  };
+
   const fetchRole = async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
-        .eq('user_id', userId)
-        .maybeSingle();
+        .eq('user_id', userId);
 
       if (error) throw error;
-      setRole(data?.role || null);
+      
+      if (data && data.length > 0) {
+        // Se houver múltiplas roles, selecionar a de maior prioridade
+        const sortedRoles = data
+          .map(r => r.role)
+          .sort((a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99));
+        
+        setRole(sortedRoles[0]); // Role de maior prioridade
+      } else {
+        setRole(null);
+      }
     } catch (error) {
       console.error('Error fetching role:', error);
     }
