@@ -85,24 +85,25 @@ export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {canStart && meeting.meeting_rooms && (
-            <>
-              <Button
-                size="sm"
-                onClick={() => onStart?.(meeting.id)}
-              >
-                <Play className="h-4 w-4 mr-1" />
-                Iniciar
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => window.open(meeting.meeting_rooms!.teams_link, "_blank")}
-              >
-                <ExternalLink className="h-4 w-4 mr-1" />
-                Teams
-              </Button>
-            </>
+          {canStart && (
+            <Button
+              size="sm"
+              onClick={() => onStart?.(meeting.id)}
+            >
+              <Play className="h-4 w-4 mr-1" />
+              Iniciar
+            </Button>
+          )}
+          
+          {meeting.meeting_rooms && (
+            <Button
+              size="sm"
+              className="bg-[#0078D4] hover:bg-[#106EBE] text-white"
+              onClick={() => window.open(meeting.meeting_rooms!.teams_link, "_blank")}
+            >
+              <ExternalLink className="h-4 w-4 mr-1" />
+              Microsoft Teams
+            </Button>
           )}
           
           <Button

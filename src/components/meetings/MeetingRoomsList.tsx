@@ -1,8 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, ExternalLink } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Edit, ExternalLink, Search } from "lucide-react";
 import { MeetingRoomFormDialog } from "./MeetingRoomFormDialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,6 +18,7 @@ interface MeetingRoom {
   team: string;
   teams_link: string;
   is_active: boolean;
+  description?: string | null;
 }
 
 export function MeetingRoomsList() {
@@ -22,6 +27,12 @@ export function MeetingRoomsList() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<MeetingRoom | null>(null);
+  
+  // Filtros
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCompany, setFilterCompany] = useState<string>("all");
+  const [filterTeam, setFilterTeam] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
 
   const fetchRooms = async () => {
     try {
@@ -61,6 +72,55 @@ export function MeetingRoomsList() {
     fetchRooms();
   };
 
+  const handleToggleActive = async (roomId: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from("meeting_rooms")
+        .update({ is_active: !currentStatus })
+        .eq("id", roomId);
+
+      if (error) throw error;
+
+      toast({
+        title: !currentStatus ? "Sala ativada" : "Sala desativada",
+        description: "Status da sala atualizado com sucesso.",
+      });
+
+      fetchRooms();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao atualizar status",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Extrair opções únicas para filtros
+  const companies = useMemo(() => {
+    const unique = Array.from(new Set(rooms.map(r => r.company)));
+    return unique.sort();
+  }, [rooms]);
+
+  const teams = useMemo(() => {
+    const unique = Array.from(new Set(rooms.map(r => r.team)));
+    return unique.sort();
+  }, [rooms]);
+
+  // Aplicar filtros
+  const filteredRooms = useMemo(() => {
+    return rooms.filter(room => {
+      const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCompany = filterCompany === "all" || room.company === filterCompany;
+      const matchesTeam = filterTeam === "all" || room.team === filterTeam;
+      const matchesStatus = filterStatus === "all" || 
+        (filterStatus === "active" && room.is_active) ||
+        (filterStatus === "inactive" && !room.is_active);
+      
+      return matchesSearch && matchesCompany && matchesTeam && matchesStatus;
+    });
+  }, [rooms, searchTerm, filterCompany, filterTeam, filterStatus]);
+
   if (loading) {
     return <div className="p-6">Carregando...</div>;
   }
@@ -75,8 +135,77 @@ export function MeetingRoomsList() {
         </Button>
       </div>
 
+      {/* Filtros */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-2">
+              <Label htmlFor="search">Buscar por nome</Label>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="search"
+                  placeholder="Digite o nome..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="company">Empresa</Label>
+              <Select value={filterCompany} onValueChange={setFilterCompany}>
+                <SelectTrigger id="company">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {companies.map((company) => (
+                    <SelectItem key={company} value={company}>
+                      {company}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="team">Equipe</Label>
+              <Select value={filterTeam} onValueChange={setFilterTeam}>
+                <SelectTrigger id="team">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {teams.map((team) => (
+                    <SelectItem key={team} value={team}>
+                      {team}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger id="status">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="active">Ativas</SelectItem>
+                  <SelectItem value="inactive">Inativas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {rooms.map((room) => (
+        {filteredRooms.map((room) => (
           <Card key={room.id}>
             <CardHeader>
               <div className="flex items-start justify-between">
@@ -87,6 +216,12 @@ export function MeetingRoomsList() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
+              {room.description && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Descrição</p>
+                  <p className="text-sm line-clamp-2">{room.description}</p>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-muted-foreground">Empresa</p>
                 <p className="font-medium">{room.company}</p>
@@ -95,7 +230,17 @@ export function MeetingRoomsList() {
                 <p className="text-sm text-muted-foreground">Equipe</p>
                 <p className="font-medium">{room.team}</p>
               </div>
-              <div className="flex gap-2 pt-2">
+              <div className="flex items-center gap-2 pt-2 pb-2">
+                <Label htmlFor={`active-${room.id}`} className="text-sm">
+                  {room.is_active ? "Ativa" : "Inativa"}
+                </Label>
+                <Switch
+                  id={`active-${room.id}`}
+                  checked={room.is_active}
+                  onCheckedChange={() => handleToggleActive(room.id, room.is_active)}
+                />
+              </div>
+              <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -105,8 +250,8 @@ export function MeetingRoomsList() {
                   Editar
                 </Button>
                 <Button
-                  variant="outline"
                   size="sm"
+                  className="bg-[#0078D4] hover:bg-[#106EBE] text-white"
                   onClick={() => window.open(room.teams_link, "_blank")}
                 >
                   <ExternalLink className="h-4 w-4 mr-1" />
@@ -117,6 +262,16 @@ export function MeetingRoomsList() {
           </Card>
         ))}
       </div>
+
+      {filteredRooms.length === 0 && rooms.length > 0 && (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <p className="text-muted-foreground">
+              Nenhuma sala encontrada com os filtros aplicados
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {rooms.length === 0 && (
         <Card>
