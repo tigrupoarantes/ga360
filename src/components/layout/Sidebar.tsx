@@ -9,12 +9,18 @@ import {
   BarChart3,
   Settings,
   Target,
-  LogOut
+  LogOut,
+  Building2,
+  ChevronDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCompany } from "@/contexts/CompanyContext";
 import { Button } from "@/components/ui/button";
 import { RoleGuard } from "@/components/auth/RoleGuard";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -32,6 +38,23 @@ const ceoNavigation = [
 
 export function Sidebar() {
   const { profile, role, signOut } = useAuth();
+  const { selectedCompanyId, setSelectedCompanyId, companies, setCompanies } = useCompany();
+
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      const { data } = await supabase
+        .from("companies")
+        .select("*")
+        .eq("is_active", true)
+        .order("name");
+      
+      if (data) {
+        setCompanies(data);
+      }
+    };
+    
+    fetchCompanies();
+  }, [setCompanies]);
 
   const displayName = profile?.first_name && profile?.last_name
     ? `${profile.first_name} ${profile.last_name}`
@@ -58,6 +81,26 @@ export function Sidebar() {
             <h1 className="text-xl font-bold text-sidebar-foreground">GA 360</h1>
             <p className="text-xs text-sidebar-foreground/70">Gestão Estratégica</p>
           </div>
+        </div>
+
+        {/* Company Selector */}
+        <div className="px-3 py-3 border-b border-sidebar-border">
+          <Select value={selectedCompanyId || "all"} onValueChange={(value) => setSelectedCompanyId(value === "all" ? null : value)}>
+            <SelectTrigger className="w-full bg-sidebar-accent/50">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                <SelectValue placeholder="Todas as Empresas" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as Empresas</SelectItem>
+              {companies.map((company) => (
+                <SelectItem key={company.id} value={company.id}>
+                  {company.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Navigation */}

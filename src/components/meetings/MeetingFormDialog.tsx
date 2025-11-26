@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useCompany } from "@/contexts/CompanyContext";
 
 interface MeetingFormDialogProps {
   open: boolean;
@@ -22,6 +23,9 @@ export function MeetingFormDialog({
   const [loading, setLoading] = useState(false);
   const [areas, setAreas] = useState<any[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
+  const [allRooms, setAllRooms] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const { selectedCompanyId } = useCompany();
   const [formData, setFormData] = useState({
     title: "",
     type: "Tática" as const,
@@ -30,14 +34,36 @@ export function MeetingFormDialog({
     scheduled_at: "",
     duration_minutes: 60,
     ai_mode: "Obrigatória" as const,
+    company_id: selectedCompanyId || "",
   });
 
   useEffect(() => {
     if (open) {
       fetchAreas();
       fetchRooms();
+      fetchCompanies();
+      setFormData(prev => ({ ...prev, company_id: selectedCompanyId || "" }));
     }
-  }, [open]);
+  }, [open, selectedCompanyId]);
+
+  // Filtrar salas pela empresa selecionada
+  useEffect(() => {
+    if (formData.company_id) {
+      const filtered = allRooms.filter(r => r.company_id === formData.company_id);
+      setRooms(filtered);
+    } else {
+      setRooms(allRooms);
+    }
+  }, [formData.company_id, allRooms]);
+
+  const fetchCompanies = async () => {
+    const { data } = await supabase
+      .from("companies")
+      .select("*")
+      .eq("is_active", true)
+      .order("name");
+    setCompanies(data || []);
+  };
 
   const fetchAreas = async () => {
     const { data } = await supabase.from("areas").select("*").order("name");
@@ -47,9 +73,10 @@ export function MeetingFormDialog({
   const fetchRooms = async () => {
     const { data } = await supabase
       .from("meeting_rooms")
-      .select("*")
+      .select("*, companies(name)")
       .eq("is_active", true)
       .order("name");
+    setAllRooms(data || []);
     setRooms(data || []);
   };
 

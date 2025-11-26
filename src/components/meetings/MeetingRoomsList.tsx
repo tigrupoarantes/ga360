@@ -14,11 +14,15 @@ import { supabase } from "@/integrations/supabase/client";
 interface MeetingRoom {
   id: string;
   name: string;
-  company: string;
+  company_id: string;
   team: string;
   teams_link: string;
   is_active: boolean;
   description?: string | null;
+  companies?: {
+    name: string;
+    color?: string;
+  };
 }
 
 export function MeetingRoomsList() {
@@ -38,7 +42,7 @@ export function MeetingRoomsList() {
     try {
       const { data, error } = await supabase
         .from("meeting_rooms")
-        .select("*")
+        .select("*, companies(name, color)")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -98,7 +102,7 @@ export function MeetingRoomsList() {
 
   // Extrair opções únicas para filtros
   const companies = useMemo(() => {
-    const unique = Array.from(new Set(rooms.map(r => r.company)));
+    const unique = Array.from(new Set(rooms.map(r => r.companies?.name).filter(Boolean)));
     return unique.sort();
   }, [rooms]);
 
@@ -111,7 +115,7 @@ export function MeetingRoomsList() {
   const filteredRooms = useMemo(() => {
     return rooms.filter(room => {
       const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCompany = filterCompany === "all" || room.company === filterCompany;
+      const matchesCompany = filterCompany === "all" || room.companies?.name === filterCompany;
       const matchesTeam = filterTeam === "all" || room.team === filterTeam;
       const matchesStatus = filterStatus === "all" || 
         (filterStatus === "active" && room.is_active) ||
@@ -224,7 +228,7 @@ export function MeetingRoomsList() {
               )}
               <div>
                 <p className="text-sm text-muted-foreground">Empresa</p>
-                <p className="font-medium">{room.company}</p>
+                <p className="font-medium">{room.companies?.name || "N/A"}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Equipe</p>

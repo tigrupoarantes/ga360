@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       areas: {
         Row: {
+          company_id: string | null
           created_at: string | null
           id: string
           name: string
@@ -23,6 +24,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          company_id?: string | null
           created_at?: string | null
           id?: string
           name: string
@@ -30,6 +32,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          company_id?: string | null
           created_at?: string | null
           id?: string
           name?: string
@@ -38,6 +41,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "areas_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "areas_parent_id_fkey"
             columns: ["parent_id"]
             isOneToOne: false
@@ -45,6 +55,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      companies: {
+        Row: {
+          cnpj: string | null
+          color: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          logo_url: string | null
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          cnpj?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          logo_url?: string | null
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          cnpj?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          logo_url?: string | null
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       meeting_atas: {
         Row: {
@@ -163,6 +206,7 @@ export type Database = {
       meeting_rooms: {
         Row: {
           company: string
+          company_id: string | null
           created_at: string
           created_by: string | null
           description: string | null
@@ -175,6 +219,7 @@ export type Database = {
         }
         Insert: {
           company: string
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -187,6 +232,7 @@ export type Database = {
         }
         Update: {
           company?: string
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -197,7 +243,15 @@ export type Database = {
           teams_link?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "meeting_rooms_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       meeting_tasks: {
         Row: {
@@ -358,6 +412,7 @@ export type Database = {
         Row: {
           area_id: string | null
           avatar_url: string | null
+          company_id: string | null
           created_at: string | null
           first_name: string | null
           id: string
@@ -368,6 +423,7 @@ export type Database = {
         Insert: {
           area_id?: string | null
           avatar_url?: string | null
+          company_id?: string | null
           created_at?: string | null
           first_name?: string | null
           id: string
@@ -378,6 +434,7 @@ export type Database = {
         Update: {
           area_id?: string | null
           avatar_url?: string | null
+          company_id?: string | null
           created_at?: string | null
           first_name?: string | null
           id?: string
@@ -391,6 +448,13 @@ export type Database = {
             columns: ["area_id"]
             isOneToOne: false
             referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]

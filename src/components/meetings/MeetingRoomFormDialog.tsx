@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
@@ -11,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 interface MeetingRoom {
   id?: string;
   name: string;
-  company: string;
+  company_id: string;
   team: string;
   teams_link: string;
   is_active?: boolean;
@@ -34,16 +35,33 @@ export function MeetingRoomFormDialog({
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [linkError, setLinkError] = useState<string>("");
+  const [companies, setCompanies] = useState<any[]>([]);
   const [formData, setFormData] = useState<MeetingRoom>(
     room || {
       name: "",
-      company: "",
+      company_id: "",
       team: "",
       teams_link: "",
       is_active: true,
       description: "",
     }
   );
+
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      const { data } = await supabase
+        .from("companies")
+        .select("*")
+        .eq("is_active", true)
+        .order("name");
+      
+      if (data) {
+        setCompanies(data);
+      }
+    };
+    
+    fetchCompanies();
+  }, []);
 
   useEffect(() => {
     if (room) {
@@ -54,7 +72,7 @@ export function MeetingRoomFormDialog({
     } else {
       setFormData({
         name: "",
-        company: "",
+        company_id: "",
         team: "",
         teams_link: "",
         is_active: true,
@@ -93,7 +111,8 @@ export function MeetingRoomFormDialog({
           .from("meeting_rooms")
           .update({
             name: formData.name,
-            company: formData.company,
+            company: "", // Manter temporariamente para retrocompatibilidade
+            company_id: formData.company_id,
             team: formData.team,
             teams_link: formData.teams_link,
             is_active: formData.is_active,
@@ -111,7 +130,8 @@ export function MeetingRoomFormDialog({
         // Create new room
         const { error } = await supabase.from("meeting_rooms").insert({
           name: formData.name,
-          company: formData.company,
+          company: "", // Manter temporariamente para retrocompatibilidade
+          company_id: formData.company_id,
           team: formData.team,
           teams_link: formData.teams_link,
           is_active: formData.is_active ?? true,
@@ -164,15 +184,24 @@ export function MeetingRoomFormDialog({
 
           <div>
             <Label htmlFor="company">Empresa</Label>
-            <Input
-              id="company"
-              value={formData.company}
-              onChange={(e) =>
-                setFormData({ ...formData, company: e.target.value })
+            <Select
+              value={formData.company_id}
+              onValueChange={(value) =>
+                setFormData({ ...formData, company_id: value })
               }
-              placeholder="Ex: Grupo Arantes"
               required
-            />
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma empresa" />
+              </SelectTrigger>
+              <SelectContent>
+                {companies.map((company) => (
+                  <SelectItem key={company.id} value={company.id}>
+                    {company.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
