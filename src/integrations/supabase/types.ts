@@ -142,6 +142,10 @@ export type Database = {
       meeting_participants: {
         Row: {
           attended: boolean
+          confirmation_reminder_sent_at: string | null
+          confirmation_status: string | null
+          confirmation_token: string | null
+          confirmed_at: string | null
           created_at: string
           id: string
           meeting_id: string
@@ -149,6 +153,10 @@ export type Database = {
         }
         Insert: {
           attended?: boolean
+          confirmation_reminder_sent_at?: string | null
+          confirmation_status?: string | null
+          confirmation_token?: string | null
+          confirmed_at?: string | null
           created_at?: string
           id?: string
           meeting_id: string
@@ -156,6 +164,10 @@ export type Database = {
         }
         Update: {
           attended?: boolean
+          confirmation_reminder_sent_at?: string | null
+          confirmation_status?: string | null
+          confirmation_token?: string | null
+          confirmed_at?: string | null
           created_at?: string
           id?: string
           meeting_id?: string
