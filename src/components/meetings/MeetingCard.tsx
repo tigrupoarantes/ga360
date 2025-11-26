@@ -2,12 +2,15 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, Users, Clock, ExternalLink, Play, FileText, Upload, MessageSquare, UserPlus } from "lucide-react";
+import { Calendar, Users, Clock, ExternalLink, Play, FileText, Upload, MessageSquare, UserPlus, Edit, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { RecordingUpload } from "./RecordingUpload";
 import { TranscriptionViewer } from "./TranscriptionViewer";
 import { MeetingParticipants } from "./MeetingParticipants";
+import { RecurringMeetingActionDialog } from "./RecurringMeetingActionDialog";
+import { MeetingEditDialog } from "./MeetingEditDialog";
+import { supabase } from "@/integrations/supabase/client";
 
 interface MeetingCardProps {
   meeting: {
@@ -18,11 +21,14 @@ interface MeetingCardProps {
     duration_minutes: number;
     status: string;
     ai_mode: string;
+    recurrence_type?: string;
+    parent_meeting_id?: string;
     meeting_rooms?: { name: string; teams_link: string };
     areas?: { name: string };
   };
   onStart?: (id: string) => void;
   onViewAta?: (id: string) => void;
+  onUpdate?: () => void;
 }
 
 const statusColors: Record<string, string> = {
@@ -38,15 +44,78 @@ const aiModeColors: Record<string, string> = {
   "Desativada": "bg-gray-500",
 };
 
-export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
+export function MeetingCard({ meeting, onStart, onViewAta, onUpdate }: MeetingCardProps) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [transcriptionOpen, setTranscriptionOpen] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editScope, setEditScope] = useState<"single" | "future">("single");
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [actionType, setActionType] = useState<"edit" | "cancel">("edit");
   
   const scheduledDate = new Date(meeting.scheduled_at);
   const canStart = meeting.status === "Agendada";
   const hasAta = meeting.status === "Concluída";
   const canUpload = meeting.status === "Em Andamento" || meeting.status === "Concluída";
+  const canEdit = meeting.status === "Agendada";
+  const isRecurring = meeting.recurrence_type && meeting.recurrence_type !== "none";
+
+  const handleEditClick = () => {
+    setActionType("edit");
+    setActionDialogOpen(true);
+  };
+
+  const handleCancelClick = () => {
+    setActionType("cancel");
+    setActionDialogOpen(true);
+  };
+
+  const handleActionConfirm = async (scope: "single" | "future") => {
+    if (actionType === "edit") {
+      setEditScope(scope);
+      setEditDialogOpen(true);
+    } else {
+      await handleCancelMeeting(scope);
+    }
+  };
+
+  const handleCancelMeeting = async (scope: "single" | "future") => {
+    try {
+      if (scope === "single") {
+        const { error } = await supabase
+          .from("meetings")
+          .update({ status: "Cancelada" })
+          .eq("id", meeting.id);
+
+        if (error) throw error;
+      } else {
+        // Cancel this and all future meetings
+        const { data: currentMeeting, error: fetchError } = await supabase
+          .from("meetings")
+          .select("parent_meeting_id, scheduled_at")
+          .eq("id", meeting.id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        const parentId = currentMeeting.parent_meeting_id || meeting.id;
+        const currentScheduledAt = new Date(currentMeeting.scheduled_at);
+
+        const { error: updateError } = await supabase
+          .from("meetings")
+          .update({ status: "Cancelada" })
+          .or(`id.eq.${meeting.id},and(parent_meeting_id.eq.${parentId},scheduled_at.gte.${currentScheduledAt.toISOString()})`)
+          .gte("scheduled_at", currentScheduledAt.toISOString());
+
+        if (updateError) throw updateError;
+      }
+
+      onUpdate?.();
+    } catch (error: any) {
+      console.error("Error canceling meeting:", error);
+    }
+  };
 
   return (
     <Card className="hover:shadow-lg transition-shadow">
@@ -85,6 +154,27 @@ export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {canEdit && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleEditClick}
+              >
+                <Edit className="h-4 w-4 mr-1" />
+                Editar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCancelClick}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Cancelar
+              </Button>
+            </>
+          )}
+
           {canStart && (
             <Button
               size="sm"
@@ -166,6 +256,25 @@ export function MeetingCard({ meeting, onStart, onViewAta }: MeetingCardProps) {
           open={transcriptionOpen}
           onOpenChange={setTranscriptionOpen}
           meetingId={meeting.id}
+        />
+
+        <RecurringMeetingActionDialog
+          open={actionDialogOpen}
+          onOpenChange={setActionDialogOpen}
+          onConfirm={handleActionConfirm}
+          actionType={actionType}
+          isRecurring={Boolean(isRecurring)}
+        />
+
+        <MeetingEditDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          onSuccess={() => {
+            onUpdate?.();
+            setEditDialogOpen(false);
+          }}
+          meetingId={meeting.id}
+          editScope={editScope}
         />
       </CardContent>
     </Card>
