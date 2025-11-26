@@ -35,6 +35,8 @@ export function MeetingFormDialog({
     duration_minutes: 60,
     ai_mode: "Obrigatória" as const,
     company_id: selectedCompanyId || "",
+    recurrence_type: "none" as const,
+    recurrence_end_date: "",
   });
 
   useEffect(() => {
@@ -80,28 +82,124 @@ export function MeetingFormDialog({
     setRooms(data || []);
   };
 
+  const generateRecurringMeetings = (startDate: Date, endDate: Date, type: string) => {
+    const meetings = [];
+    const current = new Date(startDate);
+    let index = 0;
+    const MAX_OCCURRENCES = 52; // Safety limit
+
+    while (current <= endDate && index < MAX_OCCURRENCES) {
+      meetings.push({
+        scheduled_at: current.toISOString(),
+        recurrence_index: index,
+      });
+
+      index++;
+
+      // Calculate next occurrence
+      if (type === "daily") {
+        current.setDate(current.getDate() + 1);
+      } else if (type === "weekly") {
+        current.setDate(current.getDate() + 7);
+      } else if (type === "monthly") {
+        current.setMonth(current.getMonth() + 1);
+      }
+    }
+
+    return meetings;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const { error: meetingError } = await supabase.from("meetings").insert({
-        title: formData.title,
-        type: formData.type,
-        area_id: formData.area_id || null,
-        meeting_room_id: formData.meeting_room_id,
-        scheduled_at: formData.scheduled_at,
-        duration_minutes: formData.duration_minutes,
-        ai_mode: formData.ai_mode,
-        status: "Agendada",
-      });
+      const baseScheduledAt = new Date(formData.scheduled_at);
 
-      if (meetingError) throw meetingError;
+      // If no recurrence, create single meeting
+      if (formData.recurrence_type === "none") {
+        const { error: meetingError } = await supabase.from("meetings").insert({
+          title: formData.title,
+          type: formData.type,
+          area_id: formData.area_id || null,
+          meeting_room_id: formData.meeting_room_id,
+          scheduled_at: formData.scheduled_at,
+          duration_minutes: formData.duration_minutes,
+          ai_mode: formData.ai_mode,
+          status: "Agendada",
+          recurrence_type: "none",
+        });
 
-      toast({
-        title: "Reunião criada",
-        description: "Reunião agendada com sucesso.",
-      });
+        if (meetingError) throw meetingError;
+
+        toast({
+          title: "Reunião criada",
+          description: "Reunião agendada com sucesso.",
+        });
+      } else {
+        // Generate recurring meetings
+        if (!formData.recurrence_end_date) {
+          throw new Error("Data final da recorrência é obrigatória");
+        }
+
+        const endDate = new Date(formData.recurrence_end_date);
+        const occurrences = generateRecurringMeetings(
+          baseScheduledAt,
+          endDate,
+          formData.recurrence_type
+        );
+
+        // Insert parent meeting first
+        const { data: parentMeeting, error: parentError } = await supabase
+          .from("meetings")
+          .insert({
+            title: formData.title,
+            type: formData.type,
+            area_id: formData.area_id || null,
+            meeting_room_id: formData.meeting_room_id,
+            scheduled_at: formData.scheduled_at,
+            duration_minutes: formData.duration_minutes,
+            ai_mode: formData.ai_mode,
+            status: "Agendada",
+            recurrence_type: formData.recurrence_type,
+            recurrence_end_date: formData.recurrence_end_date,
+            parent_meeting_id: null,
+            recurrence_index: 0,
+          })
+          .select()
+          .single();
+
+        if (parentError) throw parentError;
+
+        // Insert child meetings (skip first as it's the parent)
+        if (occurrences.length > 1) {
+          const childMeetings = occurrences.slice(1).map((occ) => ({
+            title: formData.title,
+            type: formData.type,
+            area_id: formData.area_id || null,
+            meeting_room_id: formData.meeting_room_id,
+            scheduled_at: occ.scheduled_at,
+            duration_minutes: formData.duration_minutes,
+            ai_mode: formData.ai_mode,
+            status: "Agendada",
+            recurrence_type: formData.recurrence_type,
+            recurrence_end_date: formData.recurrence_end_date,
+            parent_meeting_id: parentMeeting.id,
+            recurrence_index: occ.recurrence_index,
+          }));
+
+          const { error: childError } = await supabase
+            .from("meetings")
+            .insert(childMeetings);
+
+          if (childError) throw childError;
+        }
+
+        toast({
+          title: "Reuniões criadas",
+          description: `${occurrences.length} reunião(ões) agendada(s) com sucesso.`,
+        });
+      }
 
       onSuccess();
       onOpenChange(false);
@@ -237,6 +335,39 @@ export function MeetingFormDialog({
                 required
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="recurrence">Recorrência</Label>
+              <Select
+                value={formData.recurrence_type}
+                onValueChange={(value: any) => setFormData({ ...formData, recurrence_type: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Não repetir</SelectItem>
+                  <SelectItem value="daily">Diária</SelectItem>
+                  <SelectItem value="weekly">Semanal</SelectItem>
+                  <SelectItem value="monthly">Mensal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {formData.recurrence_type !== "none" && (
+              <div>
+                <Label htmlFor="recurrence_end">Repetir até</Label>
+                <Input
+                  id="recurrence_end"
+                  type="date"
+                  value={formData.recurrence_end_date}
+                  onChange={(e) => setFormData({ ...formData, recurrence_end_date: e.target.value })}
+                  required
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-3">

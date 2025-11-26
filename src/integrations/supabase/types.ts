@@ -367,6 +367,10 @@ export type Database = {
           duration_minutes: number
           id: string
           meeting_room_id: string | null
+          parent_meeting_id: string | null
+          recurrence_end_date: string | null
+          recurrence_index: number | null
+          recurrence_type: string | null
           scheduled_at: string
           status: string
           title: string
@@ -381,6 +385,10 @@ export type Database = {
           duration_minutes?: number
           id?: string
           meeting_room_id?: string | null
+          parent_meeting_id?: string | null
+          recurrence_end_date?: string | null
+          recurrence_index?: number | null
+          recurrence_type?: string | null
           scheduled_at: string
           status?: string
           title: string
@@ -395,6 +403,10 @@ export type Database = {
           duration_minutes?: number
           id?: string
           meeting_room_id?: string | null
+          parent_meeting_id?: string | null
+          recurrence_end_date?: string | null
+          recurrence_index?: number | null
+          recurrence_type?: string | null
           scheduled_at?: string
           status?: string
           title?: string
@@ -414,6 +426,13 @@ export type Database = {
             columns: ["meeting_room_id"]
             isOneToOne: false
             referencedRelation: "meeting_rooms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_parent_meeting_id_fkey"
+            columns: ["parent_meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
             referencedColumns: ["id"]
           },
         ]
