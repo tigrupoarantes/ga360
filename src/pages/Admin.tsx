@@ -17,12 +17,20 @@ export default function Admin() {
       bgColor: 'bg-primary/10',
     },
     {
+      title: 'Empresas',
+      description: 'Gerencie as empresas do Grupo Arantes',
+      icon: Building2,
+      href: '/admin/empresas',
+      color: 'text-secondary',
+      bgColor: 'bg-secondary/10',
+    },
+    {
       title: 'Usuários e Permissões',
       description: 'Administre usuários, roles e acessos',
       icon: Users,
       href: '/admin/users',
-      color: 'text-secondary',
-      bgColor: 'bg-secondary/10',
+      color: 'text-accent',
+      bgColor: 'bg-accent/10',
     },
     {
       title: 'Configurações Gerais',
