@@ -14,3 +14,12 @@ verify_jwt = true
 
 [functions.send-meeting-reminders]
 verify_jwt = false
+
+[functions.send-whatsapp-reminder]
+verify_jwt = true
+
+[functions.send-attendance-confirmation]
+verify_jwt = true
+
+[functions.confirm-attendance]
+verify_jwt = false

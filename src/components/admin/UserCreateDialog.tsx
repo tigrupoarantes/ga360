@@ -37,6 +37,7 @@ interface UserCreateDialogProps {
     last_name: string;
     area_id: string | null;
     roles: string[];
+    phone?: string;
   }) => Promise<void>;
 }
 
@@ -46,6 +47,7 @@ const formSchema = z.object({
   last_name: z.string().min(2, 'Sobrenome deve ter no mínimo 2 caracteres'),
   area_id: z.union([z.string(), z.null()]),
   roles: z.array(z.string()).min(1, 'Selecione pelo menos um role'),
+  phone: z.string().trim().regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }).nullable().or(z.literal('')),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -82,6 +84,7 @@ export function UserCreateDialog({
       last_name: '',
       area_id: null,
       roles: ['colaborador'],
+      phone: '',
     },
   });
 
@@ -102,6 +105,7 @@ export function UserCreateDialog({
         last_name: data.last_name,
         area_id: data.area_id === 'none' ? null : data.area_id,
         roles: selectedRoles,
+        phone: data.phone || undefined,
       });
       reset();
       setSelectedRoles(['colaborador']);
@@ -196,6 +200,22 @@ export function UserCreateDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="phone">Telefone (WhatsApp)</Label>
+            <Input
+              id="phone"
+              type="tel"
+              placeholder="+5511999999999"
+              {...register('phone')}
+            />
+            {errors.phone && (
+              <p className="text-sm text-destructive">{errors.phone.message}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Formato: +[código][DDD][número]. Ex: +5511999999999
+            </p>
           </div>
 
           <div className="space-y-2">

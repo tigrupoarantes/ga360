@@ -459,6 +459,7 @@ export type Database = {
           id: string
           is_active: boolean
           last_name: string | null
+          phone: string | null
           updated_at: string | null
         }
         Insert: {
@@ -470,6 +471,7 @@ export type Database = {
           id: string
           is_active?: boolean
           last_name?: string | null
+          phone?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -481,6 +483,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           last_name?: string | null
+          phone?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -499,6 +502,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_settings: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          key: string
+          updated_at: string | null
+          value: Json
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          key: string
+          updated_at?: string | null
+          value: Json
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          key?: string
+          updated_at?: string | null
+          value?: Json
+        }
+        Relationships: []
       }
       user_permissions: {
         Row: {
