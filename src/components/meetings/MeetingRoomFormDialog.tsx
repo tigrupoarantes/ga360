@@ -13,7 +13,7 @@ interface MeetingRoom {
   id?: string;
   name: string;
   company_id: string;
-  team: string;
+  area_id?: string | null;
   teams_link: string;
   is_active?: boolean;
   description?: string | null;
@@ -26,6 +26,17 @@ interface MeetingRoomFormDialogProps {
   onSuccess: () => void;
 }
 
+interface Company {
+  id: string;
+  name: string;
+}
+
+interface Area {
+  id: string;
+  name: string;
+  company_id: string | null;
+}
+
 export function MeetingRoomFormDialog({
   open,
   onOpenChange,
@@ -35,12 +46,14 @@ export function MeetingRoomFormDialog({
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [linkError, setLinkError] = useState<string>("");
-  const [companies, setCompanies] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [filteredAreas, setFilteredAreas] = useState<Area[]>([]);
   const [formData, setFormData] = useState<MeetingRoom>(
     room || {
       name: "",
       company_id: "",
-      team: "",
+      area_id: null,
       teams_link: "",
       is_active: true,
       description: "",
@@ -48,20 +61,39 @@ export function MeetingRoomFormDialog({
   );
 
   useEffect(() => {
-    const fetchCompanies = async () => {
-      const { data } = await supabase
-        .from("companies")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
+    const fetchData = async () => {
+      const [companiesResult, areasResult] = await Promise.all([
+        supabase
+          .from("companies")
+          .select("id, name")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("areas")
+          .select("id, name, company_id")
+          .order("name"),
+      ]);
       
-      if (data) {
-        setCompanies(data);
+      if (companiesResult.data) {
+        setCompanies(companiesResult.data);
+      }
+      
+      if (areasResult.data) {
+        setAreas(areasResult.data);
       }
     };
     
-    fetchCompanies();
+    fetchData();
   }, []);
+
+  useEffect(() => {
+    if (formData.company_id) {
+      const filtered = areas.filter(area => area.company_id === formData.company_id);
+      setFilteredAreas(filtered);
+    } else {
+      setFilteredAreas([]);
+    }
+  }, [formData.company_id, areas]);
 
   useEffect(() => {
     if (room) {
@@ -73,7 +105,7 @@ export function MeetingRoomFormDialog({
       setFormData({
         name: "",
         company_id: "",
-        team: "",
+        area_id: null,
         teams_link: "",
         is_active: true,
         description: "",
@@ -105,19 +137,22 @@ export function MeetingRoomFormDialog({
     setLinkError("");
 
     try {
+      const roomData = {
+        name: formData.name,
+        company: "", // Manter temporariamente para retrocompatibilidade
+        company_id: formData.company_id,
+        area_id: formData.area_id || null,
+        team: "", // Manter vazio para retrocompatibilidade
+        teams_link: formData.teams_link,
+        is_active: formData.is_active,
+        description: formData.description || null,
+      };
+
       if (room?.id) {
         // Update existing room
         const { error } = await supabase
           .from("meeting_rooms")
-          .update({
-            name: formData.name,
-            company: "", // Manter temporariamente para retrocompatibilidade
-            company_id: formData.company_id,
-            team: formData.team,
-            teams_link: formData.teams_link,
-            is_active: formData.is_active,
-            description: formData.description || null,
-          })
+          .update(roomData)
           .eq("id", room.id);
 
         if (error) throw error;
@@ -128,15 +163,7 @@ export function MeetingRoomFormDialog({
         });
       } else {
         // Create new room
-        const { error } = await supabase.from("meeting_rooms").insert({
-          name: formData.name,
-          company: "", // Manter temporariamente para retrocompatibilidade
-          company_id: formData.company_id,
-          team: formData.team,
-          teams_link: formData.teams_link,
-          is_active: formData.is_active ?? true,
-          description: formData.description || null,
-        });
+        const { error } = await supabase.from("meeting_rooms").insert(roomData);
 
         if (error) throw error;
 
@@ -170,7 +197,7 @@ export function MeetingRoomFormDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="name">Nome da Sala</Label>
+            <Label htmlFor="name">Nome da Sala *</Label>
             <Input
               id="name"
               value={formData.name}
@@ -183,12 +210,12 @@ export function MeetingRoomFormDialog({
           </div>
 
           <div>
-            <Label htmlFor="company">Empresa</Label>
+            <Label htmlFor="company">Empresa *</Label>
             <Select
               value={formData.company_id}
-              onValueChange={(value) =>
-                setFormData({ ...formData, company_id: value })
-              }
+              onValueChange={(value) => {
+                setFormData({ ...formData, company_id: value, area_id: null });
+              }}
               required
             >
               <SelectTrigger>
@@ -205,20 +232,39 @@ export function MeetingRoomFormDialog({
           </div>
 
           <div>
-            <Label htmlFor="team">Equipe</Label>
-            <Input
-              id="team"
-              value={formData.team}
-              onChange={(e) =>
-                setFormData({ ...formData, team: e.target.value })
+            <Label htmlFor="area">Área/Setor (opcional)</Label>
+            <Select
+              value={formData.area_id || "none"}
+              onValueChange={(value) =>
+                setFormData({ ...formData, area_id: value === "none" ? null : value })
               }
-              placeholder="Ex: Comercial"
-              required
-            />
+              disabled={!formData.company_id}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={
+                  formData.company_id 
+                    ? "Selecione uma área" 
+                    : "Selecione uma empresa primeiro"
+                } />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Nenhuma área específica</SelectItem>
+                {filteredAreas.map((area) => (
+                  <SelectItem key={area.id} value={area.id}>
+                    {area.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!formData.company_id && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Selecione uma empresa para ver as áreas disponíveis
+              </p>
+            )}
           </div>
 
           <div>
-            <Label htmlFor="teams_link">Link do Microsoft Teams</Label>
+            <Label htmlFor="teams_link">Link do Microsoft Teams *</Label>
             <Input
               id="teams_link"
               type="url"
@@ -229,15 +275,15 @@ export function MeetingRoomFormDialog({
               }}
               placeholder="https://teams.microsoft.com/l/meetup-join/..."
               required
-              className={linkError ? "border-red-500" : ""}
+              className={linkError ? "border-destructive" : ""}
             />
             {linkError && (
-              <p className="text-sm text-red-500 mt-1">{linkError}</p>
+              <p className="text-sm text-destructive mt-1">{linkError}</p>
             )}
           </div>
 
           <div>
-            <Label htmlFor="description">Descrição (Opcional)</Label>
+            <Label htmlFor="description">Descrição (opcional)</Label>
             <Textarea
               id="description"
               value={formData.description || ""}

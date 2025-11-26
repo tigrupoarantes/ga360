@@ -15,13 +15,16 @@ interface MeetingRoom {
   id: string;
   name: string;
   company_id: string;
-  team: string;
+  area_id?: string | null;
   teams_link: string;
   is_active: boolean;
   description?: string | null;
   companies?: {
     name: string;
     color?: string;
+  };
+  areas?: {
+    name: string;
   };
 }
 
@@ -35,14 +38,14 @@ export function MeetingRoomsList() {
   // Filtros
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCompany, setFilterCompany] = useState<string>("all");
-  const [filterTeam, setFilterTeam] = useState<string>("all");
+  const [filterArea, setFilterArea] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
   const fetchRooms = async () => {
     try {
       const { data, error } = await supabase
         .from("meeting_rooms")
-        .select("*, companies(name, color)")
+        .select("*, companies(name, color), areas(name)")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -106,8 +109,8 @@ export function MeetingRoomsList() {
     return unique.sort();
   }, [rooms]);
 
-  const teams = useMemo(() => {
-    const unique = Array.from(new Set(rooms.map(r => r.team)));
+  const areaNames = useMemo(() => {
+    const unique = Array.from(new Set(rooms.map(r => r.areas?.name).filter(Boolean)));
     return unique.sort();
   }, [rooms]);
 
@@ -116,14 +119,14 @@ export function MeetingRoomsList() {
     return rooms.filter(room => {
       const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCompany = filterCompany === "all" || room.companies?.name === filterCompany;
-      const matchesTeam = filterTeam === "all" || room.team === filterTeam;
+      const matchesArea = filterArea === "all" || room.areas?.name === filterArea;
       const matchesStatus = filterStatus === "all" || 
         (filterStatus === "active" && room.is_active) ||
         (filterStatus === "inactive" && !room.is_active);
       
-      return matchesSearch && matchesCompany && matchesTeam && matchesStatus;
+      return matchesSearch && matchesCompany && matchesArea && matchesStatus;
     });
-  }, [rooms, searchTerm, filterCompany, filterTeam, filterStatus]);
+  }, [rooms, searchTerm, filterCompany, filterArea, filterStatus]);
 
   if (loading) {
     return <div className="p-6">Carregando...</div>;
@@ -175,16 +178,16 @@ export function MeetingRoomsList() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="team">Equipe</Label>
-              <Select value={filterTeam} onValueChange={setFilterTeam}>
-                <SelectTrigger id="team">
+              <Label htmlFor="area">Área</Label>
+              <Select value={filterArea} onValueChange={setFilterArea}>
+                <SelectTrigger id="area">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
-                  {teams.map((team) => (
-                    <SelectItem key={team} value={team}>
-                      {team}
+                  {areaNames.map((area) => (
+                    <SelectItem key={area} value={area}>
+                      {area}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -231,8 +234,8 @@ export function MeetingRoomsList() {
                 <p className="font-medium">{room.companies?.name || "N/A"}</p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Equipe</p>
-                <p className="font-medium">{room.team}</p>
+                <p className="text-sm text-muted-foreground">Área/Setor</p>
+                <p className="font-medium">{room.areas?.name || "Sem área definida"}</p>
               </div>
               <div className="flex items-center gap-2 pt-2 pb-2">
                 <Label htmlFor={`active-${room.id}`} className="text-sm">
