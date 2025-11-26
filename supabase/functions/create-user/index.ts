@@ -41,16 +41,16 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("Não autorizado");
     }
 
-    // Check if requesting user is CEO
+    // Check if requesting user is CEO or Super Admin
     const { data: roleCheck } = await supabaseAdmin
       .from("user_roles")
       .select("role")
       .eq("user_id", requestingUser.id)
-      .eq("role", "ceo")
-      .single();
+      .in("role", ["ceo", "super_admin"])
+      .limit(1);
 
     if (!roleCheck) {
-      throw new Error("Apenas CEOs podem criar usuários");
+      throw new Error("Apenas CEOs e Super Admins podem criar usuários");
     }
 
     const { email, first_name, last_name, area_id, roles }: CreateUserRequest = await req.json();
@@ -108,7 +108,7 @@ const handler = async (req: Request): Promise<Response> => {
         .insert(
           roles.map((role) => ({
             user_id: newUser.user.id,
-            role: role as "ceo" | "diretor" | "gerente" | "colaborador",
+            role: role as "ceo" | "diretor" | "gerente" | "colaborador" | "super_admin",
           }))
         );
 

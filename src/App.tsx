@@ -106,7 +106,7 @@ const App = () => (
             <Route
               path="/admin"
               element={
-                <ProtectedRoute allowedRoles={['ceo']}>
+                <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
                   <Admin />
                 </ProtectedRoute>
               }
@@ -114,7 +114,7 @@ const App = () => (
             <Route
               path="/admin/estrutura"
               element={
-                <ProtectedRoute allowedRoles={['ceo']}>
+                <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
                   <AdminOrganization />
                 </ProtectedRoute>
               }
@@ -122,7 +122,7 @@ const App = () => (
             <Route
               path="/admin/areas"
               element={
-                <ProtectedRoute allowedRoles={['ceo']}>
+                <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
                   <AdminAreas />
                 </ProtectedRoute>
               }
@@ -130,7 +130,7 @@ const App = () => (
             <Route
               path="/admin/users"
               element={
-                <ProtectedRoute allowedRoles={['ceo']}>
+                <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
                   <AdminUsers />
                 </ProtectedRoute>
               }
@@ -138,7 +138,7 @@ const App = () => (
             <Route
               path="/admin/empresas"
               element={
-                <ProtectedRoute allowedRoles={['ceo']}>
+                <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
                   <AdminCompanies />
                 </ProtectedRoute>
               }

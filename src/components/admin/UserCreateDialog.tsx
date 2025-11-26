@@ -51,6 +51,7 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>;
 
 const roleOptions = [
+  { value: 'super_admin', label: 'Super Admin' },
   { value: 'ceo', label: 'CEO' },
   { value: 'diretor', label: 'Diretor' },
   { value: 'gerente', label: 'Gerente' },
