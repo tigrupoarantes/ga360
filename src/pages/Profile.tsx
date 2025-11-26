@@ -17,6 +17,7 @@ const profileSchema = z.object({
   first_name: z.string().trim().min(2, { message: 'Nome deve ter no mínimo 2 caracteres' }),
   last_name: z.string().trim().min(2, { message: 'Sobrenome deve ter no mínimo 2 caracteres' }),
   area_id: z.string().nullable(),
+  phone: z.string().trim().regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }).nullable().or(z.literal('')),
 });
 
 interface Area {
@@ -40,6 +41,7 @@ export default function Profile() {
     first_name: profile?.first_name || '',
     last_name: profile?.last_name || '',
     area_id: profile?.area_id || null,
+    phone: profile?.phone || '',
   });
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export default function Profile() {
         first_name: profile.first_name || '',
         last_name: profile.last_name || '',
         area_id: profile.area_id || null,
+        phone: profile.phone || '',
       });
       setPreviewUrl(profile.avatar_url);
     }
@@ -122,6 +125,7 @@ export default function Profile() {
           first_name: validated.first_name,
           last_name: validated.last_name,
           area_id: validated.area_id,
+          phone: validated.phone || null,
         })
         .eq('id', user.id);
 
@@ -295,6 +299,25 @@ export default function Profile() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 Área ou departamento ao qual você pertence
+              </p>
+            </div>
+
+            {/* Phone Number */}
+            <div className="space-y-2">
+              <Label htmlFor="phone">Telefone (WhatsApp)</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="+5511999999999"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                className={errors.phone ? 'border-destructive' : ''}
+              />
+              {errors.phone && (
+                <p className="text-sm text-destructive">{errors.phone}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Formato internacional: +[código país][DDD][número]. Ex: +5511999999999
               </p>
             </div>
 

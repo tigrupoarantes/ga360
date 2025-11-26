@@ -40,6 +40,7 @@ interface UserProfile {
   is_active: boolean;
   email?: string;
   roles?: string[];
+  phone?: string | null;
 }
 
 interface UserEditDialogProps {
@@ -53,6 +54,7 @@ interface UserEditDialogProps {
     area_id: string | null;
     is_active: boolean;
     roles: string[];
+    phone?: string | null;
   }) => Promise<void>;
 }
 
@@ -62,6 +64,7 @@ const userSchema = z.object({
   area_id: z.union([z.string(), z.null()]),
   is_active: z.boolean(),
   roles: z.array(z.string()).min(1, { message: 'Selecione pelo menos um role' }),
+  phone: z.string().trim().regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }).nullable().or(z.literal('')),
 });
 
 const availableRoles = [
@@ -87,6 +90,7 @@ export function UserEditDialog({
     area_id: null as string | null,
     is_active: true,
     roles: [] as string[],
+    phone: '',
   });
 
   useEffect(() => {
@@ -97,6 +101,7 @@ export function UserEditDialog({
         area_id: user.area_id,
         is_active: user.is_active,
         roles: user.roles || [],
+        phone: user.phone || '',
       });
       setErrors({});
     }
@@ -114,6 +119,7 @@ export function UserEditDialog({
         area_id: string | null;
         is_active: boolean;
         roles: string[];
+        phone?: string | null;
       };
       await onSave(validated);
       onOpenChange(false);
@@ -217,6 +223,27 @@ export function UserEditDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Phone Number */}
+            <div className="space-y-2">
+              <Label htmlFor="phone">Telefone (WhatsApp)</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="+5511999999999"
+                value={formData.phone}
+                onChange={(e) =>
+                  setFormData({ ...formData, phone: e.target.value })
+                }
+                className={errors.phone ? 'border-destructive' : ''}
+              />
+              {errors.phone && (
+                <p className="text-sm text-destructive">{errors.phone}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Formato: +[código][DDD][número]. Ex: +5511999999999
+              </p>
             </div>
 
             {/* Roles */}

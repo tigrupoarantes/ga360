@@ -22,6 +22,15 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    // Check if WhatsApp is enabled
+    const { data: whatsappConfig } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'whatsapp_config')
+      .maybeSingle();
+
+    const whatsappEnabled = whatsappConfig?.value?.enabled || false;
+
     const now = new Date();
     const oneDayFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
@@ -73,10 +82,10 @@ serve(async (req) => {
             continue;
           }
 
-          // Get participants
+          // Get participants with phone numbers
           const { data: participants, error: participantsError } = await supabase
             .from('meeting_participants')
-            .select('user_id, profiles(id, first_name, last_name)')
+            .select('user_id, profiles(id, first_name, last_name, phone)')
             .eq('meeting_id', meeting.id);
 
           if (participantsError || !participants || participants.length === 0) {
@@ -92,6 +101,7 @@ serve(async (req) => {
             return {
               email: user.email,
               name: `${participant.profiles.first_name} ${participant.profiles.last_name}`,
+              phone: participant.profiles.phone,
             };
           });
 
@@ -175,6 +185,25 @@ serve(async (req) => {
 
             results.oneDayReminders += successful;
             console.log(`Sent ${successful} 1-day reminders for meeting ${meeting.id}`);
+
+            // Send WhatsApp reminders if enabled
+            if (whatsappEnabled) {
+              const participantsWithPhone = validEmails.filter(p => p.phone);
+              if (participantsWithPhone.length > 0) {
+                try {
+                  await supabase.functions.invoke('send-whatsapp-reminder', {
+                    body: {
+                      meetingId: meeting.id,
+                      reminderType: '1_day',
+                      participants: participantsWithPhone,
+                    }
+                  });
+                  console.log(`WhatsApp reminders sent for meeting ${meeting.id}`);
+                } catch (whatsappError) {
+                  console.error('Error sending WhatsApp reminders:', whatsappError);
+                }
+              }
+            }
           }
         } catch (error: any) {
           console.error(`Error processing 1-day reminder for meeting ${meeting.id}:`, error);
@@ -200,10 +229,10 @@ serve(async (req) => {
             continue;
           }
 
-          // Get participants
+          // Get participants with phone numbers
           const { data: participants, error: participantsError } = await supabase
             .from('meeting_participants')
-            .select('user_id, profiles(id, first_name, last_name)')
+            .select('user_id, profiles(id, first_name, last_name, phone)')
             .eq('meeting_id', meeting.id);
 
           if (participantsError || !participants || participants.length === 0) {
@@ -219,6 +248,7 @@ serve(async (req) => {
             return {
               email: user.email,
               name: `${participant.profiles.first_name} ${participant.profiles.last_name}`,
+              phone: participant.profiles.phone,
             };
           });
 
@@ -310,6 +340,25 @@ serve(async (req) => {
 
             results.oneHourReminders += successful;
             console.log(`Sent ${successful} 1-hour reminders for meeting ${meeting.id}`);
+
+            // Send WhatsApp reminders if enabled
+            if (whatsappEnabled) {
+              const participantsWithPhone = validEmails.filter(p => p.phone);
+              if (participantsWithPhone.length > 0) {
+                try {
+                  await supabase.functions.invoke('send-whatsapp-reminder', {
+                    body: {
+                      meetingId: meeting.id,
+                      reminderType: '1_hour',
+                      participants: participantsWithPhone,
+                    }
+                  });
+                  console.log(`WhatsApp reminders sent for meeting ${meeting.id}`);
+                } catch (whatsappError) {
+                  console.error('Error sending WhatsApp reminders:', whatsappError);
+                }
+              }
+            }
           }
         } catch (error: any) {
           console.error(`Error processing 1-hour reminder for meeting ${meeting.id}:`, error);
