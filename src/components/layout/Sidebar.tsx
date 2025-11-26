@@ -64,7 +64,8 @@ export function Sidebar() {
     ? `${profile.first_name[0]}${profile.last_name[0]}`.toUpperCase()
     : 'U';
 
-  const roleDisplay = role === 'ceo' ? 'CEO'
+  const roleDisplay = role === 'super_admin' ? 'Super Admin'
+    : role === 'ceo' ? 'CEO'
     : role === 'diretor' ? 'Diretor'
     : role === 'gerente' ? 'Gerente'
     : 'Colaborador';
@@ -123,7 +124,7 @@ export function Sidebar() {
             </NavLink>
           ))}
 
-          <RoleGuard roles={['ceo']}>
+          <RoleGuard roles={['ceo', 'super_admin']}>
             <div className="my-4 border-t border-sidebar-border" />
             {ceoNavigation.map((item) => (
               <NavLink
