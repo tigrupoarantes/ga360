@@ -25,6 +25,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Hierarquia de prioridade das roles (índice menor = maior prioridade)
+const ROLE_PRIORITY: Record<string, number> = {
+  super_admin: 0,
+  ceo: 1,
+  diretor: 2,
+  gerente: 3,
+  colaborador: 4,
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -48,36 +57,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Hierarquia de prioridade das roles (índice menor = maior prioridade)
-  const ROLE_PRIORITY: Record<string, number> = {
-    super_admin: 0,
-    ceo: 1,
-    diretor: 2,
-    gerente: 3,
-    colaborador: 4,
-  };
-
   const fetchRole = async (userId: string) => {
     try {
+      console.log('🔍 Buscando roles para userId:', userId);
+      
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', userId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Erro ao buscar roles:', error);
+        throw error;
+      }
+      
+      console.log('✅ Roles encontradas no banco:', data);
       
       if (data && data.length > 0) {
-        // Se houver múltiplas roles, selecionar a de maior prioridade
-        const sortedRoles = data
-          .map(r => r.role)
-          .sort((a, b) => (ROLE_PRIORITY[a] ?? 99) - (ROLE_PRIORITY[b] ?? 99));
+        // Extrair roles
+        const roles = data.map(r => r.role as string);
+        console.log('📋 Roles extraídas:', roles);
         
-        setRole(sortedRoles[0]); // Role de maior prioridade
+        // Ordenar por prioridade
+        const sortedRoles = roles.sort((a, b) => {
+          const priorityA = ROLE_PRIORITY[a] ?? 99;
+          const priorityB = ROLE_PRIORITY[b] ?? 99;
+          console.log(`⚖️ Comparando: ${a}(prioridade ${priorityA}) vs ${b}(prioridade ${priorityB})`);
+          return priorityA - priorityB;
+        });
+        
+        console.log('🎯 Roles ordenadas:', sortedRoles);
+        console.log('✨ Role selecionada (maior prioridade):', sortedRoles[0]);
+        
+        setRole(sortedRoles[0]);
       } else {
+        console.log('⚠️ Nenhuma role encontrada para o usuário');
         setRole(null);
       }
     } catch (error) {
-      console.error('Error fetching role:', error);
+      console.error('💥 Error fetching role:', error);
+      setRole(null);
     }
   };
 
