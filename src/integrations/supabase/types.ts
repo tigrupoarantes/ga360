@@ -469,6 +469,42 @@ export type Database = {
           },
         ]
       }
+      user_permissions: {
+        Row: {
+          can_create: boolean
+          can_delete: boolean
+          can_edit: boolean
+          can_view: boolean
+          created_at: string | null
+          id: string
+          module: Database["public"]["Enums"]["system_module"]
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          can_create?: boolean
+          can_delete?: boolean
+          can_edit?: boolean
+          can_view?: boolean
+          created_at?: string | null
+          id?: string
+          module: Database["public"]["Enums"]["system_module"]
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          can_create?: boolean
+          can_delete?: boolean
+          can_edit?: boolean
+          can_view?: boolean
+          created_at?: string | null
+          id?: string
+          module?: Database["public"]["Enums"]["system_module"]
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -495,6 +531,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      has_permission: {
+        Args: {
+          _action: string
+          _module: Database["public"]["Enums"]["system_module"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -505,6 +549,16 @@ export type Database = {
     }
     Enums: {
       app_role: "ceo" | "diretor" | "gerente" | "colaborador" | "super_admin"
+      system_module:
+        | "dashboard_executivo"
+        | "dashboard_pessoal"
+        | "meetings"
+        | "calendar"
+        | "tasks"
+        | "processes"
+        | "trade"
+        | "reports"
+        | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -633,6 +687,17 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["ceo", "diretor", "gerente", "colaborador", "super_admin"],
+      system_module: [
+        "dashboard_executivo",
+        "dashboard_pessoal",
+        "meetings",
+        "calendar",
+        "tasks",
+        "processes",
+        "trade",
+        "reports",
+        "admin",
+      ],
     },
   },
 } as const

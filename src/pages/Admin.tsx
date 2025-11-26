@@ -1,7 +1,7 @@
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building2, Users, Settings } from "lucide-react";
+import { Building2, Users, Settings, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function Admin() {
@@ -17,12 +17,20 @@ export default function Admin() {
       bgColor: 'bg-primary/10',
     },
     {
-      title: 'Usuários e Permissões',
-      description: 'Administre usuários, roles e acessos',
+      title: 'Usuários',
+      description: 'Administre usuários e roles',
       icon: Users,
       href: '/admin/users',
       color: 'text-accent',
       bgColor: 'bg-accent/10',
+    },
+    {
+      title: 'Permissões Granulares',
+      description: 'Configure permissões detalhadas por usuário',
+      icon: Shield,
+      href: '/admin/permissions',
+      color: 'text-secondary',
+      bgColor: 'bg-secondary/10',
     },
     {
       title: 'Configurações Gerais',
