@@ -530,6 +530,180 @@ export type Database = {
         }
         Relationships: []
       }
+      trade_industries: {
+        Row: {
+          cnpj: string | null
+          company_id: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          logo_url: string | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          cnpj?: string | null
+          company_id?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          logo_url?: string | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          cnpj?: string | null
+          company_id?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          logo_url?: string | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_industries_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trade_inventory_movements: {
+        Row: {
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          material_id: string
+          movement_date: string
+          movement_type: string
+          notes: string | null
+          quantity: number
+          received_by: string | null
+          reference_number: string | null
+          unit_cost: number | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          material_id: string
+          movement_date?: string
+          movement_type: string
+          notes?: string | null
+          quantity: number
+          received_by?: string | null
+          reference_number?: string | null
+          unit_cost?: number | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          material_id?: string
+          movement_date?: string
+          movement_type?: string
+          notes?: string | null
+          quantity?: number
+          received_by?: string | null
+          reference_number?: string | null
+          unit_cost?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_inventory_movements_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_inventory_movements_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "trade_inventory_balance"
+            referencedColumns: ["material_id"]
+          },
+          {
+            foreignKeyName: "trade_inventory_movements_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "trade_materials"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trade_materials: {
+        Row: {
+          category: string
+          created_at: string | null
+          description: string | null
+          id: string
+          image_url: string | null
+          industry_id: string | null
+          is_active: boolean | null
+          name: string
+          unit: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          industry_id?: string | null
+          is_active?: boolean | null
+          name: string
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          industry_id?: string | null
+          is_active?: boolean | null
+          name?: string
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_materials_industry_id_fkey"
+            columns: ["industry_id"]
+            isOneToOne: false
+            referencedRelation: "trade_industries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_materials_industry_id_fkey"
+            columns: ["industry_id"]
+            isOneToOne: false
+            referencedRelation: "trade_inventory_balance"
+            referencedColumns: ["industry_id"]
+          },
+        ]
+      }
       user_permissions: {
         Row: {
           can_create: boolean
@@ -589,7 +763,30 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      trade_inventory_balance: {
+        Row: {
+          category: string | null
+          company_id: string | null
+          current_stock: number | null
+          industry_id: string | null
+          industry_logo: string | null
+          industry_name: string | null
+          last_movement: string | null
+          material_id: string | null
+          material_image: string | null
+          material_name: string | null
+          unit: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_inventory_movements_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       has_permission: {
