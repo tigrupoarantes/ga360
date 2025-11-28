@@ -585,6 +585,7 @@ export type Database = {
       }
       trade_inventory_movements: {
         Row: {
+          client_name: string | null
           company_id: string | null
           created_at: string | null
           created_by: string | null
@@ -599,6 +600,7 @@ export type Database = {
           unit_cost: number | null
         }
         Insert: {
+          client_name?: string | null
           company_id?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -613,6 +615,7 @@ export type Database = {
           unit_cost?: number | null
         }
         Update: {
+          client_name?: string | null
           company_id?: string | null
           created_at?: string | null
           created_by?: string | null

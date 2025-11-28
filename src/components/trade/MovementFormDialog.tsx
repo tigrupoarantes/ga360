@@ -22,6 +22,7 @@ const movementSchema = z.object({
   movement_date: z.string().min(1, "Selecione a data"),
   reference_number: z.string().optional(),
   notes: z.string().optional(),
+  client_name: z.string().optional(),
 });
 
 type MovementFormValues = z.infer<typeof movementSchema>;
@@ -103,6 +104,7 @@ export function MovementFormDialog({ open, onOpenChange, movementType }: Movemen
       movement_date: format(new Date(), "yyyy-MM-dd"),
       reference_number: "",
       notes: "",
+      client_name: "",
     },
   });
 
@@ -133,6 +135,7 @@ export function MovementFormDialog({ open, onOpenChange, movementType }: Movemen
           movement_date: values.movement_date,
           reference_number: values.reference_number || null,
           notes: values.notes || null,
+          client_name: values.client_name || null,
           created_by: user?.id,
           received_by: user?.id,
         });
@@ -145,7 +148,7 @@ export function MovementFormDialog({ open, onOpenChange, movementType }: Movemen
           : "Saída registrada com sucesso" 
       });
 
-      queryClient.invalidateQueries({ queryKey: ["trade-inventory-movements"] });
+      queryClient.invalidateQueries({ queryKey: ["trade-movements-history"] });
       queryClient.invalidateQueries({ queryKey: ["trade-inventory-balance"] });
       onOpenChange(false);
       form.reset();
@@ -288,6 +291,22 @@ export function MovementFormDialog({ open, onOpenChange, movementType }: Movemen
                 </FormItem>
               )}
             />
+
+            {movementType === "saida" && (
+              <FormField
+                control={form.control}
+                name="client_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Cliente / Destino</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Nome do cliente ou PDV" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}
