@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { supabase } from '@/integrations/supabase/client';
 import { z } from 'zod';
+import { Loader2, UserPlus } from 'lucide-react';
 
 const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }),
@@ -24,11 +27,25 @@ const signupSchema = z.object({
   path: ['confirmPassword'],
 });
 
+interface InviteData {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  roles: string[];
+  company_id: string | null;
+  area_id: string | null;
+}
+
 export default function Auth() {
   const { user, signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [inviteData, setInviteData] = useState<InviteData | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('login');
 
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [signupData, setSignupData] = useState({
@@ -38,6 +55,46 @@ export default function Auth() {
     password: '',
     confirmPassword: '',
   });
+
+  // Check for invite token in URL
+  useEffect(() => {
+    const inviteToken = searchParams.get('invite');
+    if (inviteToken) {
+      validateInvite(inviteToken);
+    }
+  }, [searchParams]);
+
+  const validateInvite = async (token: string) => {
+    setInviteLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('user_invites')
+        .select('id, email, first_name, last_name, roles, company_id, area_id')
+        .eq('token', token)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .single();
+
+      if (error || !data) {
+        console.error('Invalid or expired invite:', error);
+        return;
+      }
+
+      setInviteData(data);
+      setSignupData({
+        firstName: data.first_name || '',
+        lastName: data.last_name || '',
+        email: data.email,
+        password: '',
+        confirmPassword: '',
+      });
+      setActiveTab('signup');
+    } catch (error) {
+      console.error('Error validating invite:', error);
+    } finally {
+      setInviteLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -82,6 +139,14 @@ export default function Auth() {
         validated.lastName
       );
 
+      if (!error && inviteData) {
+        // Mark invite as accepted
+        await supabase
+          .from('user_invites')
+          .update({ status: 'accepted' })
+          .eq('id', inviteData.id);
+      }
+
       if (!error) {
         setSignupData({
           firstName: '',
@@ -106,6 +171,14 @@ export default function Auth() {
     }
   };
 
+  if (inviteLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
       <Card className="w-full max-w-md border-border/50 shadow-lg">
@@ -114,7 +187,17 @@ export default function Auth() {
           <CardDescription>Gestão Estratégica Integrada</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="login" className="w-full">
+          {inviteData && (
+            <Alert className="mb-4 border-primary/20 bg-primary/5">
+              <UserPlus className="h-4 w-4" />
+              <AlertDescription>
+                Você foi convidado para se cadastrar como <strong>{inviteData.roles.join(', ')}</strong>.
+                Complete seu cadastro abaixo.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="login">Login</TabsTrigger>
               <TabsTrigger value="signup">Cadastro</TabsTrigger>
@@ -210,6 +293,7 @@ export default function Auth() {
                     value={signupData.email}
                     onChange={(e) => setSignupData({ ...signupData, email: e.target.value })}
                     className={errors.email ? 'border-destructive' : ''}
+                    readOnly={!!inviteData}
                   />
                   {errors.email && (
                     <p className="text-sm text-destructive">{errors.email}</p>
