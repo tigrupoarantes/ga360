@@ -13,6 +13,7 @@ import Processes from "./pages/Processes";
 import Tasks from "./pages/Tasks";
 import Calendar from "./pages/Calendar";
 import Trade from "./pages/Trade";
+import Goals from "./pages/Goals";
 import Reports from "./pages/Reports";
 import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
@@ -96,6 +97,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Trade />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/metas"
+              element={
+                <ProtectedRoute>
+                  <Goals />
                 </ProtectedRoute>
               }
             />
