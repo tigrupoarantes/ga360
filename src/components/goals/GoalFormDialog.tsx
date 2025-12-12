@@ -125,7 +125,13 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
     setLoading(true);
 
     const payload = {
-      ...data,
+      name: data.name,
+      target_value: data.target_value,
+      current_value: data.current_value,
+      start_date: data.start_date,
+      end_date: data.end_date,
+      period_type: data.period_type,
+      status: data.status,
       company_id: selectedCompanyId,
       goal_type_id: data.goal_type_id || null,
       area_id: data.area_id || null,
