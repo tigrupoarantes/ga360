@@ -87,7 +87,8 @@ export function GoalTypeFormDialog({ open, onOpenChange, goalType, onSuccess }: 
     setLoading(true);
 
     const payload = {
-      ...data,
+      name: data.name,
+      calculation_type: data.calculation_type,
       company_id: selectedCompanyId,
       description: data.description || null,
       unit: data.unit || null,
