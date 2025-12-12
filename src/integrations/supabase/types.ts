@@ -707,6 +707,69 @@ export type Database = {
           },
         ]
       }
+      user_invites: {
+        Row: {
+          area_id: string | null
+          company_id: string | null
+          created_at: string | null
+          email: string
+          expires_at: string
+          first_name: string | null
+          id: string
+          invited_by: string | null
+          last_name: string | null
+          roles: string[]
+          status: string
+          token: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          area_id?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          email: string
+          expires_at?: string
+          first_name?: string | null
+          id?: string
+          invited_by?: string | null
+          last_name?: string | null
+          roles?: string[]
+          status?: string
+          token?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          area_id?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          email?: string
+          expires_at?: string
+          first_name?: string | null
+          id?: string
+          invited_by?: string | null
+          last_name?: string | null
+          roles?: string[]
+          status?: string
+          token?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_invites_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_invites_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_permissions: {
         Row: {
           can_create: boolean
