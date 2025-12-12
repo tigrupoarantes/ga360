@@ -89,6 +89,220 @@ export type Database = {
         }
         Relationships: []
       }
+      csv_import_templates: {
+        Row: {
+          column_mapping: Json
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          date_format: string | null
+          delimiter: string | null
+          has_header: boolean | null
+          id: string
+          is_default: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          column_mapping: Json
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          date_format?: string | null
+          delimiter?: string | null
+          has_header?: boolean | null
+          id?: string
+          is_default?: boolean | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          column_mapping?: Json
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          date_format?: string | null
+          delimiter?: string | null
+          has_header?: boolean | null
+          id?: string
+          is_default?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "csv_import_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goal_entries: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          entry_date: string
+          goal_id: string
+          id: string
+          notes: string | null
+          value: number
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          entry_date: string
+          goal_id: string
+          id?: string
+          notes?: string | null
+          value: number
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          entry_date?: string
+          goal_id?: string
+          id?: string
+          notes?: string | null
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goal_entries_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goal_types: {
+        Row: {
+          calculation_type: string | null
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          unit: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          calculation_type?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          calculation_type?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goal_types_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goals: {
+        Row: {
+          area_id: string | null
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          current_value: number | null
+          end_date: string
+          goal_type_id: string | null
+          id: string
+          name: string
+          notes: string | null
+          period_type: string | null
+          responsible_id: string | null
+          start_date: string
+          status: string | null
+          target_value: number
+          updated_at: string | null
+        }
+        Insert: {
+          area_id?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          current_value?: number | null
+          end_date: string
+          goal_type_id?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          period_type?: string | null
+          responsible_id?: string | null
+          start_date: string
+          status?: string | null
+          target_value: number
+          updated_at?: string | null
+        }
+        Update: {
+          area_id?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          current_value?: number | null
+          end_date?: string
+          goal_type_id?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          period_type?: string | null
+          responsible_id?: string | null
+          start_date?: string
+          status?: string | null
+          target_value?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goals_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goals_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goals_goal_type_id_fkey"
+            columns: ["goal_type_id"]
+            isOneToOne: false
+            referencedRelation: "goal_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_atas: {
         Row: {
           action_items: Json | null

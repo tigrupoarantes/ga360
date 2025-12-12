@@ -28,6 +28,7 @@ const navigation = [
   { name: 'Processos', href: '/processos', icon: FileText },
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
   { name: 'Calendário', href: '/calendario', icon: Calendar },
+  { name: 'Portal de Metas', href: '/metas', icon: Target },
   { name: 'Trade Marketing', href: '/trade', icon: ShoppingCart },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
 ];
