@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.send-invite]
 verify_jwt = true
+
+[functions.elevenlabs-scribe-token]
+verify_jwt = true

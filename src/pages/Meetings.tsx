@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
 export default function Meetings() {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [meetings, setMeetings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,28 +52,9 @@ export default function Meetings() {
     fetchMeetings();
   }, []);
 
-  const handleStart = async (meetingId: string) => {
-    try {
-      const { error } = await supabase
-        .from('meetings')
-        .update({ status: 'Em Andamento' })
-        .eq('id', meetingId);
-
-      if (error) throw error;
-
-      toast({
-        title: "Reunião iniciada",
-        description: "A reunião foi marcada como em andamento.",
-      });
-
-      fetchMeetings();
-    } catch (error: any) {
-      toast({
-        title: "Erro",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+  const handleStart = (meetingId: string) => {
+    // Navigate to meeting execution page
+    navigate(`/reunioes/${meetingId}/executar`);
   };
 
   const handleViewAta = (meetingId: string) => {

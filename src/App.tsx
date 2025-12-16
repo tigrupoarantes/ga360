@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import DashboardMe from "./pages/DashboardMe";
 import Meetings from "./pages/Meetings";
+import MeetingExecution from "./pages/MeetingExecution";
 import Processes from "./pages/Processes";
 import Tasks from "./pages/Tasks";
 import Calendar from "./pages/Calendar";
@@ -67,6 +68,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Meetings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/reunioes/:id/executar"
+                element={
+                  <ProtectedRoute>
+                    <MeetingExecution />
                   </ProtectedRoute>
                 }
               />

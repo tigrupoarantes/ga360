@@ -303,6 +303,44 @@ export type Database = {
           },
         ]
       }
+      meeting_agendas: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          is_completed: boolean
+          meeting_id: string
+          order_index: number
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          is_completed?: boolean
+          meeting_id: string
+          order_index?: number
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          is_completed?: boolean
+          meeting_id?: string
+          order_index?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_agendas_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meeting_atas: {
         Row: {
           action_items: Json | null
@@ -590,6 +628,7 @@ export type Database = {
           area_id: string | null
           created_at: string
           created_by: string | null
+          description: string | null
           duration_minutes: number
           id: string
           meeting_room_id: string | null
@@ -608,6 +647,7 @@ export type Database = {
           area_id?: string | null
           created_at?: string
           created_by?: string | null
+          description?: string | null
           duration_minutes?: number
           id?: string
           meeting_room_id?: string | null
@@ -626,6 +666,7 @@ export type Database = {
           area_id?: string | null
           created_at?: string
           created_by?: string | null
+          description?: string | null
           duration_minutes?: number
           id?: string
           meeting_room_id?: string | null
