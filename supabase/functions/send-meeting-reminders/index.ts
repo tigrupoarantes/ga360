@@ -9,6 +9,25 @@ const corsHeaders = {
 
 const resend = new Resend(Deno.env.get('RESEND_API_KEY'));
 
+// Platform configuration for meeting integrations
+const platformConfig = {
+  teams: {
+    name: 'Microsoft Teams',
+    shortName: 'Teams',
+    color: '#0078D4',
+  },
+  zoom: {
+    name: 'Zoom',
+    shortName: 'Zoom',
+    color: '#2D8CFF',
+  },
+  google_meet: {
+    name: 'Google Meet',
+    shortName: 'Meet',
+    color: '#00897B',
+  },
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -38,7 +57,7 @@ serve(async (req) => {
     // Find meetings that need 1-day reminders (scheduled between now and 24 hours from now)
     const { data: oneDayMeetings, error: oneDayError } = await supabase
       .from('meetings')
-      .select('id, title, scheduled_at, meeting_rooms(name, teams_link)')
+      .select('id, title, scheduled_at, meeting_rooms(name, teams_link, platform)')
       .gte('scheduled_at', now.toISOString())
       .lte('scheduled_at', oneDayFromNow.toISOString())
       .eq('status', 'Agendada');
@@ -50,7 +69,7 @@ serve(async (req) => {
     // Find meetings that need 1-hour reminders (scheduled between now and 1 hour from now)
     const { data: oneHourMeetings, error: oneHourError } = await supabase
       .from('meetings')
-      .select('id, title, scheduled_at, meeting_rooms(name, teams_link)')
+      .select('id, title, scheduled_at, meeting_rooms(name, teams_link, platform)')
       .gte('scheduled_at', now.toISOString())
       .lte('scheduled_at', oneHourFromNow.toISOString())
       .eq('status', 'Agendada');
@@ -121,6 +140,10 @@ serve(async (req) => {
             minute: '2-digit'
           });
 
+          const meetingRoom = meeting.meeting_rooms?.[0];
+          const platform = meetingRoom?.platform || 'teams';
+          const platformInfo = platformConfig[platform as keyof typeof platformConfig] || platformConfig.teams;
+
           // Send emails
           const emailResults = await Promise.allSettled(
             validEmails.map(({ email, name }) => 
@@ -147,10 +170,10 @@ serve(async (req) => {
                           <strong>📅 Data e Hora:</strong><br/>
                           ${meetingDate}
                         </p>
-                        ${meeting.meeting_rooms && meeting.meeting_rooms[0] ? `
+                        ${meetingRoom ? `
                           <p style="color: #666; margin: 10px 0;">
                             <strong>📍 Local:</strong><br/>
-                            ${meeting.meeting_rooms[0].name}
+                            ${meetingRoom.name} (${platformInfo.name})
                           </p>
                         ` : ''}
                       </div>
@@ -268,6 +291,10 @@ serve(async (req) => {
             minute: '2-digit'
           });
 
+          const meetingRoom = meeting.meeting_rooms?.[0];
+          const platform = meetingRoom?.platform || 'teams';
+          const platformInfo = platformConfig[platform as keyof typeof platformConfig] || platformConfig.teams;
+
           // Send emails
           const emailResults = await Promise.allSettled(
             validEmails.map(({ email, name }) => 
@@ -294,16 +321,16 @@ serve(async (req) => {
                           <strong>📅 Data e Hora:</strong><br/>
                           ${meetingDate}
                         </p>
-                        ${meeting.meeting_rooms && meeting.meeting_rooms[0] ? `
+                        ${meetingRoom ? `
                           <p style="color: #666; margin: 10px 0;">
                             <strong>📍 Local:</strong><br/>
-                            ${meeting.meeting_rooms[0].name}
+                            ${meetingRoom.name} (${platformInfo.name})
                           </p>
-                          ${meeting.meeting_rooms[0].teams_link ? `
+                          ${meetingRoom.teams_link ? `
                             <p style="margin: 20px 0;">
-                              <a href="${meeting.meeting_rooms[0].teams_link}" 
-                                 style="background: #0B3D91; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">
-                                🔗 Entrar na Reunião
+                              <a href="${meetingRoom.teams_link}" 
+                                 style="background: ${platformInfo.color}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">
+                                🔗 Entrar via ${platformInfo.shortName}
                               </a>
                             </p>
                           ` : ''}

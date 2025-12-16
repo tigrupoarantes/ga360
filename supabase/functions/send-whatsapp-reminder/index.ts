@@ -21,6 +21,22 @@ interface WhatsAppConfig {
   };
 }
 
+// Platform configuration for meeting integrations
+const platformConfig = {
+  teams: {
+    name: 'Microsoft Teams',
+    shortName: 'Teams',
+  },
+  zoom: {
+    name: 'Zoom',
+    shortName: 'Zoom',
+  },
+  google_meet: {
+    name: 'Google Meet',
+    shortName: 'Meet',
+  },
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -62,10 +78,10 @@ serve(async (req) => {
       );
     }
 
-    // Get meeting details
+    // Get meeting details with platform info
     const { data: meeting, error: meetingError } = await supabase
       .from('meetings')
-      .select('id, title, scheduled_at, meeting_rooms(name, teams_link)')
+      .select('id, title, scheduled_at, meeting_rooms(name, teams_link, platform)')
       .eq('id', meetingId)
       .single();
 
@@ -81,6 +97,10 @@ serve(async (req) => {
       minute: '2-digit'
     });
 
+    const meetingRoom = meeting.meeting_rooms?.[0];
+    const platform = meetingRoom?.platform || 'teams';
+    const platformInfo = platformConfig[platform as keyof typeof platformConfig] || platformConfig.teams;
+
     let successCount = 0;
     const errors: string[] = [];
 
@@ -93,8 +113,8 @@ serve(async (req) => {
         }
 
         const message = reminderType === '1_hour'
-          ? `🔔 *URGENTE: Reunião em 1 hora*\n\nOlá, ${participant.name}!\n\nSua reunião começa em aproximadamente 1 hora!\n\n📋 *${meeting.title}*\n📅 ${meetingDate}\n${meeting.meeting_rooms?.[0] ? `📍 ${meeting.meeting_rooms[0].name}\n` : ''}\n_Este é um lembrete automático do sistema GA 360._`
-          : `🔔 *Lembrete de Reunião*\n\nOlá, ${participant.name}!\n\nVocê tem uma reunião agendada para amanhã:\n\n📋 *${meeting.title}*\n📅 ${meetingDate}\n${meeting.meeting_rooms?.[0] ? `📍 ${meeting.meeting_rooms[0].name}\n` : ''}\nPor favor, prepare-se para a reunião.\n\n_Este é um lembrete automático do sistema GA 360._`;
+          ? `🔔 *URGENTE: Reunião em 1 hora*\n\nOlá, ${participant.name}!\n\nSua reunião começa em aproximadamente 1 hora!\n\n📋 *${meeting.title}*\n📅 ${meetingDate}\n${meetingRoom ? `📍 ${meetingRoom.name} (${platformInfo.name})\n` : ''}\n_Este é um lembrete automático do sistema GA 360._`
+          : `🔔 *Lembrete de Reunião*\n\nOlá, ${participant.name}!\n\nVocê tem uma reunião agendada para amanhã:\n\n📋 *${meeting.title}*\n📅 ${meetingDate}\n${meetingRoom ? `📍 ${meetingRoom.name} (${platformInfo.name})\n` : ''}\nPor favor, prepare-se para a reunião.\n\n_Este é um lembrete automático do sistema GA 360._`;
 
         if (config.provider === 'twilio') {
           await sendTwilioMessage(config.twilio!, participant.phone, message);

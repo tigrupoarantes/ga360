@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, Users, Clock, ExternalLink, Play, FileText, Upload, MessageSquare, UserPlus, Edit, Trash2 } from "lucide-react";
+import { Calendar, Users, Clock, Play, FileText, Upload, MessageSquare, UserPlus, Edit, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { RecordingUpload } from "./RecordingUpload";
@@ -10,7 +10,9 @@ import { TranscriptionViewer } from "./TranscriptionViewer";
 import { MeetingParticipants } from "./MeetingParticipants";
 import { RecurringMeetingActionDialog } from "./RecurringMeetingActionDialog";
 import { MeetingEditDialog } from "./MeetingEditDialog";
+import { MeetingPlatformButton } from "./MeetingPlatformButton";
 import { supabase } from "@/integrations/supabase/client";
+import { MeetingPlatform } from "@/lib/platformConfig";
 
 interface MeetingCardProps {
   meeting: {
@@ -23,7 +25,11 @@ interface MeetingCardProps {
     ai_mode: string;
     recurrence_type?: string;
     parent_meeting_id?: string;
-    meeting_rooms?: { name: string; teams_link: string };
+    meeting_rooms?: { 
+      name: string; 
+      teams_link: string;
+      platform?: string;
+    };
     areas?: { name: string };
   };
   onStart?: (id: string) => void;
@@ -50,7 +56,6 @@ export function MeetingCard({ meeting, onStart, onViewAta, onUpdate }: MeetingCa
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editScope, setEditScope] = useState<"single" | "future">("single");
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [actionDialogOpen, setActionDialogOpen] = useState(false);
   const [actionType, setActionType] = useState<"edit" | "cancel">("edit");
   
@@ -90,7 +95,6 @@ export function MeetingCard({ meeting, onStart, onViewAta, onUpdate }: MeetingCa
 
         if (error) throw error;
       } else {
-        // Cancel this and all future meetings
         const { data: currentMeeting, error: fetchError } = await supabase
           .from("meetings")
           .select("parent_meeting_id, scheduled_at")
@@ -116,6 +120,8 @@ export function MeetingCard({ meeting, onStart, onViewAta, onUpdate }: MeetingCa
       console.error("Error canceling meeting:", error);
     }
   };
+
+  const platform = (meeting.meeting_rooms?.platform || "teams") as MeetingPlatform;
 
   return (
     <Card className="hover:shadow-lg transition-shadow">
@@ -186,14 +192,11 @@ export function MeetingCard({ meeting, onStart, onViewAta, onUpdate }: MeetingCa
           )}
           
           {meeting.meeting_rooms && (
-            <Button
+            <MeetingPlatformButton
+              platform={platform}
+              link={meeting.meeting_rooms.teams_link}
               size="sm"
-              className="bg-[#0078D4] hover:bg-[#106EBE] text-white"
-              onClick={() => window.open(meeting.meeting_rooms!.teams_link, "_blank")}
-            >
-              <ExternalLink className="h-4 w-4 mr-1" />
-              Microsoft Teams
-            </Button>
+            />
           )}
           
           <Button

@@ -6,10 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit, ExternalLink, Search } from "lucide-react";
+import { Plus, Edit, Search, Video } from "lucide-react";
 import { MeetingRoomFormDialog } from "./MeetingRoomFormDialog";
+import { MeetingPlatformButton } from "./MeetingPlatformButton";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { platformConfig, MeetingPlatform } from "@/lib/platformConfig";
 
 interface MeetingRoom {
   id: string;
@@ -17,6 +19,7 @@ interface MeetingRoom {
   company_id: string;
   area_id?: string | null;
   teams_link: string;
+  platform?: string;
   is_active: boolean;
   description?: string | null;
   companies?: {
@@ -40,6 +43,7 @@ export function MeetingRoomsList() {
   const [filterCompany, setFilterCompany] = useState<string>("all");
   const [filterArea, setFilterArea] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterPlatform, setFilterPlatform] = useState<string>("all");
 
   const fetchRooms = async () => {
     try {
@@ -123,10 +127,12 @@ export function MeetingRoomsList() {
       const matchesStatus = filterStatus === "all" || 
         (filterStatus === "active" && room.is_active) ||
         (filterStatus === "inactive" && !room.is_active);
+      const matchesPlatform = filterPlatform === "all" || 
+        (room.platform || "teams") === filterPlatform;
       
-      return matchesSearch && matchesCompany && matchesArea && matchesStatus;
+      return matchesSearch && matchesCompany && matchesArea && matchesStatus && matchesPlatform;
     });
-  }, [rooms, searchTerm, filterCompany, filterArea, filterStatus]);
+  }, [rooms, searchTerm, filterCompany, filterArea, filterStatus, filterPlatform]);
 
   if (loading) {
     return <div className="p-6">Carregando...</div>;
@@ -145,7 +151,7 @@ export function MeetingRoomsList() {
       {/* Filtros */}
       <Card>
         <CardContent className="p-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
             <div className="space-y-2">
               <Label htmlFor="search">Buscar por nome</Label>
               <div className="relative">
@@ -195,6 +201,21 @@ export function MeetingRoomsList() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="platform">Plataforma</Label>
+              <Select value={filterPlatform} onValueChange={setFilterPlatform}>
+                <SelectTrigger id="platform">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="teams">Microsoft Teams</SelectItem>
+                  <SelectItem value="zoom">Zoom</SelectItem>
+                  <SelectItem value="google_meet">Google Meet</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger id="status">
@@ -212,62 +233,78 @@ export function MeetingRoomsList() {
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredRooms.map((room) => (
-          <Card key={room.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <CardTitle className="text-lg">{room.name}</CardTitle>
-                <Badge variant={room.is_active ? "default" : "secondary"}>
-                  {room.is_active ? "Ativa" : "Inativa"}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {room.description && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Descrição</p>
-                  <p className="text-sm line-clamp-2">{room.description}</p>
+        {filteredRooms.map((room) => {
+          const platform = (room.platform || "teams") as MeetingPlatform;
+          const platformInfo = platformConfig[platform];
+          
+          return (
+            <Card key={room.id}>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-lg">{room.name}</CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge 
+                      variant="outline"
+                      style={{ 
+                        borderColor: platformInfo.color,
+                        color: platformInfo.color,
+                      }}
+                    >
+                      <Video className="h-3 w-3 mr-1" />
+                      {platformInfo.shortName}
+                    </Badge>
+                    <Badge variant={room.is_active ? "default" : "secondary"}>
+                      {room.is_active ? "Ativa" : "Inativa"}
+                    </Badge>
+                  </div>
                 </div>
-              )}
-              <div>
-                <p className="text-sm text-muted-foreground">Empresa</p>
-                <p className="font-medium">{room.companies?.name || "N/A"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Área/Setor</p>
-                <p className="font-medium">{room.areas?.name || "Sem área definida"}</p>
-              </div>
-              <div className="flex items-center gap-2 pt-2 pb-2">
-                <Label htmlFor={`active-${room.id}`} className="text-sm">
-                  {room.is_active ? "Ativa" : "Inativa"}
-                </Label>
-                <Switch
-                  id={`active-${room.id}`}
-                  checked={room.is_active}
-                  onCheckedChange={() => handleToggleActive(room.id, room.is_active)}
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleEdit(room)}
-                >
-                  <Edit className="h-4 w-4 mr-1" />
-                  Editar
-                </Button>
-                <Button
-                  size="sm"
-                  className="bg-[#0078D4] hover:bg-[#106EBE] text-white"
-                  onClick={() => window.open(room.teams_link, "_blank")}
-                >
-                  <ExternalLink className="h-4 w-4 mr-1" />
-                  Teams
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {room.description && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Descrição</p>
+                    <p className="text-sm line-clamp-2">{room.description}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm text-muted-foreground">Empresa</p>
+                  <p className="font-medium">{room.companies?.name || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Área/Setor</p>
+                  <p className="font-medium">{room.areas?.name || "Sem área definida"}</p>
+                </div>
+                <div className="flex items-center gap-2 pt-2 pb-2">
+                  <Label htmlFor={`active-${room.id}`} className="text-sm">
+                    {room.is_active ? "Ativa" : "Inativa"}
+                  </Label>
+                  <Switch
+                    id={`active-${room.id}`}
+                    checked={room.is_active}
+                    onCheckedChange={() => handleToggleActive(room.id, room.is_active)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleEdit(room)}
+                  >
+                    <Edit className="h-4 w-4 mr-1" />
+                    Editar
+                  </Button>
+                  <MeetingPlatformButton
+                    platform={platform}
+                    link={room.teams_link}
+                    size="sm"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {filteredRooms.length === 0 && rooms.length > 0 && (

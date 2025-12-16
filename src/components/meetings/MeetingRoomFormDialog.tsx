@@ -8,6 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { platformConfig, validatePlatformLink, getPlatformErrorMessage, MeetingPlatform } from "@/lib/platformConfig";
+import { Video } from "lucide-react";
 
 interface MeetingRoom {
   id?: string;
@@ -15,6 +17,7 @@ interface MeetingRoom {
   company_id: string;
   area_id?: string | null;
   teams_link: string;
+  platform?: string;
   is_active?: boolean;
   description?: string | null;
 }
@@ -55,6 +58,7 @@ export function MeetingRoomFormDialog({
       company_id: "",
       area_id: null,
       teams_link: "",
+      platform: "teams",
       is_active: true,
       description: "",
     }
@@ -99,6 +103,7 @@ export function MeetingRoomFormDialog({
     if (room) {
       setFormData({
         ...room,
+        platform: (room.platform as MeetingPlatform) || "teams",
         description: room.description || "",
       });
     } else {
@@ -107,6 +112,7 @@ export function MeetingRoomFormDialog({
         company_id: "",
         area_id: null,
         teams_link: "",
+        platform: "teams",
         is_active: true,
         description: "",
       });
@@ -114,22 +120,14 @@ export function MeetingRoomFormDialog({
     setLinkError("");
   }, [room, open]);
 
-  const validateTeamsLink = (link: string): boolean => {
-    const teamsPatterns = [
-      /^https:\/\/teams\.microsoft\.com\/l\/meetup-join\/.+/,
-      /^https:\/\/teams\.live\.com\/meet\/.+/,
-      /^https:\/\/[a-z0-9-]+\.teams\.microsoft\.com\/.+/,
-    ];
-    
-    return teamsPatterns.some(pattern => pattern.test(link));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validar link do Teams
-    if (!validateTeamsLink(formData.teams_link)) {
-      setLinkError("Link inválido. Use um link do Microsoft Teams válido.");
+    const platform = (formData.platform || "teams") as MeetingPlatform;
+    
+    // Validar link baseado na plataforma
+    if (!validatePlatformLink(platform, formData.teams_link)) {
+      setLinkError(getPlatformErrorMessage(platform));
       return;
     }
     
@@ -139,17 +137,17 @@ export function MeetingRoomFormDialog({
     try {
       const roomData = {
         name: formData.name,
-        company: "", // Manter temporariamente para retrocompatibilidade
+        company: "",
         company_id: formData.company_id,
         area_id: formData.area_id || null,
-        team: "", // Manter vazio para retrocompatibilidade
+        team: "",
         teams_link: formData.teams_link,
+        platform: platform,
         is_active: formData.is_active,
         description: formData.description || null,
       };
 
       if (room?.id) {
-        // Update existing room
         const { error } = await supabase
           .from("meeting_rooms")
           .update(roomData)
@@ -162,7 +160,6 @@ export function MeetingRoomFormDialog({
           description: "Sala de reunião atualizada com sucesso.",
         });
       } else {
-        // Create new room
         const { error } = await supabase.from("meeting_rooms").insert(roomData);
 
         if (error) throw error;
@@ -185,6 +182,9 @@ export function MeetingRoomFormDialog({
       setLoading(false);
     }
   };
+
+  const currentPlatform = formData.platform || "teams";
+  const currentPlatformConfig = platformConfig[currentPlatform];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -263,8 +263,56 @@ export function MeetingRoomFormDialog({
             )}
           </div>
 
+          {/* Platform Selector */}
           <div>
-            <Label htmlFor="teams_link">Link do Microsoft Teams *</Label>
+            <Label htmlFor="platform">Plataforma de Videoconferência *</Label>
+            <Select
+              value={currentPlatform}
+              onValueChange={(value: MeetingPlatform) => {
+                setFormData({ ...formData, platform: value, teams_link: "" });
+                setLinkError("");
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="teams">
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-full" 
+                      style={{ backgroundColor: platformConfig.teams.color }}
+                    />
+                    Microsoft Teams
+                  </div>
+                </SelectItem>
+                <SelectItem value="zoom">
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-full" 
+                      style={{ backgroundColor: platformConfig.zoom.color }}
+                    />
+                    Zoom
+                  </div>
+                </SelectItem>
+                <SelectItem value="google_meet">
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-full" 
+                      style={{ backgroundColor: platformConfig.google_meet.color }}
+                    />
+                    Google Meet
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="teams_link" className="flex items-center gap-2">
+              <Video className="h-4 w-4" style={{ color: currentPlatformConfig.color }} />
+              Link do {currentPlatformConfig.name} *
+            </Label>
             <Input
               id="teams_link"
               type="url"
@@ -273,7 +321,7 @@ export function MeetingRoomFormDialog({
                 setFormData({ ...formData, teams_link: e.target.value });
                 setLinkError("");
               }}
-              placeholder="https://teams.microsoft.com/l/meetup-join/..."
+              placeholder={currentPlatformConfig.placeholder}
               required
               className={linkError ? "border-destructive" : ""}
             />
