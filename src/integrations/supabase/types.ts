@@ -56,6 +56,48 @@ export type Database = {
           },
         ]
       }
+      badges: {
+        Row: {
+          category: string
+          color: string
+          condition_type: string
+          condition_value: number
+          created_at: string | null
+          description: string | null
+          icon: string
+          id: string
+          is_active: boolean | null
+          name: string
+          points_required: number | null
+        }
+        Insert: {
+          category?: string
+          color?: string
+          condition_type: string
+          condition_value?: number
+          created_at?: string | null
+          description?: string | null
+          icon?: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          points_required?: number | null
+        }
+        Update: {
+          category?: string
+          color?: string
+          condition_type?: string
+          condition_value?: number
+          created_at?: string | null
+          description?: string | null
+          icon?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          points_required?: number | null
+        }
+        Relationships: []
+      }
       companies: {
         Row: {
           cnpj: string | null
@@ -707,6 +749,39 @@ export type Database = {
           },
         ]
       }
+      points_history: {
+        Row: {
+          action_type: string
+          created_at: string | null
+          description: string | null
+          id: string
+          points: number
+          reference_id: string | null
+          reference_type: string | null
+          user_id: string
+        }
+        Insert: {
+          action_type: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          points: number
+          reference_id?: string | null
+          reference_type?: string | null
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          points?: number
+          reference_id?: string | null
+          reference_type?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           area_id: string | null
@@ -965,6 +1040,35 @@ export type Database = {
           },
         ]
       }
+      user_badges: {
+        Row: {
+          badge_id: string
+          earned_at: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          badge_id: string
+          earned_at?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          badge_id?: string
+          earned_at?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_badges_badge_id_fkey"
+            columns: ["badge_id"]
+            isOneToOne: false
+            referencedRelation: "badges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_invites: {
         Row: {
           area_id: string | null
@@ -1064,6 +1168,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_points: {
+        Row: {
+          created_at: string | null
+          id: string
+          last_activity_date: string | null
+          level: number
+          points: number
+          streak_days: number
+          total_points_earned: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          last_activity_date?: string | null
+          level?: number
+          points?: number
+          streak_days?: number
+          total_points_earned?: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          last_activity_date?: string | null
+          level?: number
+          points?: number
+          streak_days?: number
+          total_points_earned?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -1113,6 +1253,18 @@ export type Database = {
       }
     }
     Functions: {
+      add_user_points: {
+        Args: {
+          p_action_type: string
+          p_description?: string
+          p_points: number
+          p_reference_id?: string
+          p_reference_type?: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      calculate_level: { Args: { total_points: number }; Returns: number }
       has_permission: {
         Args: {
           _action: string
