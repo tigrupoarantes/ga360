@@ -4,12 +4,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { z } from 'zod';
-import { Loader2, UserPlus } from 'lucide-react';
+import { Loader2, UserPlus, Target, ArrowRight } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }),
@@ -46,6 +46,7 @@ export default function Auth() {
   const [inviteData, setInviteData] = useState<InviteData | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('login');
+  const [mounted, setMounted] = useState(false);
 
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [signupData, setSignupData] = useState({
@@ -55,6 +56,10 @@ export default function Auth() {
     password: '',
     confirmPassword: '',
   });
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Check for invite token in URL
   useEffect(() => {
@@ -173,150 +178,252 @@ export default function Auth() {
 
   if (inviteLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="auth-page">
+        <div className="auth-gradient" />
+        <div className="auth-orbs">
+          <div className="auth-orb auth-orb-1" />
+          <div className="auth-orb auth-orb-2" />
+          <div className="auth-orb auth-orb-3" />
+        </div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary relative z-10" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
-      <Card className="w-full max-w-md border-border/50 shadow-lg">
-        <CardHeader className="space-y-2 text-center">
-          <CardTitle className="text-3xl font-bold text-primary">GA 360</CardTitle>
-          <CardDescription>Gestão Estratégica Integrada</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <div className="auth-page">
+      {/* Animated Background */}
+      <div className="auth-gradient" />
+      <div className="auth-orbs">
+        <div className="auth-orb auth-orb-1" />
+        <div className="auth-orb auth-orb-2" />
+        <div className="auth-orb auth-orb-3" />
+      </div>
+
+      {/* Content */}
+      <div className={cn(
+        "relative z-10 w-full max-w-md px-6 transition-all duration-700",
+        mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+      )}>
+        {/* Logo */}
+        <div className={cn(
+          "text-center mb-8 transition-all duration-700 delay-100",
+          mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+        )}>
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary shadow-lg shadow-primary/25 mb-4 transition-transform hover:scale-105">
+            <Target className="h-8 w-8 text-primary-foreground" />
+          </div>
+          <h1 className="text-4xl font-semibold tracking-tight text-foreground">
+            GA 360
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Gestão Estratégica Integrada
+          </p>
+        </div>
+
+        {/* Card */}
+        <div className={cn(
+          "auth-card transition-all duration-700 delay-200",
+          mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+        )}>
           {inviteData && (
-            <Alert className="mb-4 border-primary/20 bg-primary/5">
+            <Alert className="mb-6 border-primary/20 bg-primary/5 animate-fade-in">
               <UserPlus className="h-4 w-4" />
               <AlertDescription>
                 Você foi convidado para se cadastrar como <strong>{inviteData.roles.join(', ')}</strong>.
-                Complete seu cadastro abaixo.
               </AlertDescription>
             </Alert>
           )}
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="signup">Cadastro</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 bg-secondary/50 p-1 rounded-xl">
+              <TabsTrigger 
+                value="login" 
+                className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all"
+              >
+                Login
+              </TabsTrigger>
+              <TabsTrigger 
+                value="signup"
+                className="rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all"
+              >
+                Cadastro
+              </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="login" className="space-y-4 mt-4">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email">Email</Label>
+            <TabsContent value="login" className="mt-6">
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div className={cn(
+                  "space-y-2 transition-all duration-500 delay-300",
+                  mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+                )}>
+                  <Label htmlFor="login-email" className="text-sm font-medium">
+                    Email
+                  </Label>
                   <Input
                     id="login-email"
                     type="email"
                     placeholder="seu@email.com"
                     value={loginData.email}
                     onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
-                    className={errors.email ? 'border-destructive' : ''}
+                    className={cn(
+                      "h-12 bg-secondary/30 border-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/20 transition-all",
+                      errors.email && 'ring-2 ring-destructive/50'
+                    )}
                   />
                   {errors.email && (
-                    <p className="text-sm text-destructive">{errors.email}</p>
+                    <p className="text-sm text-destructive animate-fade-in">{errors.email}</p>
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">Senha</Label>
+                <div className={cn(
+                  "space-y-2 transition-all duration-500 delay-400",
+                  mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+                )}>
+                  <Label htmlFor="login-password" className="text-sm font-medium">
+                    Senha
+                  </Label>
                   <Input
                     id="login-password"
                     type="password"
                     placeholder="••••••••"
                     value={loginData.password}
                     onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
-                    className={errors.password ? 'border-destructive' : ''}
+                    className={cn(
+                      "h-12 bg-secondary/30 border-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/20 transition-all",
+                      errors.password && 'ring-2 ring-destructive/50'
+                    )}
                   />
                   {errors.password && (
-                    <p className="text-sm text-destructive">{errors.password}</p>
+                    <p className="text-sm text-destructive animate-fade-in">{errors.password}</p>
                   )}
                 </div>
 
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? 'Entrando...' : 'Entrar'}
-                </Button>
+                <div className={cn(
+                  "pt-2 transition-all duration-500 delay-500",
+                  mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+                )}>
+                  <Button 
+                    type="submit" 
+                    className="w-full h-12 rounded-xl font-medium text-base group transition-all hover:shadow-lg hover:shadow-primary/25" 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <>
+                        Entrar
+                        <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                      </>
+                    )}
+                  </Button>
+                </div>
 
-                <Button
-                  type="button"
-                  variant="link"
-                  className="w-full text-muted-foreground"
-                  onClick={() => navigate('/reset-password')}
-                >
-                  Esqueceu sua senha?
-                </Button>
+                <div className={cn(
+                  "transition-all duration-500 delay-[600ms]",
+                  mounted ? "opacity-100" : "opacity-0"
+                )}>
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="w-full text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => navigate('/reset-password')}
+                  >
+                    Esqueceu sua senha?
+                  </Button>
+                </div>
               </form>
             </TabsContent>
 
-            <TabsContent value="signup" className="space-y-4 mt-4">
-              <form onSubmit={handleSignup} className="space-y-4">
+            <TabsContent value="signup" className="mt-6">
+              <form onSubmit={handleSignup} className="space-y-5">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="signup-firstName">Nome</Label>
+                    <Label htmlFor="signup-firstName" className="text-sm font-medium">
+                      Nome
+                    </Label>
                     <Input
                       id="signup-firstName"
                       type="text"
                       placeholder="João"
                       value={signupData.firstName}
                       onChange={(e) => setSignupData({ ...signupData, firstName: e.target.value })}
-                      className={errors.firstName ? 'border-destructive' : ''}
+                      className={cn(
+                        "h-12 bg-secondary/30 border-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/20",
+                        errors.firstName && 'ring-2 ring-destructive/50'
+                      )}
                     />
                     {errors.firstName && (
-                      <p className="text-sm text-destructive">{errors.firstName}</p>
+                      <p className="text-sm text-destructive animate-fade-in">{errors.firstName}</p>
                     )}
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="signup-lastName">Sobrenome</Label>
+                    <Label htmlFor="signup-lastName" className="text-sm font-medium">
+                      Sobrenome
+                    </Label>
                     <Input
                       id="signup-lastName"
                       type="text"
                       placeholder="Silva"
                       value={signupData.lastName}
                       onChange={(e) => setSignupData({ ...signupData, lastName: e.target.value })}
-                      className={errors.lastName ? 'border-destructive' : ''}
+                      className={cn(
+                        "h-12 bg-secondary/30 border-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/20",
+                        errors.lastName && 'ring-2 ring-destructive/50'
+                      )}
                     />
                     {errors.lastName && (
-                      <p className="text-sm text-destructive">{errors.lastName}</p>
+                      <p className="text-sm text-destructive animate-fade-in">{errors.lastName}</p>
                     )}
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
+                  <Label htmlFor="signup-email" className="text-sm font-medium">
+                    Email
+                  </Label>
                   <Input
                     id="signup-email"
                     type="email"
                     placeholder="seu@email.com"
                     value={signupData.email}
                     onChange={(e) => setSignupData({ ...signupData, email: e.target.value })}
-                    className={errors.email ? 'border-destructive' : ''}
+                    className={cn(
+                      "h-12 bg-secondary/30 border-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/20",
+                      errors.email && 'ring-2 ring-destructive/50'
+                    )}
                     readOnly={!!inviteData}
                   />
                   {errors.email && (
-                    <p className="text-sm text-destructive">{errors.email}</p>
+                    <p className="text-sm text-destructive animate-fade-in">{errors.email}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-password">Senha</Label>
+                  <Label htmlFor="signup-password" className="text-sm font-medium">
+                    Senha
+                  </Label>
                   <Input
                     id="signup-password"
                     type="password"
                     placeholder="••••••••"
                     value={signupData.password}
                     onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
-                    className={errors.password ? 'border-destructive' : ''}
+                    className={cn(
+                      "h-12 bg-secondary/30 border-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/20",
+                      errors.password && 'ring-2 ring-destructive/50'
+                    )}
                   />
                   {errors.password && (
-                    <p className="text-sm text-destructive">{errors.password}</p>
+                    <p className="text-sm text-destructive animate-fade-in">{errors.password}</p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-confirmPassword">Confirmar Senha</Label>
+                  <Label htmlFor="signup-confirmPassword" className="text-sm font-medium">
+                    Confirmar Senha
+                  </Label>
                   <Input
                     id="signup-confirmPassword"
                     type="password"
@@ -325,21 +432,45 @@ export default function Auth() {
                     onChange={(e) =>
                       setSignupData({ ...signupData, confirmPassword: e.target.value })
                     }
-                    className={errors.confirmPassword ? 'border-destructive' : ''}
+                    className={cn(
+                      "h-12 bg-secondary/30 border-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/20",
+                      errors.confirmPassword && 'ring-2 ring-destructive/50'
+                    )}
                   />
                   {errors.confirmPassword && (
-                    <p className="text-sm text-destructive">{errors.confirmPassword}</p>
+                    <p className="text-sm text-destructive animate-fade-in">{errors.confirmPassword}</p>
                   )}
                 </div>
 
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? 'Criando conta...' : 'Criar conta'}
-                </Button>
+                <div className="pt-2">
+                  <Button 
+                    type="submit" 
+                    className="w-full h-12 rounded-xl font-medium text-base group transition-all hover:shadow-lg hover:shadow-primary/25" 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <>
+                        Criar conta
+                        <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                      </>
+                    )}
+                  </Button>
+                </div>
               </form>
             </TabsContent>
           </Tabs>
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Footer */}
+        <p className={cn(
+          "text-center text-sm text-muted-foreground mt-8 transition-all duration-700 delay-700",
+          mounted ? "opacity-100" : "opacity-0"
+        )}>
+          © {new Date().getFullYear()} Grupo Arantes. Todos os direitos reservados.
+        </p>
+      </div>
     </div>
   );
 }
