@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RealtimeTranscription } from '@/components/meetings/RealtimeTranscription';
+import { MeetingPlatformLinkButton } from '@/components/meetings/MeetingPlatformButton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,16 +13,15 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { MeetingPlatform } from '@/lib/platformConfig';
 import { 
   ArrowLeft, 
   Clock, 
   MapPin, 
   Users, 
   CheckCircle2,
-  Video,
   FileText,
   Loader2,
-  ExternalLink
 } from 'lucide-react';
 
 interface Meeting {
@@ -35,6 +35,7 @@ interface Meeting {
   meeting_rooms?: {
     name: string;
     teams_link: string | null;
+    platform?: string;
   };
   areas?: {
     name: string;
@@ -78,7 +79,7 @@ export default function MeetingExecution() {
         .from('meetings')
         .select(`
           *,
-          meeting_rooms (name, teams_link),
+          meeting_rooms (name, teams_link, platform),
           areas (name)
         `)
         .eq('id', id)
@@ -221,12 +222,6 @@ export default function MeetingExecution() {
     }
   };
 
-  const openTeamsLink = () => {
-    if (meeting?.meeting_rooms?.teams_link) {
-      window.open(meeting.meeting_rooms.teams_link, '_blank');
-    }
-  };
-
   if (loading) {
     return (
       <MainLayout>
@@ -253,6 +248,7 @@ export default function MeetingExecution() {
   const completedItems = agendaItems.filter(item => item.is_completed).length;
   const totalItems = agendaItems.length;
   const confirmedParticipants = participants.filter(p => p.confirmation_status === 'confirmed').length;
+  const platform = (meeting.meeting_rooms?.platform || 'teams') as MeetingPlatform;
 
   return (
     <MainLayout>
@@ -289,13 +285,10 @@ export default function MeetingExecution() {
             >
               {meeting.status}
             </Badge>
-            {meeting.meeting_rooms?.teams_link && (
-              <Button variant="outline" onClick={openTeamsLink}>
-                <Video className="mr-2 h-4 w-4" />
-                Abrir Teams
-                <ExternalLink className="ml-2 h-3 w-3" />
-              </Button>
-            )}
+            <MeetingPlatformLinkButton
+              platform={platform}
+              link={meeting.meeting_rooms?.teams_link}
+            />
             <Button 
               onClick={handleFinalizeMeeting}
               disabled={finalizingMeeting}
