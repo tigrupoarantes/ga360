@@ -43,7 +43,7 @@ import {
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-import { TrendingUp, Gamepad2 } from "lucide-react";
+import { TrendingUp, Gamepad2, Crosshair } from "lucide-react";
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -52,6 +52,7 @@ const navigation = [
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
   { name: 'Calendário', href: '/calendario', icon: Calendar },
   { name: 'Metas', href: '/metas', icon: Target },
+  { name: 'OKRs', href: '/okrs', icon: Crosshair },
   { name: 'Trade', href: '/trade', icon: ShoppingCart },
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Gamificação', href: '/gamificacao', icon: Gamepad2 },
