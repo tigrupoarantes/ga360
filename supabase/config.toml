@@ -32,3 +32,9 @@ verify_jwt = true
 
 [functions.elevenlabs-scribe-token]
 verify_jwt = true
+
+[functions.send-email-smtp]
+verify_jwt = true
+
+[functions.test-smtp-connection]
+verify_jwt = true

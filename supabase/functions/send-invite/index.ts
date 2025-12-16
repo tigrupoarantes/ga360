@@ -9,6 +9,52 @@ const corsHeaders = {
 
 const resend = new Resend(Deno.env.get('RESEND_API_KEY'));
 
+interface EmailConfig {
+  enabled: boolean;
+  provider: 'resend' | 'smtp';
+  from_name: string;
+  from_email: string;
+  reply_to: string;
+  smtp: {
+    host: string;
+    port: string;
+    user: string;
+    encryption: 'tls' | 'ssl' | 'none';
+  };
+}
+
+async function sendViaSmtp(
+  to: string,
+  subject: string,
+  html: string,
+  config: EmailConfig
+): Promise<void> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  
+  const response = await fetch(`${supabaseUrl}/functions/v1/send-email-smtp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${supabaseKey}`,
+    },
+    body: JSON.stringify({
+      to,
+      subject,
+      html,
+      from_name: config.from_name,
+      from_email: config.from_email || config.smtp.user,
+      reply_to: config.reply_to,
+      smtp_config: config.smtp,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to send email via SMTP');
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -37,80 +83,92 @@ serve(async (req) => {
       throw new Error('Invite not found');
     }
 
-    // Get email config for custom from address
-    const { data: emailConfig } = await supabase
+    // Get email config
+    const { data: emailConfigData } = await supabase
       .from('system_settings')
       .select('value')
       .eq('key', 'email_config')
       .single();
 
-    const fromName = emailConfig?.value?.from_name || 'GA 360';
+    const emailConfig = emailConfigData?.value as unknown as EmailConfig | null;
+    const fromName = emailConfig?.from_name || 'GA 360';
+    const provider = emailConfig?.provider || 'resend';
     const registrationUrl = `${appUrl}/auth?invite=${invite.token}`;
 
-    // Send invitation email
-    const { error: emailError } = await resend.emails.send({
-      from: `${fromName} <onboarding@resend.dev>`,
-      to: [email],
-      subject: `Convite para ${fromName}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">${fromName}</h1>
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 24px;">${fromName}</h1>
+        </div>
+        
+        <div style="background: #ffffff; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+          <h2 style="color: #0B3D91; margin-top: 0;">Olá${firstName ? `, ${firstName}` : ''}!</h2>
+          
+          <p style="color: #333; line-height: 1.6;">
+            Você foi convidado para participar do sistema <strong>${fromName}</strong>.
+          </p>
+          
+          <div style="background: #f6f7f9; padding: 20px; border-radius: 6px; margin: 20px 0;">
+            <p style="color: #666; margin: 0;">
+              <strong>📧 Email:</strong> ${email}<br/>
+              ${roles ? `<strong>👤 Perfil:</strong> ${roles.join(', ')}` : ''}
+            </p>
           </div>
           
-          <div style="background: #ffffff; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <h2 style="color: #0B3D91; margin-top: 0;">Olá${firstName ? `, ${firstName}` : ''}!</h2>
-            
-            <p style="color: #333; line-height: 1.6;">
-              Você foi convidado para participar do sistema <strong>${fromName}</strong>.
-            </p>
-            
-            <div style="background: #f6f7f9; padding: 20px; border-radius: 6px; margin: 20px 0;">
-              <p style="color: #666; margin: 0;">
-                <strong>📧 Email:</strong> ${email}<br/>
-                ${roles ? `<strong>👤 Perfil:</strong> ${roles.join(', ')}` : ''}
-              </p>
-            </div>
-            
-            <p style="color: #333; line-height: 1.6;">
-              Para ativar sua conta, clique no botão abaixo:
-            </p>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${registrationUrl}" 
-                 style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); 
-                        color: white; 
-                        padding: 14px 28px; 
-                        text-decoration: none; 
-                        border-radius: 6px; 
-                        font-weight: bold;
-                        display: inline-block;">
-                Ativar Minha Conta
-              </a>
-            </div>
-            
-            <p style="color: #666; font-size: 14px; line-height: 1.6;">
-              Se o botão não funcionar, copie e cole este link no seu navegador:<br/>
-              <a href="${registrationUrl}" style="color: #0B3D91; word-break: break-all;">
-                ${registrationUrl}
-              </a>
-            </p>
-            
-            <p style="color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
-              Este convite expira em 7 dias.<br/>
-              Se você não solicitou este convite, ignore este email.
-            </p>
+          <p style="color: #333; line-height: 1.6;">
+            Para ativar sua conta, clique no botão abaixo:
+          </p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${registrationUrl}" 
+               style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); 
+                      color: white; 
+                      padding: 14px 28px; 
+                      text-decoration: none; 
+                      border-radius: 6px; 
+                      font-weight: bold;
+                      display: inline-block;">
+              Ativar Minha Conta
+            </a>
           </div>
+          
+          <p style="color: #666; font-size: 14px; line-height: 1.6;">
+            Se o botão não funcionar, copie e cole este link no seu navegador:<br/>
+            <a href="${registrationUrl}" style="color: #0B3D91; word-break: break-all;">
+              ${registrationUrl}
+            </a>
+          </p>
+          
+          <p style="color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+            Este convite expira em 7 dias.<br/>
+            Se você não solicitou este convite, ignore este email.
+          </p>
         </div>
-      `,
-    });
+      </div>
+    `;
 
-    if (emailError) {
-      console.error('Resend error:', emailError);
-      throw new Error('Failed to send email');
+    const subject = `Convite para ${fromName}`;
+
+    // Send email based on provider
+    if (provider === 'smtp' && emailConfig?.smtp?.host) {
+      console.log('Sending invite via SMTP');
+      await sendViaSmtp(email, subject, emailHtml, emailConfig);
+    } else {
+      console.log('Sending invite via Resend');
+      const { error: emailError } = await resend.emails.send({
+        from: `${fromName} <onboarding@resend.dev>`,
+        to: [email],
+        subject,
+        html: emailHtml,
+      });
+
+      if (emailError) {
+        console.error('Resend error:', emailError);
+        throw new Error('Failed to send email');
+      }
     }
 
-    console.log(`Invite email sent successfully to ${email}`);
+    console.log(`Invite email sent successfully to ${email} via ${provider}`);
 
     return new Response(
       JSON.stringify({ 

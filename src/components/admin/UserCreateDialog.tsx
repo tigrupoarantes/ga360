@@ -47,7 +47,7 @@ const formSchema = z.object({
   last_name: z.string().min(2, 'Sobrenome deve ter no mínimo 2 caracteres'),
   area_id: z.union([z.string(), z.null()]),
   roles: z.array(z.string()).min(1, 'Selecione pelo menos um role'),
-  phone: z.string().trim().regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }).nullable().or(z.literal('')),
+  phone: z.string().trim().min(1, 'Telefone é obrigatório').regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -203,7 +203,7 @@ export function UserCreateDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="phone">Telefone (WhatsApp)</Label>
+            <Label htmlFor="phone">Telefone (WhatsApp) *</Label>
             <Input
               id="phone"
               type="tel"
