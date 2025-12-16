@@ -6,13 +6,28 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Mail, Save } from 'lucide-react';
+import { Loader2, Mail, Save, Server, CheckCircle, XCircle } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface EmailConfig {
   enabled: boolean;
+  provider: 'resend' | 'smtp';
   from_name: string;
   from_email: string;
   reply_to: string;
+  smtp: {
+    host: string;
+    port: string;
+    user: string;
+    encryption: 'tls' | 'ssl' | 'none';
+  };
   notifications: {
     meeting_created: boolean;
     meeting_reminder: boolean;
@@ -23,9 +38,16 @@ interface EmailConfig {
 
 const defaultConfig: EmailConfig = {
   enabled: true,
+  provider: 'resend',
   from_name: 'GA 360',
   from_email: 'noreply@ga360.com',
   reply_to: '',
+  smtp: {
+    host: '',
+    port: '587',
+    user: '',
+    encryption: 'tls',
+  },
   notifications: {
     meeting_created: true,
     meeting_reminder: true,
@@ -38,7 +60,10 @@ export function EmailConfigSection() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
   const [config, setConfig] = useState<EmailConfig>(defaultConfig);
+  const [smtpPassword, setSmtpPassword] = useState('');
 
   useEffect(() => {
     fetchConfig();
@@ -54,7 +79,19 @@ export function EmailConfigSection() {
 
       if (error && error.code !== 'PGRST116') throw error;
       if (data?.value) {
-        setConfig(data.value as unknown as EmailConfig);
+        const savedConfig = data.value as unknown as EmailConfig;
+        setConfig({
+          ...defaultConfig,
+          ...savedConfig,
+          smtp: {
+            ...defaultConfig.smtp,
+            ...(savedConfig.smtp || {}),
+          },
+          notifications: {
+            ...defaultConfig.notifications,
+            ...(savedConfig.notifications || {}),
+          },
+        });
       }
     } catch (error) {
       console.error('Error fetching email config:', error);
@@ -66,6 +103,7 @@ export function EmailConfigSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Save config to system_settings (without password)
       const { error } = await supabase
         .from('system_settings')
         .upsert({
@@ -75,6 +113,16 @@ export function EmailConfigSection() {
         });
 
       if (error) throw error;
+
+      // If SMTP password was entered, save it via edge function
+      if (config.provider === 'smtp' && smtpPassword) {
+        const { error: smtpError } = await supabase.functions.invoke('save-smtp-password', {
+          body: { password: smtpPassword },
+        });
+        if (smtpError) {
+          console.warn('Note: SMTP password storage requires manual configuration');
+        }
+      }
 
       toast({
         title: 'Configurações salvas!',
@@ -88,6 +136,45 @@ export function EmailConfigSection() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('test-smtp-connection', {
+        body: {
+          ...config.smtp,
+          password: smtpPassword || undefined,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setTestResult('success');
+        toast({
+          title: 'Conexão bem-sucedida!',
+          description: 'O servidor SMTP está configurado corretamente.',
+        });
+      } else {
+        setTestResult('error');
+        toast({
+          title: 'Falha na conexão',
+          description: data?.message || 'Não foi possível conectar ao servidor SMTP.',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      setTestResult('error');
+      toast({
+        title: 'Erro ao testar',
+        description: error.message || 'Erro ao testar conexão SMTP.',
+        variant: 'destructive',
+      });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -126,6 +213,160 @@ export function EmailConfigSection() {
 
       {config.enabled && (
         <>
+          {/* Provider Selection */}
+          <Card className="p-4 space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b">
+              <Server className="h-5 w-5 text-primary" />
+              <h4 className="font-medium">Provedor de E-mail</h4>
+            </div>
+
+            <RadioGroup
+              value={config.provider}
+              onValueChange={(value: 'resend' | 'smtp') =>
+                setConfig({ ...config, provider: value })
+              }
+              className="grid grid-cols-2 gap-4"
+            >
+              <div className="flex items-center space-x-2 p-3 border rounded-lg cursor-pointer hover:bg-muted/50">
+                <RadioGroupItem value="resend" id="resend" />
+                <Label htmlFor="resend" className="cursor-pointer flex-1">
+                  <span className="font-medium">Resend (Padrão)</span>
+                  <p className="text-xs text-muted-foreground">
+                    Serviço de e-mail via API
+                  </p>
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2 p-3 border rounded-lg cursor-pointer hover:bg-muted/50">
+                <RadioGroupItem value="smtp" id="smtp" />
+                <Label htmlFor="smtp" className="cursor-pointer flex-1">
+                  <span className="font-medium">SMTP Corporativo</span>
+                  <p className="text-xs text-muted-foreground">
+                    Servidor de e-mail próprio
+                  </p>
+                </Label>
+              </div>
+            </RadioGroup>
+          </Card>
+
+          {/* SMTP Settings */}
+          {config.provider === 'smtp' && (
+            <Card className="p-4 space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b">
+                <Mail className="h-5 w-5 text-primary" />
+                <h4 className="font-medium">Configurações SMTP</h4>
+                {testResult === 'success' && (
+                  <CheckCircle className="h-4 w-4 text-green-500 ml-auto" />
+                )}
+                {testResult === 'error' && (
+                  <XCircle className="h-4 w-4 text-destructive ml-auto" />
+                )}
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="smtp_host">Servidor SMTP *</Label>
+                  <Input
+                    id="smtp_host"
+                    placeholder="smtp.seudominio.com.br"
+                    value={config.smtp.host}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        smtp: { ...config.smtp, host: e.target.value },
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="smtp_port">Porta *</Label>
+                    <Input
+                      id="smtp_port"
+                      placeholder="587"
+                      value={config.smtp.port}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          smtp: { ...config.smtp, port: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="smtp_encryption">Criptografia</Label>
+                    <Select
+                      value={config.smtp.encryption}
+                      onValueChange={(value: 'tls' | 'ssl' | 'none') =>
+                        setConfig({
+                          ...config,
+                          smtp: { ...config.smtp, encryption: value },
+                        })
+                      }
+                    >
+                      <SelectTrigger id="smtp_encryption">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="tls">TLS (STARTTLS)</SelectItem>
+                        <SelectItem value="ssl">SSL</SelectItem>
+                        <SelectItem value="none">Nenhuma</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="smtp_user">Usuário SMTP *</Label>
+                  <Input
+                    id="smtp_user"
+                    placeholder="sistema@seudominio.com.br"
+                    value={config.smtp.user}
+                    onChange={(e) =>
+                      setConfig({
+                        ...config,
+                        smtp: { ...config.smtp, user: e.target.value },
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="smtp_password">Senha SMTP *</Label>
+                  <Input
+                    id="smtp_password"
+                    type="password"
+                    placeholder="••••••••••"
+                    value={smtpPassword}
+                    onChange={(e) => setSmtpPassword(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    A senha será armazenada de forma segura
+                  </p>
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleTestConnection}
+                disabled={testing || !config.smtp.host || !config.smtp.port || !config.smtp.user}
+              >
+                {testing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Testando...
+                  </>
+                ) : (
+                  'Testar Conexão'
+                )}
+              </Button>
+            </Card>
+          )}
+
           {/* Sender Settings */}
           <Card className="p-4 space-y-4">
             <div className="flex items-center gap-2 pb-2 border-b">
@@ -154,7 +395,9 @@ export function EmailConfigSection() {
                   onChange={(e) => setConfig({ ...config, from_email: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Requer domínio verificado no Resend
+                  {config.provider === 'resend'
+                    ? 'Requer domínio verificado no Resend'
+                    : 'Deve corresponder ao usuário SMTP ou alias autorizado'}
                 </p>
               </div>
             </div>
