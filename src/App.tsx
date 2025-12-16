@@ -17,6 +17,7 @@ import Calendar from "./pages/Calendar";
 import Trade from "./pages/Trade";
 import Goals from "./pages/Goals";
 import Reports from "./pages/Reports";
+import Analytics from "./pages/Analytics";
 import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
@@ -116,6 +117,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Goals />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/analytics"
+                element={
+                  <ProtectedRoute>
+                    <Analytics />
                   </ProtectedRoute>
                 }
               />

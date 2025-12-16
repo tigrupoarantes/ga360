@@ -43,6 +43,8 @@ import {
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
+import { TrendingUp } from "lucide-react";
+
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Reuniões', href: '/reunioes', icon: Users },
@@ -51,6 +53,7 @@ const navigation = [
   { name: 'Calendário', href: '/calendario', icon: Calendar },
   { name: 'Metas', href: '/metas', icon: Target },
   { name: 'Trade', href: '/trade', icon: ShoppingCart },
+  { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
 ];
 
