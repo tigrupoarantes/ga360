@@ -18,6 +18,7 @@ import Trade from "./pages/Trade";
 import Goals from "./pages/Goals";
 import Reports from "./pages/Reports";
 import Analytics from "./pages/Analytics";
+import Gamification from "./pages/Gamification";
 import Admin from "./pages/Admin";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
@@ -125,6 +126,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Analytics />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/gamificacao"
+                element={
+                  <ProtectedRoute>
+                    <Gamification />
                   </ProtectedRoute>
                 }
               />
