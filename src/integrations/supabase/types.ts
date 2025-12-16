@@ -749,6 +749,176 @@ export type Database = {
           },
         ]
       }
+      okr_key_result_updates: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          key_result_id: string
+          new_value: number
+          notes: string | null
+          previous_value: number
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          key_result_id: string
+          new_value: number
+          notes?: string | null
+          previous_value: number
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          key_result_id?: string
+          new_value?: number
+          notes?: string | null
+          previous_value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "okr_key_result_updates_key_result_id_fkey"
+            columns: ["key_result_id"]
+            isOneToOne: false
+            referencedRelation: "okr_key_results"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      okr_key_results: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          current_value: number | null
+          description: string | null
+          id: string
+          objective_id: string
+          start_value: number | null
+          status: string
+          target_value: number
+          title: string
+          unit: string | null
+          updated_at: string | null
+          weight: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          current_value?: number | null
+          description?: string | null
+          id?: string
+          objective_id: string
+          start_value?: number | null
+          status?: string
+          target_value: number
+          title: string
+          unit?: string | null
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          current_value?: number | null
+          description?: string | null
+          id?: string
+          objective_id?: string
+          start_value?: number | null
+          status?: string
+          target_value?: number
+          title?: string
+          unit?: string | null
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "okr_key_results_objective_id_fkey"
+            columns: ["objective_id"]
+            isOneToOne: false
+            referencedRelation: "okr_objectives"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      okr_objectives: {
+        Row: {
+          area_id: string | null
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          end_date: string
+          id: string
+          level: string
+          owner_id: string | null
+          parent_id: string | null
+          progress: number | null
+          start_date: string
+          status: string
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          area_id?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_date: string
+          id?: string
+          level?: string
+          owner_id?: string | null
+          parent_id?: string | null
+          progress?: number | null
+          start_date: string
+          status?: string
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          area_id?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_date?: string
+          id?: string
+          level?: string
+          owner_id?: string | null
+          parent_id?: string | null
+          progress?: number | null
+          start_date?: string
+          status?: string
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "okr_objectives_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "okr_objectives_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "okr_objectives_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "okr_objectives"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       points_history: {
         Row: {
           action_type: string

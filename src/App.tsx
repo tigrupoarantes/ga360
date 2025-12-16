@@ -16,6 +16,7 @@ import Tasks from "./pages/Tasks";
 import Calendar from "./pages/Calendar";
 import Trade from "./pages/Trade";
 import Goals from "./pages/Goals";
+import OKRs from "./pages/OKRs";
 import Reports from "./pages/Reports";
 import Analytics from "./pages/Analytics";
 import Gamification from "./pages/Gamification";
@@ -118,6 +119,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Goals />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/okrs"
+                element={
+                  <ProtectedRoute>
+                    <OKRs />
                   </ProtectedRoute>
                 }
               />
