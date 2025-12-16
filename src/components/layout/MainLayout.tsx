@@ -1,6 +1,5 @@
 import { ReactNode } from "react";
-import { Sidebar } from "./Sidebar";
-import { TopBar } from "./TopBar";
+import { AppleNav } from "./AppleNav";
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -9,10 +8,9 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar />
-      <TopBar />
-      <main className="ml-64 pt-16">
-        <div className="p-6">
+      <AppleNav />
+      <main className="pt-14">
+        <div className="container-apple py-8">
           {children}
         </div>
       </main>
