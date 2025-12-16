@@ -139,8 +139,14 @@
     --sidebar-border: 0 0% 18%;
     --sidebar-ring: 211 100% 60%;
 
-    --glass-bg: rgba(0, 0, 0, 0.72);
-    --glass-border: rgba(255, 255, 255, 0.1);
+    /* Dark mode shadows - more subtle */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 24px 60px rgba(0, 0, 0, 0.6);
+
+    --glass-bg: rgba(28, 28, 30, 0.8);
+    --glass-border: rgba(255, 255, 255, 0.08);
   }
 }
 

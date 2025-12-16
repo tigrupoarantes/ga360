@@ -16,7 +16,6 @@ import {
   Search,
   Menu,
   X,
-  ChevronDown,
   Building2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +24,7 @@ import { useCompany } from "@/contexts/CompanyContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RoleGuard } from "@/components/auth/RoleGuard";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { 
   Select, 
   SelectContent, 
@@ -179,6 +179,9 @@ export function AppleNav() {
               >
                 <Search className="h-4 w-4" />
               </Button>
+
+              {/* Theme Toggle */}
+              <ThemeToggle />
 
               {/* User Menu */}
               <DropdownMenu>
