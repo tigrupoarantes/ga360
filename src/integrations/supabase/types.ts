@@ -1239,6 +1239,44 @@ export type Database = {
           },
         ]
       }
+      user_companies: {
+        Row: {
+          all_companies: boolean | null
+          can_view: boolean | null
+          company_id: string | null
+          created_at: string | null
+          id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          all_companies?: boolean | null
+          can_view?: boolean | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          all_companies?: boolean | null
+          can_view?: boolean | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_companies_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_invites: {
         Row: {
           area_id: string | null
@@ -1435,6 +1473,10 @@ export type Database = {
         Returns: undefined
       }
       calculate_level: { Args: { total_points: number }; Returns: number }
+      has_company_access: {
+        Args: { _company_id: string; _user_id: string }
+        Returns: boolean
+      }
       has_permission: {
         Args: {
           _action: string

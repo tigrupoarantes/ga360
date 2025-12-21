@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Shield, Save } from "lucide-react";
+import { Search, Shield, Save, Building2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface UserProfile {
@@ -15,6 +16,7 @@ interface UserProfile {
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
+  company_id: string | null;
 }
 
 interface UserPermission {
@@ -24,6 +26,16 @@ interface UserPermission {
   can_create: boolean;
   can_edit: boolean;
   can_delete: boolean;
+}
+
+interface Company {
+  id: string;
+  name: string;
+}
+
+interface UserCompanyPermission {
+  company_id: string;
+  can_view: boolean;
 }
 
 const MODULES = [
@@ -48,40 +60,55 @@ const ACTIONS = [
 export default function AdminPermissions() {
   const { toast } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<Record<string, UserPermission>>({});
+  const [companyPermissions, setCompanyPermissions] = useState<Record<string, boolean>>({});
+  const [allCompanies, setAllCompanies] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetchUsers();
+    fetchData();
   }, []);
 
   useEffect(() => {
     if (selectedUser) {
       fetchUserPermissions(selectedUser);
+      fetchUserCompanyPermissions(selectedUser);
     }
   }, [selectedUser]);
 
-  const fetchUsers = async () => {
+  const fetchData = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, avatar_url')
-        .eq('is_active', true)
-        .order('first_name');
+      const [usersRes, companiesRes] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, first_name, last_name, avatar_url, company_id')
+          .eq('is_active', true)
+          .order('first_name'),
+        supabase
+          .from('companies')
+          .select('id, name')
+          .eq('is_active', true)
+          .order('name'),
+      ]);
 
-      if (error) throw error;
-      setUsers(data || []);
-      if (data && data.length > 0) {
-        setSelectedUser(data[0].id);
+      if (usersRes.error) throw usersRes.error;
+      if (companiesRes.error) throw companiesRes.error;
+
+      setUsers(usersRes.data || []);
+      setCompanies(companiesRes.data || []);
+      
+      if (usersRes.data && usersRes.data.length > 0) {
+        setSelectedUser(usersRes.data[0].id);
       }
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error('Error fetching data:', error);
       toast({
         title: "Erro",
-        description: "Não foi possível carregar os usuários.",
+        description: "Não foi possível carregar os dados.",
         variant: "destructive",
       });
     } finally {
@@ -100,7 +127,6 @@ export default function AdminPermissions() {
 
       const permissionsMap: Record<string, UserPermission> = {};
       
-      // Initialize all modules with default permissions
       MODULES.forEach(module => {
         permissionsMap[module.id] = {
           user_id: userId,
@@ -112,7 +138,6 @@ export default function AdminPermissions() {
         };
       });
 
-      // Override with existing permissions
       data?.forEach(perm => {
         permissionsMap[perm.module] = perm;
       });
@@ -128,6 +153,34 @@ export default function AdminPermissions() {
     }
   };
 
+  const fetchUserCompanyPermissions = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_companies')
+        .select('company_id, can_view, all_companies')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      const companyPermsMap: Record<string, boolean> = {};
+      let hasAllCompanies = false;
+
+      data?.forEach(perm => {
+        if (perm.all_companies) {
+          hasAllCompanies = true;
+        }
+        if (perm.company_id) {
+          companyPermsMap[perm.company_id] = perm.can_view;
+        }
+      });
+
+      setAllCompanies(hasAllCompanies);
+      setCompanyPermissions(companyPermsMap);
+    } catch (error) {
+      console.error('Error fetching company permissions:', error);
+    }
+  };
+
   const togglePermission = (module: string, action: keyof UserPermission) => {
     setPermissions(prev => ({
       ...prev,
@@ -138,11 +191,19 @@ export default function AdminPermissions() {
     }));
   };
 
+  const toggleCompanyPermission = (companyId: string) => {
+    setCompanyPermissions(prev => ({
+      ...prev,
+      [companyId]: !prev[companyId],
+    }));
+  };
+
   const savePermissions = async () => {
     if (!selectedUser) return;
 
     setSaving(true);
     try {
+      // Save module permissions
       const permissionsArray = Object.values(permissions);
 
       for (const perm of permissionsArray) {
@@ -160,6 +221,44 @@ export default function AdminPermissions() {
           });
 
         if (error) throw error;
+      }
+
+      // Delete existing company permissions for this user
+      await supabase
+        .from('user_companies')
+        .delete()
+        .eq('user_id', selectedUser);
+
+      // Save "all companies" permission if enabled
+      if (allCompanies) {
+        const { error } = await supabase
+          .from('user_companies')
+          .insert({
+            user_id: selectedUser,
+            company_id: null,
+            all_companies: true,
+            can_view: true,
+          });
+
+        if (error) throw error;
+      } else {
+        // Save individual company permissions
+        const companyPermsToSave = Object.entries(companyPermissions)
+          .filter(([_, canView]) => canView)
+          .map(([companyId]) => ({
+            user_id: selectedUser,
+            company_id: companyId,
+            all_companies: false,
+            can_view: true,
+          }));
+
+        if (companyPermsToSave.length > 0) {
+          const { error } = await supabase
+            .from('user_companies')
+            .insert(companyPermsToSave);
+
+          if (error) throw error;
+        }
       }
 
       toast({
@@ -184,6 +283,9 @@ export default function AdminPermissions() {
   });
 
   const selectedUserProfile = users.find(u => u.id === selectedUser);
+  const selectedUserCompany = selectedUserProfile?.company_id 
+    ? companies.find(c => c.id === selectedUserProfile.company_id)
+    : null;
 
   if (loading) {
     return (
@@ -266,16 +368,23 @@ export default function AdminPermissions() {
                       {selectedUserProfile.first_name} {selectedUserProfile.last_name}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      Configurando permissões de acesso
+                      {selectedUserCompany 
+                        ? `Empresa principal: ${selectedUserCompany.name}`
+                        : 'Configurando permissões de acesso'
+                      }
                     </p>
                   </div>
                 </div>
 
                 <Tabs defaultValue="dashboard" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3">
+                  <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="dashboard">Dashboards</TabsTrigger>
                     <TabsTrigger value="modules">Módulos</TabsTrigger>
                     <TabsTrigger value="admin">Administração</TabsTrigger>
+                    <TabsTrigger value="companies" className="gap-1">
+                      <Building2 className="h-4 w-4" />
+                      Empresas
+                    </TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="dashboard" className="space-y-4 mt-6">
@@ -342,6 +451,80 @@ export default function AdminPermissions() {
                         </div>
                       </Card>
                     ))}
+                  </TabsContent>
+
+                  <TabsContent value="companies" className="space-y-4 mt-6">
+                    <Card className="p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="font-semibold">Acesso a Empresas</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Permite visualizar dados de outras empresas além da empresa principal
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* All companies toggle */}
+                        <div className="flex items-center space-x-3 p-4 rounded-lg border border-primary/20 bg-primary/5">
+                          <Checkbox
+                            id="all-companies"
+                            checked={allCompanies}
+                            onCheckedChange={(checked) => setAllCompanies(checked === true)}
+                          />
+                          <div className="flex-1">
+                            <Label htmlFor="all-companies" className="font-medium cursor-pointer">
+                              Acesso a todas as empresas
+                            </Label>
+                            <p className="text-sm text-muted-foreground">
+                              Habilita visualização de dados de todas as empresas do sistema
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Individual company permissions */}
+                        {!allCompanies && (
+                          <div className="space-y-2">
+                            <Label className="text-sm text-muted-foreground">
+                              Ou selecione empresas específicas:
+                            </Label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {companies.map(company => {
+                                const isMainCompany = selectedUserProfile?.company_id === company.id;
+                                return (
+                                  <div
+                                    key={company.id}
+                                    className={`flex items-center space-x-3 p-3 rounded-lg border ${
+                                      isMainCompany 
+                                        ? 'border-primary bg-primary/10' 
+                                        : 'border-border'
+                                    }`}
+                                  >
+                                    <Checkbox
+                                      id={`company-${company.id}`}
+                                      checked={isMainCompany || companyPermissions[company.id] === true}
+                                      disabled={isMainCompany}
+                                      onCheckedChange={() => toggleCompanyPermission(company.id)}
+                                    />
+                                    <div className="flex-1">
+                                      <Label 
+                                        htmlFor={`company-${company.id}`} 
+                                        className={`cursor-pointer ${isMainCompany ? 'font-medium' : ''}`}
+                                      >
+                                        {company.name}
+                                      </Label>
+                                      {isMainCompany && (
+                                        <p className="text-xs text-primary">Empresa principal</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
                   </TabsContent>
                 </Tabs>
               </div>
