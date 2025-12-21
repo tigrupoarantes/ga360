@@ -17,7 +17,9 @@ interface CreateUserRequest {
   first_name: string;
   last_name: string;
   area_id: string | null;
+  company_id: string;
   roles: string[];
+  phone?: string;
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -53,9 +55,9 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("Apenas CEOs e Super Admins podem criar usuários");
     }
 
-    const { email, first_name, last_name, area_id, roles }: CreateUserRequest = await req.json();
+    const { email, first_name, last_name, area_id, company_id, roles, phone }: CreateUserRequest = await req.json();
 
-    console.log("Creating user:", { email, first_name, last_name });
+    console.log("Creating user:", { email, first_name, last_name, company_id });
 
     // Create user in auth
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -85,6 +87,8 @@ const handler = async (req: Request): Promise<Response> => {
         first_name,
         last_name,
         area_id,
+        company_id,
+        phone,
       })
       .eq("id", newUser.user.id);
 

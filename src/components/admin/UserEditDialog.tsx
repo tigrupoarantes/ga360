@@ -27,6 +27,11 @@ interface Area {
   name: string;
 }
 
+interface Company {
+  id: string;
+  name: string;
+}
+
 interface UserRole {
   id: string;
   role: string;
@@ -37,6 +42,7 @@ interface UserProfile {
   first_name: string | null;
   last_name: string | null;
   area_id: string | null;
+  company_id: string | null;
   is_active: boolean;
   email?: string;
   roles?: string[];
@@ -48,10 +54,12 @@ interface UserEditDialogProps {
   onOpenChange: (open: boolean) => void;
   user: UserProfile | null;
   areas: Area[];
+  companies: Company[];
   onSave: (data: {
     first_name: string;
     last_name: string;
     area_id: string | null;
+    company_id: string;
     is_active: boolean;
     roles: string[];
     phone?: string | null;
@@ -62,6 +70,7 @@ const userSchema = z.object({
   first_name: z.string().trim().min(2, { message: 'Nome deve ter no mínimo 2 caracteres' }),
   last_name: z.string().trim().min(2, { message: 'Sobrenome deve ter no mínimo 2 caracteres' }),
   area_id: z.union([z.string(), z.null()]),
+  company_id: z.string().min(1, { message: 'Selecione uma empresa' }),
   is_active: z.boolean(),
   roles: z.array(z.string()).min(1, { message: 'Selecione pelo menos um role' }),
   phone: z.string().trim().min(1, { message: 'Telefone é obrigatório' }).regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }),
@@ -80,6 +89,7 @@ export function UserEditDialog({
   onOpenChange,
   user,
   areas,
+  companies,
   onSave,
 }: UserEditDialogProps) {
   const [loading, setLoading] = useState(false);
@@ -88,6 +98,7 @@ export function UserEditDialog({
     first_name: '',
     last_name: '',
     area_id: null as string | null,
+    company_id: '',
     is_active: true,
     roles: [] as string[],
     phone: '',
@@ -99,6 +110,7 @@ export function UserEditDialog({
         first_name: user.first_name || '',
         last_name: user.last_name || '',
         area_id: user.area_id,
+        company_id: user.company_id || '',
         is_active: user.is_active,
         roles: user.roles || [],
         phone: user.phone || '',
@@ -117,6 +129,7 @@ export function UserEditDialog({
         first_name: string;
         last_name: string;
         area_id: string | null;
+        company_id: string;
         is_active: boolean;
         roles: string[];
         phone?: string | null;
@@ -200,6 +213,31 @@ export function UserEditDialog({
                   <p className="text-sm text-destructive">{errors.last_name}</p>
                 )}
               </div>
+            </div>
+
+            {/* Company Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="company">Empresa *</Label>
+              <Select
+                value={formData.company_id || 'none'}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, company_id: value === 'none' ? '' : value })
+                }
+              >
+                <SelectTrigger className={errors.company_id ? 'border-destructive' : ''}>
+                  <SelectValue placeholder="Selecione uma empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map((company) => (
+                    <SelectItem key={company.id} value={company.id}>
+                      {company.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.company_id && (
+                <p className="text-sm text-destructive">{errors.company_id}</p>
+              )}
             </div>
 
             {/* Area Selection */}

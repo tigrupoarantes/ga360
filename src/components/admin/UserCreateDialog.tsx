@@ -27,15 +27,22 @@ interface Area {
   name: string;
 }
 
+interface Company {
+  id: string;
+  name: string;
+}
+
 interface UserCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   areas: Area[];
+  companies: Company[];
   onSave: (data: {
     email: string;
     first_name: string;
     last_name: string;
     area_id: string | null;
+    company_id: string;
     roles: string[];
     phone?: string;
   }) => Promise<void>;
@@ -46,6 +53,7 @@ const formSchema = z.object({
   first_name: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres'),
   last_name: z.string().min(2, 'Sobrenome deve ter no mínimo 2 caracteres'),
   area_id: z.union([z.string(), z.null()]),
+  company_id: z.string().min(1, 'Selecione uma empresa'),
   roles: z.array(z.string()).min(1, 'Selecione pelo menos um role'),
   phone: z.string().trim().min(1, 'Telefone é obrigatório').regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }),
 });
@@ -64,6 +72,7 @@ export function UserCreateDialog({
   open,
   onOpenChange,
   areas,
+  companies,
   onSave,
 }: UserCreateDialogProps) {
   const [saving, setSaving] = useState(false);
@@ -83,6 +92,7 @@ export function UserCreateDialog({
       first_name: '',
       last_name: '',
       area_id: null,
+      company_id: '',
       roles: ['colaborador'],
       phone: '',
     },
@@ -104,6 +114,7 @@ export function UserCreateDialog({
         first_name: data.first_name,
         last_name: data.last_name,
         area_id: data.area_id === 'none' ? null : data.area_id,
+        company_id: data.company_id,
         roles: selectedRoles,
         phone: data.phone || undefined,
       });
@@ -180,6 +191,28 @@ export function UserCreateDialog({
                 </p>
               )}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="company">Empresa *</Label>
+            <Select
+              value={watch('company_id') || undefined}
+              onValueChange={(value) => setValue('company_id', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma empresa" />
+              </SelectTrigger>
+              <SelectContent>
+                {companies.map((company) => (
+                  <SelectItem key={company.id} value={company.id}>
+                    {company.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.company_id && (
+              <p className="text-sm text-destructive">{errors.company_id.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
