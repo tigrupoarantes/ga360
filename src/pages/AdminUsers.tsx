@@ -23,18 +23,26 @@ interface Area {
   name: string;
 }
 
+interface Company {
+  id: string;
+  name: string;
+}
+
 interface UserProfile {
   id: string;
   first_name: string | null;
   last_name: string | null;
   area_id: string | null;
+  company_id: string | null;
   is_active: boolean;
   areas?: { name: string } | null;
+  companies?: { name: string } | null;
 }
 
 interface UserWithDetails extends UserProfile {
   email?: string;
   roles?: string[];
+  phone?: string | null;
 }
 
 const roleLabels: Record<string, string> = {
@@ -58,10 +66,12 @@ export default function AdminUsers() {
   const { toast } = useToast();
   const [users, setUsers] = useState<UserWithDetails[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterArea, setFilterArea] = useState<string>('all');
+  const [filterCompany, setFilterCompany] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -84,7 +94,17 @@ export default function AdminUsers() {
       if (areasError) throw areasError;
       setAreas(areasData || []);
 
-      // Fetch profiles with areas
+      // Fetch companies
+      const { data: companiesData, error: companiesError } = await supabase
+        .from('companies')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name');
+
+      if (companiesError) throw companiesError;
+      setCompanies(companiesData || []);
+
+      // Fetch profiles with areas and companies
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select(`
@@ -92,8 +112,11 @@ export default function AdminUsers() {
           first_name,
           last_name,
           area_id,
+          company_id,
           is_active,
-          areas:area_id (name)
+          phone,
+          areas:area_id (name),
+          companies:company_id (name)
         `)
         .order('first_name');
 
@@ -139,7 +162,9 @@ export default function AdminUsers() {
     first_name: string;
     last_name: string;
     area_id: string | null;
+    company_id: string;
     roles: string[];
+    phone?: string;
   }) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -180,8 +205,10 @@ export default function AdminUsers() {
     first_name: string;
     last_name: string;
     area_id: string | null;
+    company_id: string;
     is_active: boolean;
     roles: string[];
+    phone?: string | null;
   }) => {
     if (!editingUser) return;
 
@@ -193,7 +220,9 @@ export default function AdminUsers() {
           first_name: data.first_name,
           last_name: data.last_name,
           area_id: data.area_id,
+          company_id: data.company_id,
           is_active: data.is_active,
+          phone: data.phone,
         })
         .eq('id', editingUser.id);
 
@@ -255,13 +284,16 @@ export default function AdminUsers() {
     // Area filter
     const matchesArea = filterArea === 'all' || user.area_id === filterArea;
 
+    // Company filter
+    const matchesCompany = filterCompany === 'all' || user.company_id === filterCompany;
+
     // Status filter
     const matchesStatus =
       filterStatus === 'all' ||
       (filterStatus === 'active' && user.is_active) ||
       (filterStatus === 'inactive' && !user.is_active);
 
-    return matchesSearch && matchesRole && matchesArea && matchesStatus;
+    return matchesSearch && matchesRole && matchesArea && matchesCompany && matchesStatus;
   });
 
   const activeUsers = users.filter((u) => u.is_active).length;
@@ -327,7 +359,7 @@ export default function AdminUsers() {
 
         {/* Filters */}
         <Card className="p-4">
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-5">
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -338,6 +370,21 @@ export default function AdminUsers() {
                 className="pl-10"
               />
             </div>
+
+            {/* Company Filter */}
+            <Select value={filterCompany} onValueChange={setFilterCompany}>
+              <SelectTrigger>
+                <SelectValue placeholder="Todas as empresas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as empresas</SelectItem>
+                {companies.map((company) => (
+                  <SelectItem key={company.id} value={company.id}>
+                    {company.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             {/* Role Filter */}
             <Select value={filterRole} onValueChange={setFilterRole}>
@@ -408,23 +455,28 @@ export default function AdminUsers() {
                         {user.first_name?.[0] || 'U'}
                         {user.last_name?.[0] || ''}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
-                          {user.first_name} {user.last_name}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          {user.areas && (
-                            <span className="text-xs text-muted-foreground">
-                              {user.areas.name}
-                            </span>
-                          )}
-                          {!user.is_active && (
-                            <Badge variant="outline" className="text-xs">
-                              Inativo
-                            </Badge>
-                          )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {user.first_name} {user.last_name}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {user.companies && (
+                              <span className="text-xs font-medium text-primary">
+                                {user.companies.name}
+                              </span>
+                            )}
+                            {user.areas && (
+                              <span className="text-xs text-muted-foreground">
+                                • {user.areas.name}
+                              </span>
+                            )}
+                            {!user.is_active && (
+                              <Badge variant="outline" className="text-xs">
+                                Inativo
+                              </Badge>
+                            )}
+                          </div>
                         </div>
-                      </div>
                     </div>
                   </div>
 
@@ -490,6 +542,7 @@ export default function AdminUsers() {
         }}
         user={editingUser}
         areas={areas}
+        companies={companies}
         onSave={handleSave}
       />
 
@@ -497,6 +550,7 @@ export default function AdminUsers() {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         areas={areas}
+        companies={companies}
         onSave={handleCreate}
       />
     </MainLayout>
