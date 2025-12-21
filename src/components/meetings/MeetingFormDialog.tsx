@@ -270,23 +270,48 @@ export function MeetingFormDialog({
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="area">Área</Label>
-            <Select
-              value={formData.area_id}
-              onValueChange={(value) => setFormData({ ...formData, area_id: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione uma área" />
-              </SelectTrigger>
-              <SelectContent>
-                {areas.map((area) => (
-                  <SelectItem key={area.id} value={area.id}>
-                    {area.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="company">Empresa</Label>
+              <Select
+                value={formData.company_id}
+                onValueChange={(value) => setFormData({ 
+                  ...formData, 
+                  company_id: value,
+                  meeting_room_id: "" // Reset sala ao mudar empresa
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map((company) => (
+                    <SelectItem key={company.id} value={company.id}>
+                      {company.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="area">Área</Label>
+              <Select
+                value={formData.area_id}
+                onValueChange={(value) => setFormData({ ...formData, area_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma área" />
+                </SelectTrigger>
+                <SelectContent>
+                  {areas.map((area) => (
+                    <SelectItem key={area.id} value={area.id}>
+                      {area.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div>
@@ -300,11 +325,19 @@ export function MeetingFormDialog({
                 <SelectValue placeholder="Selecione uma sala" />
               </SelectTrigger>
               <SelectContent>
-                {rooms.map((room) => (
-                  <SelectItem key={room.id} value={room.id}>
-                    {room.name} - {room.team}
-                  </SelectItem>
-                ))}
+                {rooms.length === 0 ? (
+                  <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                    {formData.company_id 
+                      ? "Nenhuma sala encontrada para esta empresa" 
+                      : "Selecione uma empresa primeiro"}
+                  </div>
+                ) : (
+                  rooms.map((room) => (
+                    <SelectItem key={room.id} value={room.id}>
+                      {room.name} - {room.team}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
