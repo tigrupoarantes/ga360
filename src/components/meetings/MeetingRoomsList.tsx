@@ -6,10 +6,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit, Search, Video } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Plus, Edit, Search, Video, Trash2 } from "lucide-react";
 import { MeetingRoomFormDialog } from "./MeetingRoomFormDialog";
 import { MeetingPlatformButton } from "./MeetingPlatformButton";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { platformConfig, MeetingPlatform } from "@/lib/platformConfig";
 
@@ -33,10 +44,16 @@ interface MeetingRoom {
 
 export function MeetingRoomsList() {
   const { toast } = useToast();
+  const { role } = useAuth();
   const [rooms, setRooms] = useState<MeetingRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<MeetingRoom | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [roomToDelete, setRoomToDelete] = useState<MeetingRoom | null>(null);
+  
+  // Verificar se pode deletar
+  const canDelete = role === 'ceo' || role === 'super_admin';
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState("");
@@ -104,6 +121,35 @@ export function MeetingRoomsList() {
         description: error.message,
         variant: "destructive",
       });
+    }
+  };
+
+  const handleDeleteRoom = async () => {
+    if (!roomToDelete) return;
+    
+    try {
+      const { error } = await supabase
+        .from("meeting_rooms")
+        .delete()
+        .eq("id", roomToDelete.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Sala excluída",
+        description: "Sala de reunião excluída com sucesso.",
+      });
+
+      fetchRooms();
+    } catch (error: any) {
+      toast({
+        title: "Erro ao excluir sala",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteDialogOpen(false);
+      setRoomToDelete(null);
     }
   };
 
@@ -245,6 +291,19 @@ export function MeetingRoomsList() {
                     <CardTitle className="text-lg">{room.name}</CardTitle>
                   </div>
                   <div className="flex items-center gap-2">
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => {
+                          setRoomToDelete(room);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Badge 
                       variant="outline"
                       style={{ 
@@ -337,6 +396,28 @@ export function MeetingRoomsList() {
         room={selectedRoom}
         onSuccess={handleSuccess}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Sala de Reunião</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir a sala "{roomToDelete?.name}"? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setRoomToDelete(null)}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteRoom}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
