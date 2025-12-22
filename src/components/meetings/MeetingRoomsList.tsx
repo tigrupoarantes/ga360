@@ -128,15 +128,61 @@ export function MeetingRoomsList() {
     if (!roomToDelete) return;
     
     try {
-      // First, remove the meeting_room_id reference from any meetings using this room
-      const { error: updateError } = await supabase
+      // 1. Buscar reuniões desta sala
+      const { data: roomMeetings } = await supabase
         .from("meetings")
-        .update({ meeting_room_id: null })
+        .select("id")
         .eq("meeting_room_id", roomToDelete.id);
-
-      if (updateError) throw updateError;
-
-      // Now delete the room
+      
+      let deletedCount = 0;
+      let preservedCount = 0;
+      
+      if (roomMeetings && roomMeetings.length > 0) {
+        const meetingIds = roomMeetings.map(m => m.id);
+        
+        // 2. Identificar reuniões COM ATAs ou transcrições (preservar)
+        const { data: meetingsWithAtas } = await supabase
+          .from("meeting_atas")
+          .select("meeting_id")
+          .in("meeting_id", meetingIds);
+        
+        const { data: meetingsWithTranscriptions } = await supabase
+          .from("meeting_transcriptions")
+          .select("meeting_id")
+          .in("meeting_id", meetingIds);
+        
+        const meetingsToPreserve = new Set([
+          ...(meetingsWithAtas || []).map(a => a.meeting_id),
+          ...(meetingsWithTranscriptions || []).map(t => t.meeting_id)
+        ]);
+        
+        preservedCount = meetingsToPreserve.size;
+        
+        // 3. Desvincular reuniões com histórico da sala
+        if (meetingsToPreserve.size > 0) {
+          await supabase
+            .from("meetings")
+            .update({ meeting_room_id: null })
+            .in("id", Array.from(meetingsToPreserve));
+        }
+        
+        // 4. Identificar reuniões SEM histórico (excluir)
+        const meetingsToDelete = meetingIds.filter(id => !meetingsToPreserve.has(id));
+        deletedCount = meetingsToDelete.length;
+        
+        if (meetingsToDelete.length > 0) {
+          // Excluir dados relacionados na ordem correta
+          await supabase.from("meeting_reminders").delete().in("meeting_id", meetingsToDelete);
+          await supabase.from("meeting_tasks").delete().in("meeting_id", meetingsToDelete);
+          await supabase.from("meeting_agendas").delete().in("meeting_id", meetingsToDelete);
+          await supabase.from("meeting_participants").delete().in("meeting_id", meetingsToDelete);
+          
+          // Excluir reuniões
+          await supabase.from("meetings").delete().in("id", meetingsToDelete);
+        }
+      }
+      
+      // 5. Excluir a sala
       const { error } = await supabase
         .from("meeting_rooms")
         .delete()
@@ -144,9 +190,15 @@ export function MeetingRoomsList() {
 
       if (error) throw error;
 
+      const messages = [];
+      if (deletedCount > 0) messages.push(`${deletedCount} reunião(ões) excluída(s)`);
+      if (preservedCount > 0) messages.push(`${preservedCount} reunião(ões) com histórico preservada(s)`);
+      
       toast({
         title: "Sala excluída",
-        description: "Sala de reunião excluída com sucesso. Reuniões associadas foram desvinculadas.",
+        description: messages.length > 0 
+          ? `Sala excluída. ${messages.join(", ")}.`
+          : "Sala de reunião excluída com sucesso.",
       });
 
       fetchRooms();
@@ -410,8 +462,16 @@ export function MeetingRoomsList() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir Sala de Reunião</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja excluir a sala "{roomToDelete?.name}"? Esta ação não pode ser desfeita.
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                Tem certeza que deseja excluir a sala "{roomToDelete?.name}"?
+              </span>
+              <span className="block text-sm">
+                • Reuniões sem histórico serão excluídas do calendário
+              </span>
+              <span className="block text-sm">
+                • Reuniões com ATAs ou transcrições serão mantidas (desvinculadas da sala)
+              </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
