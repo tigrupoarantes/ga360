@@ -263,6 +263,20 @@ export default function AdminUsers() {
           .in('role', rolesToDelete as ('ceo' | 'diretor' | 'gerente' | 'colaborador' | 'super_admin')[]);
 
         if (deleteError) throw deleteError;
+
+        // Log de auditoria para roles removidas
+        for (const removedRole of rolesToDelete) {
+          await supabase.from('audit_logs').insert({
+            actor_id: user?.id,
+            target_user_id: editingUser.id,
+            action_type: 'role_removed',
+            details: {
+              role: removedRole,
+              target_email: editingUser.email,
+              target_name: `${editingUser.first_name} ${editingUser.last_name}`,
+            },
+          });
+        }
       }
 
       // Insert only new roles (incremental approach)
@@ -277,6 +291,20 @@ export default function AdminUsers() {
           );
 
         if (insertError) throw insertError;
+
+        // Log de auditoria para roles adicionadas
+        for (const addedRole of rolesToAdd) {
+          await supabase.from('audit_logs').insert({
+            actor_id: user?.id,
+            target_user_id: editingUser.id,
+            action_type: 'role_added',
+            details: {
+              role: addedRole,
+              target_email: editingUser.email,
+              target_name: `${editingUser.first_name} ${editingUser.last_name}`,
+            },
+          });
+        }
       }
 
       toast({
