@@ -128,6 +128,15 @@ export function MeetingRoomsList() {
     if (!roomToDelete) return;
     
     try {
+      // First, remove the meeting_room_id reference from any meetings using this room
+      const { error: updateError } = await supabase
+        .from("meetings")
+        .update({ meeting_room_id: null })
+        .eq("meeting_room_id", roomToDelete.id);
+
+      if (updateError) throw updateError;
+
+      // Now delete the room
       const { error } = await supabase
         .from("meeting_rooms")
         .delete()
@@ -137,7 +146,7 @@ export function MeetingRoomsList() {
 
       toast({
         title: "Sala excluída",
-        description: "Sala de reunião excluída com sucesso.",
+        description: "Sala de reunião excluída com sucesso. Reuniões associadas foram desvinculadas.",
       });
 
       fetchRooms();
