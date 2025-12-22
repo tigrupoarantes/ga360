@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -64,6 +65,7 @@ const roleColors: Record<string, string> = {
 export default function AdminUsers() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, role } = useAuth();
   const [users, setUsers] = useState<UserWithDetails[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -211,6 +213,21 @@ export default function AdminUsers() {
     phone?: string | null;
   }) => {
     if (!editingUser) return;
+
+    // Validação: impedir super_admin de remover sua própria role
+    const isEditingSelf = editingUser.id === user?.id;
+    const userIsSuperAdmin = role === 'super_admin';
+    const hadSuperAdminRole = editingUser.roles?.includes('super_admin');
+    const isRemovingSuperAdminRole = hadSuperAdminRole && !data.roles.includes('super_admin');
+
+    if (isEditingSelf && userIsSuperAdmin && isRemovingSuperAdminRole) {
+      toast({
+        title: 'Ação não permitida',
+        description: 'Você não pode remover sua própria role de Super Admin.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     try {
       // Update profile
