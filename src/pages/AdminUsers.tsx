@@ -42,7 +42,7 @@ interface UserProfile {
 
 interface UserWithDetails extends UserProfile {
   email?: string;
-  roles?: string[];
+  role?: string;
   phone?: string | null;
 }
 
@@ -124,19 +124,19 @@ export default function AdminUsers() {
 
       if (profilesError) throw profilesError;
 
-      // Fetch user emails from auth.users (requires admin access)
-      // For now, we'll just use the profile data
+      // Fetch user roles
       const usersWithDetails: UserWithDetails[] = await Promise.all(
         (profilesData || []).map(async (profile) => {
-          // Fetch roles for each user
-          const { data: rolesData } = await supabase
+          // Fetch single role for each user (now only one per user)
+          const { data: roleData } = await supabase
             .from('user_roles')
             .select('role')
-            .eq('user_id', profile.id);
+            .eq('user_id', profile.id)
+            .single();
 
           return {
             ...profile,
-            roles: rolesData?.map((r) => r.role) || [],
+            role: roleData?.role || undefined,
           };
         })
       );
@@ -165,7 +165,7 @@ export default function AdminUsers() {
     last_name: string;
     area_id: string | null;
     company_id: string;
-    roles: string[];
+    role: string;
     phone?: string;
   }) => {
     try {
@@ -209,7 +209,7 @@ export default function AdminUsers() {
     area_id: string | null;
     company_id: string;
     is_active: boolean;
-    roles: string[];
+    role: string;
     phone?: string | null;
   }) => {
     if (!editingUser) return;
@@ -217,8 +217,8 @@ export default function AdminUsers() {
     // Validação: impedir super_admin de remover sua própria role
     const isEditingSelf = editingUser.id === user?.id;
     const userIsSuperAdmin = role === 'super_admin';
-    const hadSuperAdminRole = editingUser.roles?.includes('super_admin');
-    const isRemovingSuperAdminRole = hadSuperAdminRole && !data.roles.includes('super_admin');
+    const hadSuperAdminRole = editingUser.role === 'super_admin';
+    const isRemovingSuperAdminRole = hadSuperAdminRole && data.role !== 'super_admin';
 
     if (isEditingSelf && userIsSuperAdmin && isRemovingSuperAdminRole) {
       toast({
@@ -245,66 +245,42 @@ export default function AdminUsers() {
 
       if (profileError) throw profileError;
 
-      // Get current roles from the user being edited
-      const currentRoles = editingUser.roles || [];
-      
-      // Calculate roles to delete (in current but not in new)
-      const rolesToDelete = currentRoles.filter(r => !data.roles.includes(r));
-      
-      // Calculate roles to add (in new but not in current)
-      const rolesToAdd = data.roles.filter(r => !currentRoles.includes(r));
+      // Get current role
+      const currentRole = editingUser.role;
+      const newRole = data.role;
 
-      // Delete only removed roles (incremental approach)
-      if (rolesToDelete.length > 0) {
+      // Only update if role changed
+      if (currentRole !== newRole) {
+        // Delete current role
         const { error: deleteError } = await supabase
           .from('user_roles')
           .delete()
-          .eq('user_id', editingUser.id)
-          .in('role', rolesToDelete as ('ceo' | 'diretor' | 'gerente' | 'colaborador' | 'super_admin')[]);
+          .eq('user_id', editingUser.id);
 
         if (deleteError) throw deleteError;
 
-        // Log de auditoria para roles removidas
-        for (const removedRole of rolesToDelete) {
-          await supabase.from('audit_logs').insert({
-            actor_id: user?.id,
-            target_user_id: editingUser.id,
-            action_type: 'role_removed',
-            details: {
-              role: removedRole,
-              target_email: editingUser.email,
-              target_name: `${editingUser.first_name} ${editingUser.last_name}`,
-            },
-          });
-        }
-      }
-
-      // Insert only new roles (incremental approach)
-      if (rolesToAdd.length > 0) {
+        // Insert new role
         const { error: insertError } = await supabase
           .from('user_roles')
-          .insert(
-            rolesToAdd.map((role) => ({
-              user_id: editingUser.id,
-              role: role as 'ceo' | 'diretor' | 'gerente' | 'colaborador' | 'super_admin',
-            }))
-          );
+          .insert({
+            user_id: editingUser.id,
+            role: newRole as 'ceo' | 'diretor' | 'gerente' | 'colaborador' | 'super_admin',
+          });
 
         if (insertError) throw insertError;
 
-        // Log de auditoria para roles adicionadas
-        for (const addedRole of rolesToAdd) {
-          await supabase.from('audit_logs').insert({
-            actor_id: user?.id,
-            target_user_id: editingUser.id,
-            action_type: 'role_added',
-            details: {
-              role: addedRole,
-              target_email: editingUser.email,
-              target_name: `${editingUser.first_name} ${editingUser.last_name}`,
-            },
-          });
-        }
+        // Log de auditoria
+        await supabase.from('audit_logs').insert({
+          actor_id: user?.id,
+          target_user_id: editingUser.id,
+          action_type: 'role_changed',
+          details: {
+            old_role: currentRole,
+            new_role: newRole,
+            target_email: editingUser.email,
+            target_name: `${editingUser.first_name} ${editingUser.last_name}`,
+          },
+        });
       }
 
       toast({
@@ -336,8 +312,7 @@ export default function AdminUsers() {
       user.id.toLowerCase().includes(searchLower);
 
     // Role filter
-    const matchesRole =
-      filterRole === 'all' || user.roles?.includes(filterRole);
+    const matchesRole = filterRole === 'all' || user.role === filterRole;
 
     // Area filter
     const matchesArea = filterArea === 'all' || user.area_id === filterArea;
@@ -447,10 +422,10 @@ export default function AdminUsers() {
             {/* Role Filter */}
             <Select value={filterRole} onValueChange={setFilterRole}>
               <SelectTrigger>
-                <SelectValue placeholder="Todos os roles" />
+                <SelectValue placeholder="Todas as roles" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os roles</SelectItem>
+                <SelectItem value="all">Todas as roles</SelectItem>
                 <SelectItem value="super_admin">Super Admin</SelectItem>
                 <SelectItem value="ceo">CEO</SelectItem>
                 <SelectItem value="diretor">Diretor</SelectItem>
@@ -539,16 +514,13 @@ export default function AdminUsers() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <div className="flex flex-wrap gap-1">
-                      {user.roles?.map((role) => (
-                        <Badge
-                          key={role}
-                          className={`text-xs ${roleColors[role] || 'bg-muted'}`}
-                        >
-                          {roleLabels[role] || role}
-                        </Badge>
-                      ))}
-                    </div>
+                    {user.role && (
+                      <Badge
+                        className={`text-xs ${roleColors[user.role] || 'bg-muted'}`}
+                      >
+                        {roleLabels[user.role] || user.role}
+                      </Badge>
+                    )}
 
                     <Button
                       variant="ghost"
@@ -573,7 +545,7 @@ export default function AdminUsers() {
             <li className="flex items-start gap-2">
               <span className="text-primary mt-0.5">•</span>
               <span>
-                Usuários podem ter múltiplos roles simultaneamente
+                Cada usuário possui uma única role no sistema
               </span>
             </li>
             <li className="flex items-start gap-2">

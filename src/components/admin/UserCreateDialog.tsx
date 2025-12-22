@@ -19,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
 
 interface Area {
@@ -43,7 +42,7 @@ interface UserCreateDialogProps {
     last_name: string;
     area_id: string | null;
     company_id: string;
-    roles: string[];
+    role: string;
     phone?: string;
   }) => Promise<void>;
 }
@@ -54,7 +53,7 @@ const formSchema = z.object({
   last_name: z.string().min(2, 'Sobrenome deve ter no mínimo 2 caracteres'),
   area_id: z.union([z.string(), z.null()]),
   company_id: z.string().min(1, 'Selecione uma empresa'),
-  roles: z.array(z.string()).min(1, 'Selecione pelo menos um role'),
+  role: z.string().min(1, 'Selecione uma role'),
   phone: z.string().trim().min(1, 'Telefone é obrigatório').regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }),
 });
 
@@ -76,7 +75,6 @@ export function UserCreateDialog({
   onSave,
 }: UserCreateDialogProps) {
   const [saving, setSaving] = useState(false);
-  const [selectedRoles, setSelectedRoles] = useState<string[]>(['colaborador']);
 
   const {
     register,
@@ -93,18 +91,10 @@ export function UserCreateDialog({
       last_name: '',
       area_id: null,
       company_id: '',
-      roles: ['colaborador'],
+      role: 'colaborador',
       phone: '',
     },
   });
-
-  const handleRoleToggle = (role: string) => {
-    const newRoles = selectedRoles.includes(role)
-      ? selectedRoles.filter((r) => r !== role)
-      : [...selectedRoles, role];
-    setSelectedRoles(newRoles);
-    setValue('roles', newRoles);
-  };
 
   const onSubmit = async (data: FormData) => {
     setSaving(true);
@@ -115,11 +105,10 @@ export function UserCreateDialog({
         last_name: data.last_name,
         area_id: data.area_id === 'none' ? null : data.area_id,
         company_id: data.company_id,
-        roles: selectedRoles,
+        role: data.role,
         phone: data.phone || undefined,
       });
       reset();
-      setSelectedRoles(['colaborador']);
       onOpenChange(false);
     } catch (error) {
       console.error('Error creating user:', error);
@@ -132,7 +121,6 @@ export function UserCreateDialog({
     if (!saving) {
       if (!newOpen) {
         reset();
-        setSelectedRoles(['colaborador']);
       }
       onOpenChange(newOpen);
     }
@@ -252,26 +240,24 @@ export function UserCreateDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Roles *</Label>
-            <div className="space-y-2">
-              {roleOptions.map((role) => (
-                <div key={role.value} className="flex items-center gap-2">
-                  <Checkbox
-                    id={`role-${role.value}`}
-                    checked={selectedRoles.includes(role.value)}
-                    onCheckedChange={() => handleRoleToggle(role.value)}
-                  />
-                  <Label
-                    htmlFor={`role-${role.value}`}
-                    className="cursor-pointer"
-                  >
+            <Label htmlFor="role">Role *</Label>
+            <Select
+              value={watch('role') || undefined}
+              onValueChange={(value) => setValue('role', value)}
+            >
+              <SelectTrigger className={errors.role ? 'border-destructive' : ''}>
+                <SelectValue placeholder="Selecione uma role" />
+              </SelectTrigger>
+              <SelectContent>
+                {roleOptions.map((role) => (
+                  <SelectItem key={role.value} value={role.value}>
                     {role.label}
-                  </Label>
-                </div>
-              ))}
-            </div>
-            {errors.roles && (
-              <p className="text-sm text-destructive">{errors.roles.message}</p>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.role && (
+              <p className="text-sm text-destructive">{errors.role.message}</p>
             )}
           </div>
 
