@@ -1240,6 +1240,39 @@ export type Database = {
           },
         ]
       }
+      two_factor_codes: {
+        Row: {
+          attempts: number | null
+          code: string
+          created_at: string | null
+          expires_at: string
+          id: string
+          method: string
+          user_id: string
+          verified: boolean | null
+        }
+        Insert: {
+          attempts?: number | null
+          code: string
+          created_at?: string | null
+          expires_at: string
+          id?: string
+          method: string
+          user_id: string
+          verified?: boolean | null
+        }
+        Update: {
+          attempts?: number | null
+          code?: string
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          method?: string
+          user_id?: string
+          verified?: boolean | null
+        }
+        Relationships: []
+      }
       user_badges: {
         Row: {
           badge_id: string
@@ -1503,6 +1536,7 @@ export type Database = {
         Returns: undefined
       }
       calculate_level: { Args: { total_points: number }; Returns: number }
+      cleanup_expired_2fa_codes: { Args: never; Returns: undefined }
       has_company_access: {
         Args: { _company_id: string; _user_id: string }
         Returns: boolean
