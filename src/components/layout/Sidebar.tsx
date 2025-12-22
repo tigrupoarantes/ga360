@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { 
   LayoutDashboard, 
   Users, 
@@ -11,7 +11,8 @@ import {
   Target,
   LogOut,
   Building2,
-  ChevronDown
+  ChevronDown,
+  ChevronRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,15 +20,29 @@ import { useCompany } from "@/contexts/CompanyContext";
 import { Button } from "@/components/ui/button";
 import { RoleGuard } from "@/components/auth/RoleGuard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useEffect } from "react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-const navigation = [
+type NavItem = {
+  name: string;
+  href?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children?: { name: string; href: string; icon: React.ComponentType<{ className?: string }> }[];
+};
+
+const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Reuniões', href: '/reunioes', icon: Users },
+  { 
+    name: 'Reuniões', 
+    icon: Users,
+    children: [
+      { name: 'Reuniões', href: '/reunioes', icon: Users },
+      { name: 'Calendário', href: '/calendario', icon: Calendar },
+    ]
+  },
   { name: 'Processos', href: '/processos', icon: FileText },
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
-  { name: 'Calendário', href: '/calendario', icon: Calendar },
   { name: 'Portal de Metas', href: '/metas', icon: Target },
   { name: 'Trade Marketing', href: '/trade', icon: ShoppingCart },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
@@ -38,8 +53,26 @@ const ceoNavigation = [
 ];
 
 export function Sidebar() {
+  const location = useLocation();
   const { profile, role, signOut } = useAuth();
   const { selectedCompanyId, setSelectedCompanyId, companies, setCompanies } = useCompany();
+  
+  // Check if any child route is active
+  const isChildActive = (children?: NavItem['children']) => {
+    if (!children) return false;
+    return children.some(child => location.pathname === child.href);
+  };
+  
+  // Initialize open state based on active routes
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>(() => {
+    const initialState: Record<string, boolean> = {};
+    navigation.forEach(item => {
+      if (item.children && isChildActive(item.children)) {
+        initialState[item.name] = true;
+      }
+    });
+    return initialState;
+  });
 
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -108,21 +141,70 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
           {navigation.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.href}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-smooth",
-                  isActive
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                )
-              }
-            >
-              <item.icon className="h-5 w-5 flex-shrink-0" />
-              <span>{item.name}</span>
-            </NavLink>
+            item.children ? (
+              <Collapsible
+                key={item.name}
+                open={openMenus[item.name] || isChildActive(item.children)}
+                onOpenChange={(open) => setOpenMenus(prev => ({ ...prev, [item.name]: open }))}
+              >
+                <CollapsibleTrigger className="w-full">
+                  <div
+                    className={cn(
+                      "flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-smooth",
+                      isChildActive(item.children)
+                        ? "bg-sidebar-accent/50 text-sidebar-foreground"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <item.icon className="h-5 w-5 flex-shrink-0" />
+                      <span>{item.name}</span>
+                    </div>
+                    <ChevronDown 
+                      className={cn(
+                        "h-4 w-4 transition-transform duration-200",
+                        (openMenus[item.name] || isChildActive(item.children)) && "rotate-180"
+                      )} 
+                    />
+                  </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pl-4 mt-1 space-y-1">
+                  {item.children.map((child) => (
+                    <NavLink
+                      key={child.name}
+                      to={child.href}
+                      className={({ isActive }) =>
+                        cn(
+                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-smooth",
+                          isActive
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                        )
+                      }
+                    >
+                      <child.icon className="h-4 w-4 flex-shrink-0" />
+                      <span>{child.name}</span>
+                    </NavLink>
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
+            ) : (
+              <NavLink
+                key={item.name}
+                to={item.href!}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-smooth",
+                    isActive
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  )
+                }
+              >
+                <item.icon className="h-5 w-5 flex-shrink-0" />
+                <span>{item.name}</span>
+              </NavLink>
+            )
           ))}
 
           <RoleGuard roles={['ceo', 'super_admin']}>
