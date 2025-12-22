@@ -106,11 +106,14 @@ export function EmailConfigSection() {
       // Save config to system_settings (without password)
       const { error } = await supabase
         .from('system_settings')
-        .upsert({
-          key: 'email_config',
-          value: config as any,
-          description: 'Configurações de envio de e-mail',
-        });
+        .upsert(
+          {
+            key: 'email_config',
+            value: config as any,
+            description: 'Configurações de envio de e-mail',
+          },
+          { onConflict: 'key' }
+        );
 
       if (error) throw error;
 
