@@ -45,6 +45,10 @@ const ROLE_PRIORITY: Record<string, number> = {
   colaborador: 4,
 };
 
+// 🔧 FLAG TEMPORÁRIA: Desativar 2FA enquanto configura domínio Resend
+// TODO: Remover esta flag após validar domínio em resend.com/domains
+const SKIP_2FA_TEMPORARILY = true;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -179,8 +183,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
-      // Login bem-sucedido - iniciar fluxo 2FA
+      // Login bem-sucedido
       if (data.user && data.session) {
+        // 🔧 FLAG TEMPORÁRIA: Pular 2FA
+        if (SKIP_2FA_TEMPORARILY) {
+          console.log('⚠️ 2FA desativado temporariamente - login direto');
+          toast({
+            title: 'Login realizado!',
+            description: 'Bem-vindo de volta.',
+          });
+          return { error: null };
+        }
+        
         console.log('🔐 Login bem-sucedido, iniciando 2FA...');
         
         // Buscar perfil para verificar se tem telefone
