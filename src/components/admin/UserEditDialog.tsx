@@ -19,7 +19,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { z } from 'zod';
 
 interface Area {
@@ -32,11 +31,6 @@ interface Company {
   name: string;
 }
 
-interface UserRole {
-  id: string;
-  role: string;
-}
-
 interface UserProfile {
   id: string;
   first_name: string | null;
@@ -45,7 +39,7 @@ interface UserProfile {
   company_id: string | null;
   is_active: boolean;
   email?: string;
-  roles?: string[];
+  role?: string;
   phone?: string | null;
 }
 
@@ -61,7 +55,7 @@ interface UserEditDialogProps {
     area_id: string | null;
     company_id: string;
     is_active: boolean;
-    roles: string[];
+    role: string;
     phone?: string | null;
   }) => Promise<void>;
 }
@@ -72,7 +66,7 @@ const userSchema = z.object({
   area_id: z.union([z.string(), z.null()]),
   company_id: z.string().min(1, { message: 'Selecione uma empresa' }),
   is_active: z.boolean(),
-  roles: z.array(z.string()).min(1, { message: 'Selecione pelo menos um role' }),
+  role: z.string().min(1, { message: 'Selecione uma role' }),
   phone: z.string().trim().min(1, { message: 'Telefone é obrigatório' }).regex(/^\+\d{2,3}\d{9,11}$/, { message: 'Formato inválido. Use +5511999999999' }),
 });
 
@@ -100,7 +94,7 @@ export function UserEditDialog({
     area_id: null as string | null,
     company_id: '',
     is_active: true,
-    roles: [] as string[],
+    role: 'colaborador',
     phone: '',
   });
 
@@ -112,7 +106,7 @@ export function UserEditDialog({
         area_id: user.area_id,
         company_id: user.company_id || '',
         is_active: user.is_active,
-        roles: user.roles || [],
+        role: user.role || 'colaborador',
         phone: user.phone || '',
       });
       setErrors({});
@@ -131,7 +125,7 @@ export function UserEditDialog({
         area_id: string | null;
         company_id: string;
         is_active: boolean;
-        roles: string[];
+        role: string;
         phone?: string | null;
       };
       await onSave(validated);
@@ -149,15 +143,6 @@ export function UserEditDialog({
     } finally {
       setLoading(false);
     }
-  };
-
-  const toggleRole = (role: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      roles: prev.roles.includes(role)
-        ? prev.roles.filter((r) => r !== role)
-        : [...prev.roles, role],
-    }));
   };
 
   if (!user) return null;
@@ -284,29 +269,29 @@ export function UserEditDialog({
               </p>
             </div>
 
-            {/* Roles */}
+            {/* Role */}
             <div className="space-y-2">
-              <Label>Permissões (Roles) *</Label>
-              <div className="flex flex-wrap gap-2">
-                {availableRoles.map((role) => (
-                  <Badge
-                    key={role.value}
-                    variant={
-                      formData.roles.includes(role.value) ? 'default' : 'outline'
-                    }
-                    className="cursor-pointer"
-                    onClick={() => toggleRole(role.value)}
-                  >
-                    {role.label}
-                  </Badge>
-                ))}
-              </div>
-              {errors.roles && (
-                <p className="text-sm text-destructive">{errors.roles}</p>
+              <Label>Permissão (Role) *</Label>
+              <Select
+                value={formData.role}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, role: value })
+                }
+              >
+                <SelectTrigger className={errors.role ? 'border-destructive' : ''}>
+                  <SelectValue placeholder="Selecione uma role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableRoles.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {role.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.role && (
+                <p className="text-sm text-destructive">{errors.role}</p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Clique para adicionar/remover roles
-              </p>
             </div>
 
             {/* Active Status */}

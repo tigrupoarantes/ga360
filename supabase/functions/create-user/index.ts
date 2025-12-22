@@ -18,7 +18,7 @@ interface CreateUserRequest {
   last_name: string;
   area_id: string | null;
   company_id: string;
-  roles: string[];
+  role: string;
   phone?: string;
 }
 
@@ -51,13 +51,13 @@ const handler = async (req: Request): Promise<Response> => {
       .in("role", ["ceo", "super_admin"])
       .limit(1);
 
-    if (!roleCheck) {
+    if (!roleCheck || roleCheck.length === 0) {
       throw new Error("Apenas CEOs e Super Admins podem criar usuários");
     }
 
-    const { email, first_name, last_name, area_id, company_id, roles, phone }: CreateUserRequest = await req.json();
+    const { email, first_name, last_name, area_id, company_id, role, phone }: CreateUserRequest = await req.json();
 
-    console.log("Creating user:", { email, first_name, last_name, company_id });
+    console.log("Creating user:", { email, first_name, last_name, company_id, role });
 
     // Create user in auth
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -96,30 +96,27 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("Error updating profile:", profileError);
     }
 
-    // Assign roles
-    if (roles.length > 0) {
-      const { error: rolesError } = await supabaseAdmin
-        .from("user_roles")
-        .delete()
-        .eq("user_id", newUser.user.id);
+    // Delete default role (colaborador) created by trigger and insert the specified role
+    const { error: deleteRoleError } = await supabaseAdmin
+      .from("user_roles")
+      .delete()
+      .eq("user_id", newUser.user.id);
 
-      if (rolesError) {
-        console.error("Error deleting default role:", rolesError);
-      }
+    if (deleteRoleError) {
+      console.error("Error deleting default role:", deleteRoleError);
+    }
 
-      const { error: insertRolesError } = await supabaseAdmin
-        .from("user_roles")
-        .insert(
-          roles.map((role) => ({
-            user_id: newUser.user.id,
-            role: role as "ceo" | "diretor" | "gerente" | "colaborador" | "super_admin",
-          }))
-        );
+    // Insert the specified single role
+    const { error: insertRoleError } = await supabaseAdmin
+      .from("user_roles")
+      .insert({
+        user_id: newUser.user.id,
+        role: role as "ceo" | "diretor" | "gerente" | "colaborador" | "super_admin",
+      });
 
-      if (insertRolesError) {
-        console.error("Error inserting roles:", insertRolesError);
-        throw new Error(`Erro ao atribuir roles: ${insertRolesError.message}`);
-      }
+    if (insertRoleError) {
+      console.error("Error inserting role:", insertRoleError);
+      throw new Error(`Erro ao atribuir role: ${insertRoleError.message}`);
     }
 
     // Generate password reset link
