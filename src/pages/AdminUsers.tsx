@@ -228,19 +228,32 @@ export default function AdminUsers() {
 
       if (profileError) throw profileError;
 
-      // Update roles - delete all existing and insert new ones
-      const { error: deleteError } = await supabase
-        .from('user_roles')
-        .delete()
-        .eq('user_id', editingUser.id);
+      // Get current roles from the user being edited
+      const currentRoles = editingUser.roles || [];
+      
+      // Calculate roles to delete (in current but not in new)
+      const rolesToDelete = currentRoles.filter(r => !data.roles.includes(r));
+      
+      // Calculate roles to add (in new but not in current)
+      const rolesToAdd = data.roles.filter(r => !currentRoles.includes(r));
 
-      if (deleteError) throw deleteError;
+      // Delete only removed roles (incremental approach)
+      if (rolesToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('user_roles')
+          .delete()
+          .eq('user_id', editingUser.id)
+          .in('role', rolesToDelete as ('ceo' | 'diretor' | 'gerente' | 'colaborador' | 'super_admin')[]);
 
-      if (data.roles.length > 0) {
+        if (deleteError) throw deleteError;
+      }
+
+      // Insert only new roles (incremental approach)
+      if (rolesToAdd.length > 0) {
         const { error: insertError } = await supabase
           .from('user_roles')
           .insert(
-            data.roles.map((role) => ({
+            rolesToAdd.map((role) => ({
               user_id: editingUser.id,
               role: role as 'ceo' | 'diretor' | 'gerente' | 'colaborador' | 'super_admin',
             }))
