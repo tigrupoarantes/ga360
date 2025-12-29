@@ -9,6 +9,16 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
@@ -22,6 +32,7 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 
 interface Meeting {
@@ -69,6 +80,9 @@ export default function MeetingExecution() {
   const [loading, setLoading] = useState(true);
   const [transcription, setTranscription] = useState('');
   const [finalizingMeeting, setFinalizingMeeting] = useState(false);
+  const [showAtaDialog, setShowAtaDialog] = useState(false);
+  const [generatingAta, setGeneratingAta] = useState(false);
+  const [hasTranscription, setHasTranscription] = useState(false);
 
   const fetchMeetingData = useCallback(async () => {
     if (!id) return;
@@ -87,6 +101,15 @@ export default function MeetingExecution() {
 
       if (meetingError) throw meetingError;
       setMeeting(meetingData);
+
+      // Check if transcription exists
+      const { data: transcriptionData } = await supabase
+        .from('meeting_transcriptions')
+        .select('id, content')
+        .eq('meeting_id', id)
+        .maybeSingle();
+      
+      setHasTranscription(!!transcriptionData?.content);
 
       // Fetch agenda items
       const { data: agendaData, error: agendaError } = await supabase
@@ -180,11 +203,43 @@ export default function MeetingExecution() {
     }
   };
 
+  const handleGenerateAta = async () => {
+    if (!meeting) return;
+    
+    setGeneratingAta(true);
+    setShowAtaDialog(false);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-ata', {
+        body: { meetingId: meeting.id }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'ATA gerada com sucesso!',
+        description: 'A ATA foi criada e as tarefas foram extraídas.',
+      });
+
+      // Navigate to meetings page with ata tab or refresh
+      navigate('/reunioes');
+    } catch (error: unknown) {
+      console.error('Error generating ATA:', error);
+      toast({
+        title: 'Erro ao gerar ATA',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setGeneratingAta(false);
+    }
+  };
+
   const handleFinalizeMeeting = async () => {
     if (!meeting) return;
 
     // Check if transcription is required and completed
-    if (meeting.ai_mode === 'Obrigatório' && !transcription) {
+    if (meeting.ai_mode === 'Obrigatório' && !transcription && !hasTranscription) {
       toast({
         title: 'Transcrição obrigatória',
         description: 'Esta reunião requer transcrição completa antes de ser finalizada.',
@@ -209,7 +264,12 @@ export default function MeetingExecution() {
         description: 'A reunião foi concluída com sucesso.',
       });
 
-      navigate('/meetings');
+      // If there's a transcription, ask if user wants to generate ATA
+      if (transcription || hasTranscription) {
+        setShowAtaDialog(true);
+      } else {
+        navigate('/reunioes');
+      }
     } catch (error: unknown) {
       console.error('Error finalizing meeting:', error);
       toast({
@@ -237,7 +297,7 @@ export default function MeetingExecution() {
       <MainLayout>
         <div className="text-center py-12">
           <h2 className="text-xl font-semibold">Reunião não encontrada</h2>
-          <Button className="mt-4" onClick={() => navigate('/meetings')}>
+          <Button className="mt-4" onClick={() => navigate('/reunioes')}>
             Voltar para Reuniões
           </Button>
         </div>
@@ -256,7 +316,7 @@ export default function MeetingExecution() {
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/meetings')}>
+            <Button variant="ghost" size="icon" onClick={() => navigate('/reunioes')}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div>
@@ -291,7 +351,7 @@ export default function MeetingExecution() {
             />
             <Button 
               onClick={handleFinalizeMeeting}
-              disabled={finalizingMeeting}
+              disabled={finalizingMeeting || generatingAta}
             >
               {finalizingMeeting ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -445,6 +505,40 @@ export default function MeetingExecution() {
           </Card>
         </div>
       </div>
+
+      {/* ATA Generation Dialog */}
+      <AlertDialog open={showAtaDialog} onOpenChange={setShowAtaDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Gerar ATA automaticamente?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Detectamos uma transcrição para esta reunião. Deseja gerar a ATA automaticamente 
+              usando IA? O sistema irá extrair resumo, decisões e tarefas da transcrição.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => navigate('/reunioes')}>
+              Não, apenas finalizar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleGenerateAta} disabled={generatingAta}>
+              {generatingAta ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Gerando...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Gerar ATA
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </MainLayout>
   );
 }
