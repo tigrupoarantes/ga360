@@ -15,9 +15,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Search, Edit, Loader2, UserCheck, UserX, UserPlus } from 'lucide-react';
+import { ArrowLeft, Search, Edit, Loader2, UserCheck, UserX, UserPlus, FileUp } from 'lucide-react';
 import { UserEditDialog } from '@/components/admin/UserEditDialog';
 import { UserCreateDialog } from '@/components/admin/UserCreateDialog';
+import { UserImportDialog } from '@/components/admin/UserImportDialog';
 
 interface Area {
   id: string;
@@ -78,6 +79,7 @@ export default function AdminUsers() {
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -355,10 +357,16 @@ export default function AdminUsers() {
                 Administre usuários, permissões e acessos
               </p>
             </div>
-            <Button onClick={() => setCreateDialogOpen(true)}>
-              <UserPlus className="h-4 w-4 mr-2" />
-              Criar Usuário
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                <FileUp className="h-4 w-4 mr-2" />
+                Importar CSV
+              </Button>
+              <Button onClick={() => setCreateDialogOpen(true)}>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Criar Usuário
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -582,6 +590,12 @@ export default function AdminUsers() {
         areas={areas}
         companies={companies}
         onSave={handleCreate}
+      />
+
+      <UserImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        onComplete={fetchData}
       />
     </MainLayout>
   );
