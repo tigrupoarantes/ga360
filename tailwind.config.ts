@@ -62,6 +62,15 @@ export default {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
         },
+        cyan: {
+          DEFAULT: "hsl(var(--cyan))",
+        },
+        coral: {
+          DEFAULT: "hsl(var(--coral))",
+        },
+        navy: {
+          DEFAULT: "hsl(var(--navy))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
