@@ -517,7 +517,7 @@ export default function Auth() {
           "text-center text-sm text-muted-foreground mt-8 transition-all duration-700 delay-300",
           mounted ? "opacity-100" : "opacity-0"
         )}>
-          © {new Date().getFullYear()} GA 360. Todos os direitos reservados.
+          © {new Date().getFullYear()} Grupo Arantes S/A. Todos os direitos reservados.
         </p>
       </div>
     </div>
