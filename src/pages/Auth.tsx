@@ -8,9 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { z } from 'zod';
-import { Loader2, UserPlus, Target, ArrowRight } from 'lucide-react';
+import { Loader2, UserPlus, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TwoFactorAuth from '@/components/auth/TwoFactorAuth';
+import logoBadge from '@/assets/logo-crescer-badge.png';
 
 const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }),
@@ -240,14 +241,18 @@ export default function Auth() {
           "text-center mb-8 transition-all duration-700 delay-100",
           mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         )}>
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary shadow-lg shadow-primary/25 mb-4 transition-transform hover:scale-105">
-            <Target className="h-8 w-8 text-primary-foreground" />
+          <div className="mb-6 transition-transform hover:scale-105">
+            <img 
+              src={logoBadge} 
+              alt="CRESCER+ & MELHOR" 
+              className="h-32 w-auto mx-auto drop-shadow-2xl"
+            />
           </div>
-          <h1 className="text-4xl font-semibold tracking-tight text-foreground">
-            GA 360
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+            CRESCER+ & MELHOR
           </h1>
-          <p className="text-muted-foreground mt-2">
-            Gestão Estratégica Integrada
+          <p className="text-muted-foreground mt-2 text-sm font-medium">
+            MISSÃO.1BI: 365 DIAS DE JORNADA
           </p>
         </div>
 

@@ -10,43 +10,43 @@
   :root {
     /* Base colors - Clean whites and subtle grays */
     --background: 0 0% 100%;
-    --foreground: 0 0% 7%;
+    --foreground: 250 40% 10%;
 
     /* Card colors - Subtle elevation */
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 7%;
+    --card-foreground: 250 40% 10%;
 
     /* Popover colors */
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 7%;
+    --popover-foreground: 250 40% 10%;
 
-    /* Primary - Deep Blue (Apple-style) */
-    --primary: 211 100% 50%;
+    /* Primary - Roxo/Violeta (Identidade Visual) */
+    --primary: 263 70% 50%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 211 100% 45%;
+    --primary-hover: 263 70% 45%;
 
-    /* Secondary - Soft Gray */
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 7%;
-    --secondary-hover: 0 0% 92%;
+    /* Secondary - Lilás suave */
+    --secondary: 270 60% 96%;
+    --secondary-foreground: 250 40% 10%;
+    --secondary-hover: 270 50% 92%;
 
-    /* Accent - Warm Orange */
-    --accent: 24 100% 50%;
+    /* Accent - Laranja vibrante (Identidade Visual) */
+    --accent: 14 100% 57%;
     --accent-foreground: 0 0% 100%;
-    --accent-hover: 24 100% 45%;
+    --accent-hover: 14 100% 52%;
 
     /* Muted colors */
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 45%;
+    --muted: 270 30% 96%;
+    --muted-foreground: 250 20% 45%;
 
     /* Destructive - Red */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
     /* Border and input - Very subtle */
-    --border: 0 0% 91%;
-    --input: 0 0% 96%;
-    --ring: 211 100% 50%;
+    --border: 270 20% 91%;
+    --input: 270 30% 96%;
+    --ring: 263 70% 50%;
 
     /* Radius - Rounded like Apple */
     --radius: 0.75rem;
@@ -60,18 +60,23 @@
     --warning-foreground: 0 0% 7%;
 
     /* Info color */
-    --info: 211 100% 50%;
+    --info: 263 70% 50%;
     --info-foreground: 0 0% 100%;
+
+    /* New identity colors */
+    --cyan: 185 80% 70%;
+    --coral: 14 85% 65%;
+    --navy: 250 40% 12%;
 
     /* Sidebar/Navigation */
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 0 0% 7%;
-    --sidebar-primary: 211 100% 50%;
+    --sidebar-foreground: 250 40% 10%;
+    --sidebar-primary: 263 70% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 96%;
-    --sidebar-accent-foreground: 0 0% 7%;
-    --sidebar-border: 0 0% 91%;
-    --sidebar-ring: 211 100% 50%;
+    --sidebar-accent: 270 60% 96%;
+    --sidebar-accent-foreground: 250 40% 10%;
+    --sidebar-border: 270 20% 91%;
+    --sidebar-ring: 263 70% 50%;
 
     /* Apple-inspired transitions */
     --transition-smooth: all 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -90,36 +95,36 @@
   }
 
   .dark {
-    --background: 0 0% 0%;
+    --background: 250 40% 6%;
     --foreground: 0 0% 98%;
 
-    --card: 0 0% 7%;
+    --card: 250 35% 10%;
     --card-foreground: 0 0% 98%;
 
-    --popover: 0 0% 7%;
+    --popover: 250 35% 10%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 211 100% 60%;
+    --primary: 263 80% 60%;
     --primary-foreground: 0 0% 100%;
-    --primary-hover: 211 100% 65%;
+    --primary-hover: 263 80% 65%;
 
-    --secondary: 0 0% 15%;
+    --secondary: 250 30% 15%;
     --secondary-foreground: 0 0% 98%;
-    --secondary-hover: 0 0% 20%;
+    --secondary-hover: 250 30% 20%;
 
-    --accent: 24 100% 55%;
+    --accent: 14 100% 60%;
     --accent-foreground: 0 0% 100%;
-    --accent-hover: 24 100% 60%;
+    --accent-hover: 14 100% 65%;
 
-    --muted: 0 0% 15%;
+    --muted: 250 30% 15%;
     --muted-foreground: 0 0% 65%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 18%;
-    --input: 0 0% 15%;
-    --ring: 211 100% 60%;
+    --border: 250 30% 18%;
+    --input: 250 30% 15%;
+    --ring: 263 80% 60%;
 
     --success: 142 71% 50%;
     --success-foreground: 0 0% 100%;
@@ -127,17 +132,21 @@
     --warning: 38 92% 55%;
     --warning-foreground: 0 0% 7%;
 
-    --info: 211 100% 60%;
+    --info: 263 80% 60%;
     --info-foreground: 0 0% 100%;
 
-    --sidebar-background: 0 0% 7%;
+    --cyan: 185 70% 60%;
+    --coral: 14 75% 60%;
+    --navy: 250 40% 6%;
+
+    --sidebar-background: 250 35% 8%;
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 211 100% 60%;
+    --sidebar-primary: 263 80% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent: 250 30% 15%;
     --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 0 0% 18%;
-    --sidebar-ring: 211 100% 60%;
+    --sidebar-border: 250 30% 18%;
+    --sidebar-ring: 263 80% 60%;
 
     /* Dark mode shadows - more subtle */
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -145,7 +154,7 @@
     --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
     --shadow-xl: 0 24px 60px rgba(0, 0, 0, 0.6);
 
-    --glass-bg: rgba(28, 28, 30, 0.8);
+    --glass-bg: rgba(28, 28, 40, 0.85);
     --glass-border: rgba(255, 255, 255, 0.08);
   }
 }
@@ -370,18 +379,31 @@
   color: hsl(var(--foreground));
 }
 
-/* Apple-style Auth Page */
+/* Crescer+ Identity Auth Page */
 .auth-page {
-  @apply min-h-screen flex items-center justify-center relative overflow-hidden;
+  @apply min-h-screen flex flex-col items-center justify-center relative overflow-hidden;
+  background: linear-gradient(135deg, 
+    hsl(185 80% 85%) 0%,
+    hsl(14 85% 85%) 25%,
+    hsl(263 60% 85%) 50%,
+    hsl(170 70% 80%) 75%,
+    hsl(185 80% 85%) 100%
+  );
+  background-size: 400% 400%;
+  animation: auth-gradient-shift 15s ease infinite;
+}
+
+@keyframes auth-gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 
 .auth-gradient {
   @apply absolute inset-0;
   background: 
-    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--primary) / 0.15), transparent),
-    radial-gradient(ellipse 60% 40% at 100% 100%, hsl(var(--accent) / 0.1), transparent),
-    radial-gradient(ellipse 50% 30% at 0% 100%, hsl(var(--primary) / 0.08), transparent),
-    linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--secondary) / 0.3) 100%);
+    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(263 70% 50% / 0.2), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%, hsl(14 100% 57% / 0.2), transparent),
+    radial-gradient(ellipse 50% 30% at 0% 100%, hsl(185 80% 70% / 0.2), transparent);
 }
 
 .auth-orbs {
@@ -395,19 +417,19 @@
 
 .auth-orb-1 {
   @apply w-96 h-96 -top-48 -right-48;
-  background: radial-gradient(circle, hsl(var(--primary) / 0.2) 0%, transparent 70%);
+  background: radial-gradient(circle, hsl(263 70% 50% / 0.3) 0%, transparent 70%);
   animation-delay: 0s;
 }
 
 .auth-orb-2 {
   @apply w-80 h-80 -bottom-40 -left-40;
-  background: radial-gradient(circle, hsl(var(--accent) / 0.15) 0%, transparent 70%);
+  background: radial-gradient(circle, hsl(14 100% 57% / 0.25) 0%, transparent 70%);
   animation-delay: -7s;
 }
 
 .auth-orb-3 {
   @apply w-64 h-64 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2;
-  background: radial-gradient(circle, hsl(var(--primary) / 0.1) 0%, transparent 70%);
+  background: radial-gradient(circle, hsl(185 80% 70% / 0.25) 0%, transparent 70%);
   animation-delay: -14s;
 }
 
@@ -427,18 +449,30 @@
 }
 
 .auth-card {
-  @apply bg-background/80 backdrop-blur-xl rounded-3xl p-8 shadow-xl;
-  border: 1px solid hsl(var(--border) / 0.5);
+  @apply bg-white/85 backdrop-blur-xl rounded-3xl p-8 shadow-2xl;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.dark .auth-page {
+  background: linear-gradient(135deg, 
+    hsl(250 40% 15%) 0%,
+    hsl(263 50% 20%) 25%,
+    hsl(250 40% 12%) 50%,
+    hsl(263 40% 18%) 75%,
+    hsl(250 40% 15%) 100%
+  );
+  background-size: 400% 400%;
+  animation: auth-gradient-shift 15s ease infinite;
 }
 
 .dark .auth-gradient {
   background: 
-    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(var(--primary) / 0.2), transparent),
-    radial-gradient(ellipse 60% 40% at 100% 100%, hsl(var(--accent) / 0.15), transparent),
-    radial-gradient(ellipse 50% 30% at 0% 100%, hsl(var(--primary) / 0.1), transparent),
-    linear-gradient(180deg, hsl(var(--background)) 0%, hsl(0 0% 5%) 100%);
+    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(263 70% 50% / 0.25), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%, hsl(14 100% 57% / 0.2), transparent),
+    radial-gradient(ellipse 50% 30% at 0% 100%, hsl(185 80% 70% / 0.15), transparent);
 }
 
 .dark .auth-card {
-  @apply bg-card/90;
+  @apply bg-card/95;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }

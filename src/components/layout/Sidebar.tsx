@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import logoIcon from "@/assets/logo-crescer-icon.png";
 
 type NavItem = {
   name: string;
@@ -109,11 +110,13 @@ export function Sidebar() {
       <div className="flex h-full flex-col">
         {/* Logo */}
         <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent">
-            <Target className="h-6 w-6 text-accent-foreground" />
-          </div>
+          <img 
+            src={logoIcon} 
+            alt="CRESCER+" 
+            className="h-10 w-10 object-contain"
+          />
           <div>
-            <h1 className="text-xl font-bold text-sidebar-foreground">GA 360</h1>
+            <h1 className="text-lg font-bold text-sidebar-foreground">CRESCER+</h1>
             <p className="text-xs text-sidebar-foreground/70">Gestão Estratégica</p>
           </div>
         </div>
