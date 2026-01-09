@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { Loader2, UserPlus, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TwoFactorAuth from '@/components/auth/TwoFactorAuth';
-import logoRocket from '@/assets/logo-crescer-rocket.png';
+
 
 const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }),
@@ -241,13 +241,6 @@ export default function Auth() {
           "text-center mb-8 transition-all duration-700 delay-100",
           mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         )}>
-          <div className="mb-6 transition-transform hover:scale-105">
-            <img 
-              src={logoRocket} 
-              alt="CRESCER+ & MELHOR" 
-              className="h-32 w-auto mx-auto drop-shadow-2xl"
-            />
-          </div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             CRESCER+ & MELHOR
           </h1>
