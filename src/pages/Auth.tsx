@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { Loader2, UserPlus, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TwoFactorAuth from '@/components/auth/TwoFactorAuth';
-import logoBadge from '@/assets/logo-crescer-badge.png';
+import logoIcon from '@/assets/logo-crescer-icon.png';
 
 const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }),
@@ -243,7 +243,7 @@ export default function Auth() {
         )}>
           <div className="mb-6 transition-transform hover:scale-105">
             <img 
-              src={logoBadge} 
+              src={logoIcon} 
               alt="CRESCER+ & MELHOR" 
               className="h-32 w-auto mx-auto drop-shadow-2xl"
             />
