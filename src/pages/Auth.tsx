@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { Loader2, UserPlus, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TwoFactorAuth from '@/components/auth/TwoFactorAuth';
-
+import logoBadge from '@/assets/logo-crescer-badge.png';
 
 const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }),
@@ -241,12 +241,13 @@ export default function Auth() {
           "text-center mb-8 transition-all duration-700 delay-100",
           mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         )}>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
-            CRESCER+ & MELHOR
-          </h1>
-          <p className="text-muted-foreground mt-2 text-sm font-medium">
-            MISSÃO.1BI: 365 DIAS DE JORNADA
-          </p>
+          <div className="mb-6 animate-float">
+            <img 
+              src={logoBadge} 
+              alt="CRESCER+ & MELHOR" 
+              className="h-40 w-auto mx-auto drop-shadow-2xl"
+            />
+          </div>
         </div>
 
         {/* Card */}
