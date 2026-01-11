@@ -982,6 +982,207 @@ export type Database = {
         }
         Relationships: []
       }
+      process_checklist_items: {
+        Row: {
+          created_at: string
+          id: string
+          is_required: boolean
+          order_index: number
+          process_id: string
+          text: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_required?: boolean
+          order_index?: number
+          process_id: string
+          text: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_required?: boolean
+          order_index?: number
+          process_id?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_checklist_items_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      process_execution_items: {
+        Row: {
+          checklist_item_id: string
+          completed_at: string | null
+          completed_by: string | null
+          execution_id: string
+          id: string
+          is_completed: boolean
+        }
+        Insert: {
+          checklist_item_id: string
+          completed_at?: string | null
+          completed_by?: string | null
+          execution_id: string
+          id?: string
+          is_completed?: boolean
+        }
+        Update: {
+          checklist_item_id?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          execution_id?: string
+          id?: string
+          is_completed?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_execution_items_checklist_item_id_fkey"
+            columns: ["checklist_item_id"]
+            isOneToOne: false
+            referencedRelation: "process_checklist_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "process_execution_items_execution_id_fkey"
+            columns: ["execution_id"]
+            isOneToOne: false
+            referencedRelation: "process_executions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      process_executions: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          executed_by: string | null
+          id: string
+          notes: string | null
+          process_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          executed_by?: string | null
+          id?: string
+          notes?: string | null
+          process_id: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          executed_by?: string | null
+          id?: string
+          notes?: string | null
+          process_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_executions_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      process_responsibles: {
+        Row: {
+          created_at: string
+          id: string
+          process_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          process_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          process_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_responsibles_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      processes: {
+        Row: {
+          area_id: string | null
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          frequency: string
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          area_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          frequency: string
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          area_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          frequency?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "processes_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "processes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           area_id: string | null
