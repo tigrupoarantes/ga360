@@ -400,14 +400,17 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Distribuidora</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
+                          <Select 
+                            onValueChange={(val) => field.onChange(val === "__all__" ? "" : val)} 
+                            value={field.value || "__all__"}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Todas as distribuidoras" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="">Todas</SelectItem>
+                              <SelectItem value="__all__">Todas</SelectItem>
                               {distributors.map(dist => (
                                 <SelectItem key={dist.id} value={dist.id}>
                                   {dist.name}
