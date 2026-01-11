@@ -133,6 +133,7 @@ export type Database = {
           cnpj: string | null
           color: string | null
           created_at: string
+          external_id: string | null
           id: string
           is_active: boolean
           logo_url: string | null
@@ -143,6 +144,7 @@ export type Database = {
           cnpj?: string | null
           color?: string | null
           created_at?: string
+          external_id?: string | null
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -153,6 +155,7 @@ export type Database = {
           cnpj?: string | null
           color?: string | null
           created_at?: string
+          external_id?: string | null
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -204,6 +207,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "csv_import_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      distributors: {
+        Row: {
+          code: string | null
+          company_id: string | null
+          created_at: string | null
+          external_id: string
+          id: string
+          is_active: boolean | null
+          name: string
+          region: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          code?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          external_id: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          region?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          code?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          external_id?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          region?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "distributors_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
@@ -299,16 +346,21 @@ export type Database = {
       goals: {
         Row: {
           area_id: string | null
+          auto_calculate: boolean | null
           company_id: string | null
           created_at: string | null
           created_by: string | null
           current_value: number | null
+          distributor_id: string | null
           end_date: string
           goal_type_id: string | null
           id: string
+          last_calculated_at: string | null
+          metric_type: string | null
           name: string
           notes: string | null
           period_type: string | null
+          product_filter: string | null
           responsible_id: string | null
           start_date: string
           status: string | null
@@ -317,16 +369,21 @@ export type Database = {
         }
         Insert: {
           area_id?: string | null
+          auto_calculate?: boolean | null
           company_id?: string | null
           created_at?: string | null
           created_by?: string | null
           current_value?: number | null
+          distributor_id?: string | null
           end_date: string
           goal_type_id?: string | null
           id?: string
+          last_calculated_at?: string | null
+          metric_type?: string | null
           name: string
           notes?: string | null
           period_type?: string | null
+          product_filter?: string | null
           responsible_id?: string | null
           start_date: string
           status?: string | null
@@ -335,16 +392,21 @@ export type Database = {
         }
         Update: {
           area_id?: string | null
+          auto_calculate?: boolean | null
           company_id?: string | null
           created_at?: string | null
           created_by?: string | null
           current_value?: number | null
+          distributor_id?: string | null
           end_date?: string
           goal_type_id?: string | null
           id?: string
+          last_calculated_at?: string | null
+          metric_type?: string | null
           name?: string
           notes?: string | null
           period_type?: string | null
+          product_filter?: string | null
           responsible_id?: string | null
           start_date?: string
           status?: string | null
@@ -364,6 +426,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "goals_distributor_id_fkey"
+            columns: ["distributor_id"]
+            isOneToOne: false
+            referencedRelation: "distributors"
             referencedColumns: ["id"]
           },
           {
@@ -1230,6 +1299,170 @@ export type Database = {
           },
           {
             foreignKeyName: "profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_daily: {
+        Row: {
+          company_id: string | null
+          customers_served: number | null
+          distributor_id: string | null
+          external_id: string
+          id: string
+          product_category: string | null
+          product_code: string | null
+          product_name: string | null
+          quantity: number | null
+          sale_date: string
+          synced_at: string | null
+          total_value: number | null
+        }
+        Insert: {
+          company_id?: string | null
+          customers_served?: number | null
+          distributor_id?: string | null
+          external_id: string
+          id?: string
+          product_category?: string | null
+          product_code?: string | null
+          product_name?: string | null
+          quantity?: number | null
+          sale_date: string
+          synced_at?: string | null
+          total_value?: number | null
+        }
+        Update: {
+          company_id?: string | null
+          customers_served?: number | null
+          distributor_id?: string | null
+          external_id?: string
+          id?: string
+          product_category?: string | null
+          product_code?: string | null
+          product_name?: string | null
+          quantity?: number | null
+          sale_date?: string
+          synced_at?: string | null
+          total_value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_daily_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_daily_distributor_id_fkey"
+            columns: ["distributor_id"]
+            isOneToOne: false
+            referencedRelation: "distributors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sales_sellers: {
+        Row: {
+          active_customers: number | null
+          company_id: string | null
+          distributor_id: string | null
+          id: string
+          sale_date: string
+          seller_code: string
+          seller_name: string | null
+          synced_at: string | null
+          total_customers: number | null
+          total_value: number | null
+        }
+        Insert: {
+          active_customers?: number | null
+          company_id?: string | null
+          distributor_id?: string | null
+          id?: string
+          sale_date: string
+          seller_code: string
+          seller_name?: string | null
+          synced_at?: string | null
+          total_customers?: number | null
+          total_value?: number | null
+        }
+        Update: {
+          active_customers?: number | null
+          company_id?: string | null
+          distributor_id?: string | null
+          id?: string
+          sale_date?: string
+          seller_code?: string
+          seller_name?: string | null
+          synced_at?: string | null
+          total_customers?: number | null
+          total_value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sales_sellers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_sellers_distributor_id_fkey"
+            columns: ["distributor_id"]
+            isOneToOne: false
+            referencedRelation: "distributors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sync_logs: {
+        Row: {
+          company_id: string | null
+          completed_at: string | null
+          errors: Json | null
+          id: string
+          records_created: number | null
+          records_failed: number | null
+          records_received: number | null
+          records_updated: number | null
+          started_at: string | null
+          status: string | null
+          sync_type: string
+        }
+        Insert: {
+          company_id?: string | null
+          completed_at?: string | null
+          errors?: Json | null
+          id?: string
+          records_created?: number | null
+          records_failed?: number | null
+          records_received?: number | null
+          records_updated?: number | null
+          started_at?: string | null
+          status?: string | null
+          sync_type: string
+        }
+        Update: {
+          company_id?: string | null
+          completed_at?: string | null
+          errors?: Json | null
+          id?: string
+          records_created?: number | null
+          records_failed?: number | null
+          records_received?: number | null
+          records_updated?: number | null
+          started_at?: string | null
+          status?: string | null
+          sync_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_logs_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
