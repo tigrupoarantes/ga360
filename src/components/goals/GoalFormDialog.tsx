@@ -11,6 +11,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -19,6 +20,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -30,6 +33,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCompany } from "@/contexts/CompanyContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { Calculator, Zap } from "lucide-react";
 
 const formSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
@@ -42,6 +46,11 @@ const formSchema = z.object({
   area_id: z.string().optional(),
   status: z.string().default("active"),
   notes: z.string().optional(),
+  // New fields for automatic calculation
+  distributor_id: z.string().optional(),
+  metric_type: z.string().default("value"),
+  product_filter: z.string().optional(),
+  auto_calculate: z.boolean().default(false),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -59,6 +68,7 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
   const { toast } = useToast();
   const [goalTypes, setGoalTypes] = useState<any[]>([]);
   const [areas, setAreas] = useState<any[]>([]);
+  const [distributors, setDistributors] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   const form = useForm<FormData>({
@@ -72,20 +82,28 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
       period_type: "monthly",
       status: "active",
       notes: "",
+      distributor_id: "",
+      metric_type: "value",
+      product_filter: "",
+      auto_calculate: false,
     },
   });
+
+  const autoCalculate = form.watch("auto_calculate");
 
   useEffect(() => {
     if (!selectedCompanyId) return;
 
     const fetchData = async () => {
-      const [typesRes, areasRes] = await Promise.all([
+      const [typesRes, areasRes, distributorsRes] = await Promise.all([
         supabase.from("goal_types").select("*").eq("company_id", selectedCompanyId).eq("is_active", true),
         supabase.from("areas").select("*").eq("company_id", selectedCompanyId),
+        supabase.from("distributors").select("*").eq("company_id", selectedCompanyId).eq("is_active", true),
       ]);
 
       if (typesRes.data) setGoalTypes(typesRes.data);
       if (areasRes.data) setAreas(areasRes.data);
+      if (distributorsRes.data) setDistributors(distributorsRes.data);
     };
 
     fetchData();
@@ -104,6 +122,10 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
         area_id: goal.area_id || undefined,
         status: goal.status,
         notes: goal.notes || "",
+        distributor_id: goal.distributor_id || "",
+        metric_type: goal.metric_type || "value",
+        product_filter: goal.product_filter || "",
+        auto_calculate: goal.auto_calculate || false,
       });
     } else {
       form.reset({
@@ -115,6 +137,10 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
         period_type: "monthly",
         status: "active",
         notes: "",
+        distributor_id: "",
+        metric_type: "value",
+        product_filter: "",
+        auto_calculate: false,
       });
     }
   }, [goal, form]);
@@ -136,6 +162,10 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
       goal_type_id: data.goal_type_id || null,
       area_id: data.area_id || null,
       notes: data.notes || null,
+      distributor_id: data.distributor_id || null,
+      metric_type: data.metric_type || "value",
+      product_filter: data.product_filter || null,
+      auto_calculate: data.auto_calculate,
     };
 
     let error;
@@ -158,7 +188,7 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{goal ? "Editar Meta" : "Nova Meta"}</DialogTitle>
         </DialogHeader>
@@ -224,10 +254,29 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
                 name="current_value"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Valor Atual</FormLabel>
+                    <FormLabel>
+                      Valor Atual
+                      {autoCalculate && (
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          <Calculator className="w-3 h-3 mr-1" />
+                          Automático
+                        </Badge>
+                      )}
+                    </FormLabel>
                     <FormControl>
-                      <Input type="number" step="0.01" {...field} />
+                      <Input 
+                        type="number" 
+                        step="0.01" 
+                        {...field} 
+                        disabled={autoCalculate}
+                        className={autoCalculate ? "bg-muted" : ""}
+                      />
                     </FormControl>
+                    {autoCalculate && (
+                      <FormDescription>
+                        Valor calculado automaticamente das vendas
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -312,6 +361,117 @@ export function GoalFormDialog({ open, onOpenChange, goal, onSuccess }: GoalForm
                   </FormItem>
                 )}
               />
+            </div>
+
+            {/* Automatic Calculation Section */}
+            <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-primary" />
+                <h4 className="font-medium">Cálculo Automático (Integração Vendas)</h4>
+              </div>
+
+              <FormField
+                control={form.control}
+                name="auto_calculate"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <div className="space-y-0.5">
+                      <FormLabel>Calcular automaticamente</FormLabel>
+                      <FormDescription>
+                        O valor atual será atualizado com base nos dados de vendas sincronizados
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {autoCalculate && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="distributor_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Distribuidora</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Todas as distribuidoras" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="">Todas</SelectItem>
+                              {distributors.map(dist => (
+                                <SelectItem key={dist.id} value={dist.id}>
+                                  {dist.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            Filtrar vendas por distribuidora específica
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="metric_type"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tipo de Métrica</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="value">Valor (R$)</SelectItem>
+                              <SelectItem value="volume">Volume (Quantidade)</SelectItem>
+                              <SelectItem value="customers">Clientes Atendidos</SelectItem>
+                              <SelectItem value="coverage">Cobertura (%)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            Qual métrica usar no cálculo
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="product_filter"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Filtro de Produto</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="Ex: PROD001 ou Categoria A (deixe vazio para todos)" 
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Código do produto ou categoria para filtrar as vendas
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
             </div>
 
             {goal && (

@@ -8,6 +8,8 @@ import { GoalsDashboard } from "@/components/goals/GoalsDashboard";
 import { GoalsList } from "@/components/goals/GoalsList";
 import { GoalTypesList } from "@/components/goals/GoalTypesList";
 import { CsvImporter } from "@/components/goals/CsvImporter";
+import { SyncStatus } from "@/components/goals/SyncStatus";
+import { SalesDashboard } from "@/components/sales/SalesDashboard";
 
 export default function Goals() {
   const { selectedCompanyId, selectedCompany } = useCompany();
@@ -36,11 +38,13 @@ export default function Goals() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full max-w-lg grid-cols-4">
+          <TabsList className="grid w-full max-w-2xl grid-cols-6">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="metas">Metas</TabsTrigger>
             <TabsTrigger value="tipos">Tipos</TabsTrigger>
+            <TabsTrigger value="vendas">Vendas</TabsTrigger>
             <TabsTrigger value="importar">Importar</TabsTrigger>
+            <TabsTrigger value="sync">Sincronização</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
@@ -55,8 +59,16 @@ export default function Goals() {
             <GoalTypesList />
           </TabsContent>
 
+          <TabsContent value="vendas" className="space-y-6">
+            <SalesDashboard />
+          </TabsContent>
+
           <TabsContent value="importar" className="space-y-6">
             <CsvImporter />
+          </TabsContent>
+
+          <TabsContent value="sync" className="space-y-6">
+            <SyncStatus />
           </TabsContent>
         </Tabs>
       </div>
