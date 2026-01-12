@@ -111,6 +111,7 @@ export function SyncStatus() {
       case 'sales': return 'Vendas';
       case 'sellers': return 'Vendedores';
       case 'distributors': return 'Distribuidoras';
+      case 'employees': return 'Funcionários';
       default: return type;
     }
   };

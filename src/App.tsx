@@ -32,6 +32,7 @@ import AdminCompanies from "./pages/AdminCompanies";
 import AdminOrganization from "./pages/AdminOrganization";
 import AdminPermissions from "./pages/AdminPermissions";
 import AdminSettings from "./pages/AdminSettings";
+import AdminEmployees from "./pages/AdminEmployees";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -207,6 +208,14 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
                     <AdminSettings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/employees"
+                element={
+                  <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
+                    <AdminEmployees />
                   </ProtectedRoute>
                 }
               />

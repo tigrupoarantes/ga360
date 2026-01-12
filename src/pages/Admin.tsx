@@ -1,7 +1,7 @@
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building2, Users, Settings, Shield } from "lucide-react";
+import { Building2, Users, Settings, Shield, UserCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function Admin() {
@@ -31,6 +31,14 @@ export default function Admin() {
       href: '/admin/permissions',
       color: 'text-secondary',
       bgColor: 'bg-secondary/10',
+    },
+    {
+      title: 'Funcionários Externos',
+      description: 'Funcionários sincronizados do Gestão de Ativos',
+      icon: UserCheck,
+      href: '/admin/employees',
+      color: 'text-primary',
+      bgColor: 'bg-primary/10',
     },
     {
       title: 'Configurações Gerais',
