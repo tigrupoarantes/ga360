@@ -269,6 +269,7 @@ export type Database = {
           hire_date: string | null
           id: string
           is_active: boolean | null
+          linked_profile_id: string | null
           metadata: Json | null
           phone: string | null
           position: string | null
@@ -287,6 +288,7 @@ export type Database = {
           hire_date?: string | null
           id?: string
           is_active?: boolean | null
+          linked_profile_id?: string | null
           metadata?: Json | null
           phone?: string | null
           position?: string | null
@@ -305,6 +307,7 @@ export type Database = {
           hire_date?: string | null
           id?: string
           is_active?: boolean | null
+          linked_profile_id?: string | null
           metadata?: Json | null
           phone?: string | null
           position?: string | null
@@ -319,6 +322,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_employees_linked_profile_id_fkey"
+            columns: ["linked_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -2055,6 +2065,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      link_all_external_employees: { Args: never; Returns: number }
     }
     Enums: {
       app_role: "ceo" | "diretor" | "gerente" | "colaborador" | "super_admin"

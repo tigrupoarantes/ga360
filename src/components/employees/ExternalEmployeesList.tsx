@@ -5,13 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCompany } from "@/contexts/CompanyContext";
 import { supabase } from "@/integrations/supabase/client";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Users, Search, Download, RefreshCw, Building2, Briefcase } from "lucide-react";
+import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+
+interface LinkedProfile {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+}
 
 interface ExternalEmployee {
   id: string;
@@ -27,6 +34,8 @@ interface ExternalEmployee {
   is_active: boolean;
   synced_at: string;
   created_at: string;
+  linked_profile_id: string | null;
+  profiles: LinkedProfile | null;
 }
 
 export function ExternalEmployeesList() {
@@ -37,7 +46,9 @@ export function ExternalEmployeesList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [linkFilter, setLinkFilter] = useState<string>("all");
   const [departments, setDepartments] = useState<string[]>([]);
+  const [relinkingAll, setRelinkingAll] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,7 +59,7 @@ export function ExternalEmployeesList() {
 
   useEffect(() => {
     filterEmployees();
-  }, [employees, searchTerm, departmentFilter, statusFilter]);
+  }, [employees, searchTerm, departmentFilter, statusFilter, linkFilter]);
 
   const fetchEmployees = async () => {
     if (!selectedCompanyId) return;
@@ -57,7 +68,14 @@ export function ExternalEmployeesList() {
     try {
       const { data, error } = await supabase
         .from('external_employees')
-        .select('*')
+        .select(`
+          *,
+          profiles:linked_profile_id (
+            id,
+            first_name,
+            last_name
+          )
+        `)
         .eq('company_id', selectedCompanyId)
         .order('full_name', { ascending: true });
 
@@ -107,11 +125,34 @@ export function ExternalEmployeesList() {
       );
     }
 
+    if (linkFilter !== "all") {
+      filtered = filtered.filter(e => 
+        linkFilter === "linked" ? e.linked_profile_id !== null : e.linked_profile_id === null
+      );
+    }
+
     setFilteredEmployees(filtered);
   };
 
+  const relinkAllEmployees = async () => {
+    setRelinkingAll(true);
+    try {
+      const { data, error } = await supabase.rpc('link_all_external_employees');
+      
+      if (error) throw error;
+      
+      toast.success(`${data || 0} funcionário(s) vinculado(s) com sucesso`);
+      fetchEmployees();
+    } catch (error) {
+      console.error('Error relinking employees:', error);
+      toast.error('Erro ao vincular funcionários');
+    } finally {
+      setRelinkingAll(false);
+    }
+  };
+
   const exportToCsv = () => {
-    const headers = ['Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Data Admissão', 'Status'];
+    const headers = ['Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Data Admissão', 'Status', 'Vinculado'];
     const rows = filteredEmployees.map(e => [
       e.registration_number || '',
       e.full_name,
@@ -120,7 +161,8 @@ export function ExternalEmployeesList() {
       e.department || '',
       e.position || '',
       e.hire_date ? format(new Date(e.hire_date), 'dd/MM/yyyy') : '',
-      e.is_active ? 'Ativo' : 'Inativo'
+      e.is_active ? 'Ativo' : 'Inativo',
+      e.linked_profile_id ? 'Sim' : 'Não'
     ]);
 
     const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
@@ -154,7 +196,15 @@ export function ExternalEmployeesList() {
               }
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" size="sm" onClick={relinkAllEmployees} disabled={relinkingAll}>
+              {relinkingAll ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Link2 className="h-4 w-4 mr-2" />
+              )}
+              Revincular
+            </Button>
             <Button variant="outline" size="sm" onClick={fetchEmployees}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Atualizar
@@ -200,6 +250,17 @@ export function ExternalEmployeesList() {
               <SelectItem value="inactive">Inativos</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={linkFilter} onValueChange={setLinkFilter}>
+            <SelectTrigger className="w-full sm:w-[150px]">
+              <Link2 className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Vínculo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="linked">Vinculados</SelectItem>
+              <SelectItem value="unlinked">Não vinculados</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Stats */}
@@ -219,6 +280,10 @@ export function ExternalEmployeesList() {
           <div className="bg-muted/50 rounded-lg p-3 text-center">
             <div className="text-2xl font-bold text-primary">{departments.length}</div>
             <div className="text-xs text-muted-foreground">Departamentos</div>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-blue-600">{employees.filter(e => e.linked_profile_id).length}</div>
+            <div className="text-xs text-muted-foreground">Vinculados</div>
           </div>
         </div>
 
@@ -246,6 +311,7 @@ export function ExternalEmployeesList() {
                   <TableHead>Cargo</TableHead>
                   <TableHead>Admissão</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Vínculo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,6 +350,32 @@ export function ExternalEmployeesList() {
                       <Badge variant={employee.is_active ? "default" : "secondary"}>
                         {employee.is_active ? 'Ativo' : 'Inativo'}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            {employee.linked_profile_id ? (
+                              <Badge variant="outline" className="gap-1 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">
+                                <Link2 className="h-3 w-3" />
+                                Vinculado
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="gap-1 text-muted-foreground">
+                                <Link2Off className="h-3 w-3" />
+                                Não vinculado
+                              </Badge>
+                            )}
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {employee.linked_profile_id && employee.profiles ? (
+                              <p>Vinculado a: {employee.profiles.first_name} {employee.profiles.last_name}</p>
+                            ) : (
+                              <p>Nenhum usuário do sistema com este email</p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </TableCell>
                   </TableRow>
                 ))}
