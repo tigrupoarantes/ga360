@@ -258,6 +258,71 @@ export type Database = {
           },
         ]
       }
+      external_employees: {
+        Row: {
+          company_id: string | null
+          created_at: string | null
+          department: string | null
+          email: string | null
+          external_id: string
+          full_name: string
+          hire_date: string | null
+          id: string
+          is_active: boolean | null
+          metadata: Json | null
+          phone: string | null
+          position: string | null
+          registration_number: string | null
+          source_system: string | null
+          synced_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string | null
+          department?: string | null
+          email?: string | null
+          external_id: string
+          full_name: string
+          hire_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          metadata?: Json | null
+          phone?: string | null
+          position?: string | null
+          registration_number?: string | null
+          source_system?: string | null
+          synced_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string | null
+          department?: string | null
+          email?: string | null
+          external_id?: string
+          full_name?: string
+          hire_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          metadata?: Json | null
+          phone?: string | null
+          position?: string | null
+          registration_number?: string | null
+          source_system?: string | null
+          synced_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_employees_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       goal_entries: {
         Row: {
           created_at: string | null

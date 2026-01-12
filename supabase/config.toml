@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.recalculate-goals]
 verify_jwt = false
+
+[functions.sync-employees]
+verify_jwt = false
