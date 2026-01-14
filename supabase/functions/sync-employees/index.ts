@@ -6,16 +6,32 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
 };
 
+// Interface para o registro de funcionário - suporta formato novo (Gestão de Ativos) e antigo
 interface EmployeeRecord {
-  external_id: string;
+  // Formato novo (Gestão de Ativos)
+  id?: string;
+  nome?: string;
+  cpf?: string;
+  cargo?: string;
+  departamento?: string;
+  unidade?: string;
+  status?: string;
+  is_condutor?: boolean;
+  cod_vendedor?: string;
+  lider_direto_id?: string;
+  
+  // Formato antigo (retrocompatibilidade)
+  external_id?: string;
+  full_name?: string;
+  position?: string;
+  department?: string;
   registration_number?: string;
-  full_name: string;
+  is_active?: boolean;
+  
+  // Campos comuns
   email?: string;
   phone?: string;
-  department?: string;
-  position?: string;
   hire_date?: string;
-  is_active?: boolean;
   metadata?: Record<string, any>;
 }
 
@@ -130,10 +146,8 @@ const cpfEmailMap: Record<string, string> = {
   '35997151816': 'welder.galvani@grupoarantes.emp.br',
 };
 
-// Função para buscar email por CPF (normaliza removendo zeros à esquerda)
 function getEmailByCpf(cpf: string | undefined): string | undefined {
   if (!cpf) return undefined;
-  // Remove zeros à esquerda e caracteres não numéricos
   const normalizedCpf = cpf.replace(/\D/g, '').replace(/^0+/, '');
   return cpfEmailMap[normalizedCpf] || cpfEmailMap[cpf.replace(/\D/g, '')];
 }
@@ -145,7 +159,6 @@ interface SyncRequest {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -154,7 +167,6 @@ serve(async (req) => {
   console.log(`[sync-employees] Starting sync at ${startTime.toISOString()}`);
 
   try {
-    // Validate API Key
     const apiKey = req.headers.get('x-api-key');
     const expectedApiKey = Deno.env.get('SYNC_API_KEY');
 
@@ -166,15 +178,13 @@ serve(async (req) => {
       );
     }
 
-    // Initialize Supabase client with service role
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse request body
     const body: SyncRequest = await req.json();
     const sourceSystem = body.source_system || 'gestao_ativos';
-    console.log(`[sync-employees] Received ${body.employees?.length || 0} records from ${sourceSystem} for company: ${body.company_external_id}`);
+    console.log(`[sync-employees] Received ${body.employees?.length || 0} records from ${sourceSystem}`);
 
     if (!body.company_external_id || !body.employees || !Array.isArray(body.employees)) {
       return new Response(
@@ -183,7 +193,6 @@ serve(async (req) => {
       );
     }
 
-    // Find company by external_id
     const { data: company, error: companyError } = await supabase
       .from('companies')
       .select('id')
@@ -191,7 +200,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (companyError || !company) {
-      console.error('[sync-employees] Company not found:', body.company_external_id, companyError);
+      console.error('[sync-employees] Company not found:', body.company_external_id);
       return new Response(
         JSON.stringify({ error: `Company not found: ${body.company_external_id}` }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -199,10 +208,8 @@ serve(async (req) => {
     }
 
     const companyId = company.id;
-    console.log(`[sync-employees] Found company ID: ${companyId}`);
 
-    // Create sync log entry
-    const { data: syncLog, error: syncLogError } = await supabase
+    const { data: syncLog } = await supabase
       .from('sync_logs')
       .insert({
         company_id: companyId,
@@ -213,85 +220,116 @@ serve(async (req) => {
       .select()
       .single();
 
-    if (syncLogError) {
-      console.error('[sync-employees] Error creating sync log:', syncLogError);
-    }
-
-    let created = 0;
-    let updated = 0;
-    let failed = 0;
+    let created = 0, updated = 0, failed = 0;
     const errors: any[] = [];
+    const processedEmployees: Array<{ externalId: string; id: string }> = [];
 
-    for (const employee of body.employees) {
+    // Primeira passada: inserir/atualizar funcionários
+    for (const emp of body.employees) {
       try {
-        // Validate required fields
-        if (!employee.external_id || !employee.full_name) {
-          throw new Error('Missing required fields: external_id, full_name');
+        const externalId = emp.id || emp.external_id;
+        const fullName = emp.nome || emp.full_name;
+        const position = emp.cargo || emp.position;
+        const department = emp.departamento || emp.department;
+        const cpf = emp.cpf;
+        const unidade = emp.unidade;
+        const codVendedor = emp.cod_vendedor;
+        const isCondutor = emp.is_condutor || false;
+
+        let isActive = true;
+        if (emp.status !== undefined) {
+          isActive = emp.status.toLowerCase() === 'ativo';
+        } else if (emp.is_active !== undefined) {
+          isActive = emp.is_active;
         }
 
-        // Check if employee exists
+        if (!externalId || !fullName) {
+          throw new Error('Missing required fields: id/external_id and nome/full_name');
+        }
+
         const { data: existingEmployee } = await supabase
           .from('external_employees')
           .select('id')
           .eq('company_id', companyId)
-          .eq('external_id', employee.external_id)
+          .eq('external_id', externalId)
           .eq('source_system', sourceSystem)
           .maybeSingle();
 
-        // Tenta preencher email pelo CPF se não estiver definido
-        const cpfSource = employee.registration_number || employee.external_id;
-        const resolvedEmail = employee.email || getEmailByCpf(cpfSource);
+        const cpfSource = cpf || emp.registration_number || externalId;
+        const resolvedEmail = emp.email || getEmailByCpf(cpfSource);
 
         const employeeData = {
           company_id: companyId,
-          external_id: employee.external_id,
+          external_id: externalId,
           source_system: sourceSystem,
-          registration_number: employee.registration_number,
-          full_name: employee.full_name,
-          email: resolvedEmail,
-          phone: employee.phone,
-          department: employee.department,
-          position: employee.position,
-          hire_date: employee.hire_date || null,
-          is_active: employee.is_active ?? true,
-          metadata: employee.metadata || null,
+          full_name: fullName,
+          email: resolvedEmail || null,
+          phone: emp.phone || null,
+          department: department || null,
+          position: position || null,
+          cpf: cpf || null,
+          unidade: unidade || null,
+          is_condutor: isCondutor,
+          cod_vendedor: codVendedor || null,
+          registration_number: emp.registration_number || cpf || null,
+          hire_date: emp.hire_date || null,
+          is_active: isActive,
+          metadata: emp.metadata || null,
           synced_at: new Date().toISOString()
         };
 
+        let employeeId: string;
+
         if (existingEmployee) {
-          // Update existing employee
-          const { error: updateError } = await supabase
+          const { data: updatedEmp, error: updateError } = await supabase
             .from('external_employees')
-            .update({
-              ...employeeData,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', existingEmployee.id);
+            .update({ ...employeeData, updated_at: new Date().toISOString() })
+            .eq('id', existingEmployee.id)
+            .select('id')
+            .single();
 
           if (updateError) throw updateError;
           updated++;
-          console.log(`[sync-employees] Updated employee: ${employee.external_id}`);
+          employeeId = updatedEmp.id;
         } else {
-          // Insert new employee
-          const { error: insertError } = await supabase
+          const { data: newEmp, error: insertError } = await supabase
             .from('external_employees')
-            .insert(employeeData);
+            .insert(employeeData)
+            .select('id')
+            .single();
 
           if (insertError) throw insertError;
           created++;
-          console.log(`[sync-employees] Created employee: ${employee.external_id}`);
+          employeeId = newEmp.id;
         }
+
+        processedEmployees.push({ externalId, id: employeeId });
       } catch (error) {
         failed++;
-        errors.push({ external_id: employee.external_id, error: String(error) });
-        console.error(`[sync-employees] Error processing employee ${employee.external_id}:`, error);
+        errors.push({ external_id: emp.id || emp.external_id, error: String(error) });
+        console.error(`[sync-employees] Error:`, error);
+      }
+    }
+
+    // Segunda passada: mapear lider_direto_id
+    for (const emp of body.employees) {
+      const liderExternalId = emp.lider_direto_id;
+      if (!liderExternalId) continue;
+
+      const externalId = emp.id || emp.external_id;
+      const employee = processedEmployees.find(e => e.externalId === externalId);
+      const leader = processedEmployees.find(e => e.externalId === liderExternalId);
+
+      if (employee && leader) {
+        await supabase
+          .from('external_employees')
+          .update({ lider_direto_id: leader.id })
+          .eq('id', employee.id);
       }
     }
 
     const endTime = new Date();
-    const durationMs = endTime.getTime() - startTime.getTime();
 
-    // Update sync log
     if (syncLog) {
       await supabase
         .from('sync_logs')
@@ -301,26 +339,13 @@ serve(async (req) => {
           records_failed: failed,
           errors: errors.length > 0 ? errors : null,
           completed_at: endTime.toISOString(),
-          status: failed > 0 ? (created + updated > 0 ? 'partial' : 'failed') : 'success'
+          status: failed > 0 ? 'partial' : 'success'
         })
         .eq('id', syncLog.id);
     }
 
-    const result = {
-      success: true,
-      source_system: sourceSystem,
-      records_received: body.employees.length,
-      created,
-      updated,
-      failed,
-      duration_ms: durationMs,
-      errors: errors.length > 0 ? errors : undefined
-    };
-
-    console.log(`[sync-employees] Completed: ${JSON.stringify(result)}`);
-
     return new Response(
-      JSON.stringify(result),
+      JSON.stringify({ success: true, created, updated, failed, errors: errors.length > 0 ? errors : undefined }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

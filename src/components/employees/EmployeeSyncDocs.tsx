@@ -18,62 +18,136 @@ export function EmployeeSyncDocs() {
 
   const apiEndpoint = `https://aqromdreppgztagafinr.supabase.co/functions/v1/sync-employees`;
 
-  const sqlViewExample = `-- View para sincronização de funcionários
-CREATE VIEW vw_sync_employees AS
+  const sqlViewExample = `-- View para sincronização de funcionários (Gestão de Ativos → GA360)
+CREATE VIEW vw_sync_employees_ga360 AS
 SELECT 
-    CAST(id AS VARCHAR(50)) AS external_id,
-    matricula AS registration_number,
-    nome_completo AS full_name,
-    email,
-    telefone AS phone,
-    departamento AS department,
-    cargo AS position,
-    CONVERT(DATE, data_admissao) AS hire_date,
-    CASE WHEN status = 'A' THEN 1 ELSE 0 END AS is_active
-FROM funcionarios
-WHERE status IN ('A', 'I'); -- Ativos e Inativos`;
+    CAST(f.id AS VARCHAR(36)) AS id,
+    f.nome,
+    f.cpf,
+    f.email,
+    f.cargo,
+    f.departamento,
+    f.unidade,
+    f.status,
+    f.is_condutor,
+    f.cod_vendedor,
+    CAST(f.lider_direto_id AS VARCHAR(36)) AS lider_direto_id
+FROM funcionarios f;
 
-  const powershellScript = `# sync-funcionarios.ps1
-# Configuração
+-- Opcional: adicionar filtro de status se quiser sincronizar apenas ativos
+-- WHERE f.status = 'Ativo';`;
+
+  const powershellScript = `# sync-funcionarios-ga360.ps1
+# Sincronização de Funcionários: Gestão de Ativos → GA360
+
+# ============================================================
+# CONFIGURAÇÃO
+# ============================================================
 $ApiUrl = "${apiEndpoint}"
 $ApiKey = "SUA_SYNC_API_KEY_AQUI"
+$CompanyExternalId = "${(selectedCompany as any)?.external_id || 'CODIGO_EMPRESA'}"
+$SqlServer = "seu-servidor"
+$Database = "gestao_ativos"
 
-# Buscar dados do SQL Server (Gestão de Ativos)
-$Query = "SELECT * FROM vw_sync_employees"
-$Employees = Invoke-Sqlcmd -Query $Query -ServerInstance "seu-servidor" -Database "gestao_ativos"
+# ============================================================
+# BUSCAR DADOS DO SQL SERVER
+# ============================================================
+$Query = @"
+SELECT 
+    CAST(f.id AS VARCHAR(36)) AS id,
+    f.nome,
+    f.cpf,
+    f.email,
+    f.cargo,
+    f.departamento,
+    f.unidade,
+    f.status,
+    CAST(f.is_condutor AS BIT) AS is_condutor,
+    f.cod_vendedor,
+    CAST(f.lider_direto_id AS VARCHAR(36)) AS lider_direto_id
+FROM funcionarios f
+"@
 
-# Montar payload JSON
-$Body = @{
-    company_external_id = "${(selectedCompany as any)?.external_id || 'CODIGO_EMPRESA'}"
-    source_system = "gestao_ativos"
-    employees = $Employees | ForEach-Object {
-        @{
-            external_id = $_.external_id
-            registration_number = $_.registration_number
-            full_name = $_.full_name
-            email = $_.email
-            phone = $_.phone
-            department = $_.department
-            position = $_.position
-            hire_date = if ($_.hire_date) { $_.hire_date.ToString("yyyy-MM-dd") } else { $null }
-            is_active = [bool]$_.is_active
-        }
+Write-Host "Buscando funcionários do banco de dados..." -ForegroundColor Cyan
+$Employees = Invoke-Sqlcmd -Query $Query -ServerInstance $SqlServer -Database $Database
+
+if ($Employees.Count -eq 0) {
+    Write-Host "Nenhum funcionário encontrado." -ForegroundColor Yellow
+    exit 0
+}
+
+Write-Host "Encontrados $($Employees.Count) funcionários." -ForegroundColor Green
+
+# ============================================================
+# MONTAR PAYLOAD JSON
+# ============================================================
+$EmployeesList = @()
+foreach ($emp in $Employees) {
+    $employee = @{
+        id = $emp.id
+        nome = $emp.nome
+        cpf = $emp.cpf
+        email = if ($emp.email) { $emp.email } else { $null }
+        cargo = if ($emp.cargo) { $emp.cargo } else { $null }
+        departamento = if ($emp.departamento) { $emp.departamento } else { $null }
+        unidade = if ($emp.unidade) { $emp.unidade } else { $null }
+        status = if ($emp.status) { $emp.status } else { "Ativo" }
+        is_condutor = [bool]$emp.is_condutor
+        cod_vendedor = if ($emp.cod_vendedor) { $emp.cod_vendedor } else { $null }
+        lider_direto_id = if ($emp.lider_direto_id) { $emp.lider_direto_id } else { $null }
     }
+    $EmployeesList += $employee
+}
+
+$Body = @{
+    company_external_id = $CompanyExternalId
+    source_system = "gestao_ativos"
+    employees = $EmployeesList
 } | ConvertTo-Json -Depth 10
 
-# Headers
+# ============================================================
+# ENVIAR DADOS PARA API
+# ============================================================
 $Headers = @{
     "Content-Type" = "application/json"
     "X-API-Key" = $ApiKey
 }
 
-# Enviar dados
+Write-Host "Enviando dados para GA360..." -ForegroundColor Cyan
+
 try {
-    $Response = Invoke-RestMethod -Uri $ApiUrl -Method POST -Body $Body -Headers $Headers
-    Write-Host "Sincronização concluída com sucesso!"
-    Write-Host "Criados: $($Response.created) | Atualizados: $($Response.updated) | Falhas: $($Response.failed)"
+    $Response = Invoke-RestMethod -Uri $ApiUrl -Method POST -Body $Body -Headers $Headers -ContentType "application/json; charset=utf-8"
+    
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "   SINCRONIZAÇÃO CONCLUÍDA COM SUCESSO" -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Total recebidos: $($Response.total_received)" -ForegroundColor White
+    Write-Host "Criados:         $($Response.created)" -ForegroundColor Green
+    Write-Host "Atualizados:     $($Response.updated)" -ForegroundColor Yellow
+    Write-Host "Falhas:          $($Response.failed)" -ForegroundColor $(if ($Response.failed -gt 0) { "Red" } else { "White" })
+    
+    if ($Response.errors) {
+        Write-Host ""
+        Write-Host "Erros:" -ForegroundColor Red
+        foreach ($err in $Response.errors) {
+            Write-Host "  - [$($err.external_id)] $($err.error)" -ForegroundColor Red
+        }
+    }
+    
 } catch {
-    Write-Error "Erro na sincronização: $_"
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "        ERRO NA SINCRONIZAÇÃO" -ForegroundColor Red
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Detalhes: $($_.Exception.Message)" -ForegroundColor Red
+    
+    if ($_.ErrorDetails.Message) {
+        Write-Host "Resposta: $($_.ErrorDetails.Message)" -ForegroundColor Red
+    }
+    
     exit 1
 }`;
 
@@ -123,23 +197,24 @@ try {
             </div>
 
             <div>
-              <h4 className="font-semibold mb-2">Payload JSON</h4>
+              <h4 className="font-semibold mb-2">Payload JSON (Formato Gestão de Ativos)</h4>
               <pre className="bg-muted p-3 rounded-md text-sm overflow-x-auto">
 {`{
   "company_external_id": "${(selectedCompany as any)?.external_id || 'CODIGO_EMPRESA'}",
   "source_system": "gestao_ativos",
   "employees": [
     {
-      "external_id": "unique_id",
-      "registration_number": "12345",
-      "full_name": "Nome do Funcionário",
+      "id": "uuid-do-funcionario",
+      "nome": "Nome Completo do Funcionário",
+      "cpf": "12345678901",
       "email": "email@empresa.com",
-      "phone": "(11) 99999-9999",
-      "department": "TI",
-      "position": "Analista",
-      "hire_date": "2020-01-15",
-      "is_active": true,
-      "metadata": { "campo_extra": "valor" }
+      "cargo": "Analista",
+      "departamento": "TI",
+      "unidade": "Matriz",
+      "status": "Ativo",
+      "is_condutor": true,
+      "cod_vendedor": "V001",
+      "lider_direto_id": "uuid-do-lider"
     }
   ]
 }`}</pre>
@@ -161,10 +236,29 @@ try {
               <AlertTitle>Campos Obrigatórios</AlertTitle>
               <AlertDescription>
                 <ul className="list-disc list-inside mt-2 space-y-1">
-                  <li><code>external_id</code>: Identificador único do funcionário no sistema de origem</li>
-                  <li><code>full_name</code>: Nome completo do funcionário</li>
+                  <li><code>id</code>: UUID do funcionário no Gestão de Ativos</li>
+                  <li><code>nome</code>: Nome completo do funcionário</li>
                 </ul>
-                Os demais campos são opcionais.
+                <p className="mt-2 text-muted-foreground">Os demais campos são opcionais.</p>
+              </AlertDescription>
+            </Alert>
+
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Mapeamento de Campos</AlertTitle>
+              <AlertDescription>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                  <div><code>id</code> → <code>external_id</code></div>
+                  <div><code>nome</code> → <code>full_name</code></div>
+                  <div><code>cpf</code> → <code>cpf</code></div>
+                  <div><code>cargo</code> → <code>position</code></div>
+                  <div><code>departamento</code> → <code>department</code></div>
+                  <div><code>unidade</code> → <code>unidade</code></div>
+                  <div><code>status</code> → <code>is_active</code></div>
+                  <div><code>is_condutor</code> → <code>is_condutor</code></div>
+                  <div><code>cod_vendedor</code> → <code>cod_vendedor</code></div>
+                  <div><code>lider_direto_id</code> → <code>lider_direto_id</code></div>
+                </div>
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -194,8 +288,8 @@ try {
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Importante</AlertTitle>
               <AlertDescription>
-                Adapte a view para corresponder aos nomes das suas tabelas e colunas no banco Gestão de Ativos.
-                O campo <code>external_id</code> deve ser único por funcionário.
+                Esta view espelha a estrutura da tabela <code>funcionarios</code> do Gestão de Ativos.
+                O campo <code>id</code> (UUID) será usado como identificador único para cada funcionário.
               </AlertDescription>
             </Alert>
           </TabsContent>
@@ -240,7 +334,7 @@ try {
                     <li>Na aba "Steps", clique em New e configure:
                       <ul className="list-disc list-inside ml-4 mt-1">
                         <li>Type: Operating system (CmdExec)</li>
-                        <li>Command: <code>powershell.exe -File "C:\Scripts\sync-funcionarios.ps1"</code></li>
+                        <li>Command: <code>powershell.exe -File "C:\Scripts\sync-funcionarios-ga360.ps1"</code></li>
                       </ul>
                     </li>
                     <li>Na aba "Schedules", configure execução diária (ex: 6h)</li>
@@ -255,7 +349,7 @@ try {
                     <li>Triggers → New → Diariamente às 6h</li>
                     <li>Actions → New → Start a program</li>
                     <li>Program: <code>powershell.exe</code></li>
-                    <li>Arguments: <code>-File "C:\Scripts\sync-funcionarios.ps1"</code></li>
+                    <li>Arguments: <code>-File "C:\Scripts\sync-funcionarios-ga360.ps1"</code></li>
                   </ol>
                 </div>
               </CollapsibleContent>
