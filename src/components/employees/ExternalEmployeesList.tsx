@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCompany } from "@/contexts/CompanyContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -25,6 +26,11 @@ interface LeaderProfile {
   full_name: string;
 }
 
+interface Company {
+  id: string;
+  name: string;
+}
+
 interface ExternalEmployee {
   id: string;
   external_id: string;
@@ -41,6 +47,8 @@ interface ExternalEmployee {
   created_at: string;
   linked_profile_id: string | null;
   profiles: LinkedProfile | null;
+  company_id: string | null;
+  companies?: Company | null;
   // Novos campos
   cpf: string | null;
   unidade: string | null;
@@ -51,7 +59,8 @@ interface ExternalEmployee {
 }
 
 export function ExternalEmployeesList() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, companies } = useCompany();
+  const { role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState<ExternalEmployee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<ExternalEmployee[]>([]);
@@ -61,27 +70,28 @@ export function ExternalEmployeesList() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [linkFilter, setLinkFilter] = useState<string>("all");
   const [condutorFilter, setCondutorFilter] = useState<string>("all");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [departments, setDepartments] = useState<string[]>([]);
   const [unidades, setUnidades] = useState<string[]>([]);
   const [relinkingAll, setRelinkingAll] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
+  // Verificar se o usuário pode ver todas as empresas
+  const canViewAllCompanies = role === 'super_admin' || role === 'ceo';
+
   useEffect(() => {
-    if (selectedCompanyId) {
-      fetchEmployees();
-    }
-  }, [selectedCompanyId]);
+    fetchEmployees();
+  }, [selectedCompanyId, canViewAllCompanies]);
 
   useEffect(() => {
     filterEmployees();
-  }, [employees, searchTerm, departmentFilter, unidadeFilter, statusFilter, linkFilter, condutorFilter]);
+  }, [employees, searchTerm, departmentFilter, unidadeFilter, statusFilter, linkFilter, condutorFilter, companyFilter]);
 
   const fetchEmployees = async () => {
-    if (!selectedCompanyId) return;
     setLoading(true);
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('external_employees')
         .select(`
           *,
@@ -93,10 +103,20 @@ export function ExternalEmployeesList() {
           lider_direto:lider_direto_id (
             id,
             full_name
+          ),
+          companies:company_id (
+            id,
+            name
           )
         `)
-        .eq('company_id', selectedCompanyId)
         .order('full_name', { ascending: true });
+
+      // Se não for admin/CEO, filtrar por empresa selecionada
+      if (!canViewAllCompanies && selectedCompanyId) {
+        query = query.eq('company_id', selectedCompanyId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -138,6 +158,11 @@ export function ExternalEmployeesList() {
         e.cod_vendedor?.toLowerCase().includes(term) ||
         e.external_id.toLowerCase().includes(term)
       );
+    }
+
+    // Filtro de empresa (apenas para admins/CEOs)
+    if (canViewAllCompanies && companyFilter !== "all") {
+      filtered = filtered.filter(e => e.company_id === companyFilter);
     }
 
     if (departmentFilter !== "all") {
@@ -216,9 +241,7 @@ export function ExternalEmployeesList() {
     toast.success('Exportação concluída');
   };
 
-  if (!selectedCompanyId) {
-    return null;
-  }
+  // Mostrar componente mesmo sem empresa selecionada para admins/CEOs
 
   return (
     <Card>
@@ -269,6 +292,21 @@ export function ExternalEmployeesList() {
                 className="pl-10"
               />
             </div>
+            {/* Filtro de empresa - apenas para admins/CEOs */}
+            {canViewAllCompanies && (
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <Building2 className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas empresas</SelectItem>
+                  {companies.map(company => (
+                    <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
               <SelectTrigger className="w-full sm:w-[180px]">
                 <Building2 className="h-4 w-4 mr-2" />
@@ -375,6 +413,7 @@ export function ExternalEmployeesList() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {canViewAllCompanies && <TableHead>Empresa</TableHead>}
                   <TableHead>CPF</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Email</TableHead>
@@ -389,6 +428,13 @@ export function ExternalEmployeesList() {
               <TableBody>
                 {filteredEmployees.map((employee) => (
                   <TableRow key={employee.id}>
+                    {canViewAllCompanies && (
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {employee.companies?.name || '-'}
+                        </Badge>
+                      </TableCell>
+                    )}
                     <TableCell className="font-mono text-sm">
                       {employee.cpf || employee.registration_number || '-'}
                     </TableCell>
