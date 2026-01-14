@@ -10,7 +10,7 @@ import { useCompany } from "@/contexts/CompanyContext";
 import { supabase } from "@/integrations/supabase/client";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2 } from "lucide-react";
+import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, Car, MapPin, UserCircle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 
@@ -18,6 +18,11 @@ interface LinkedProfile {
   id: string;
   first_name: string | null;
   last_name: string | null;
+}
+
+interface LeaderProfile {
+  id: string;
+  full_name: string;
 }
 
 interface ExternalEmployee {
@@ -36,6 +41,13 @@ interface ExternalEmployee {
   created_at: string;
   linked_profile_id: string | null;
   profiles: LinkedProfile | null;
+  // Novos campos
+  cpf: string | null;
+  unidade: string | null;
+  is_condutor: boolean;
+  cod_vendedor: string | null;
+  lider_direto_id: string | null;
+  lider_direto?: LeaderProfile | null;
 }
 
 export function ExternalEmployeesList() {
@@ -45,9 +57,12 @@ export function ExternalEmployeesList() {
   const [filteredEmployees, setFilteredEmployees] = useState<ExternalEmployee[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
+  const [unidadeFilter, setUnidadeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [linkFilter, setLinkFilter] = useState<string>("all");
+  const [condutorFilter, setCondutorFilter] = useState<string>("all");
   const [departments, setDepartments] = useState<string[]>([]);
+  const [unidades, setUnidades] = useState<string[]>([]);
   const [relinkingAll, setRelinkingAll] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
@@ -59,7 +74,7 @@ export function ExternalEmployeesList() {
 
   useEffect(() => {
     filterEmployees();
-  }, [employees, searchTerm, departmentFilter, statusFilter, linkFilter]);
+  }, [employees, searchTerm, departmentFilter, unidadeFilter, statusFilter, linkFilter, condutorFilter]);
 
   const fetchEmployees = async () => {
     if (!selectedCompanyId) return;
@@ -74,6 +89,10 @@ export function ExternalEmployeesList() {
             id,
             first_name,
             last_name
+          ),
+          lider_direto:lider_direto_id (
+            id,
+            full_name
           )
         `)
         .eq('company_id', selectedCompanyId)
@@ -86,6 +105,10 @@ export function ExternalEmployeesList() {
       // Extract unique departments
       const uniqueDepts = [...new Set(data?.map(e => e.department).filter(Boolean) as string[])];
       setDepartments(uniqueDepts.sort());
+
+      // Extract unique unidades
+      const uniqueUnidades = [...new Set(data?.map(e => e.unidade).filter(Boolean) as string[])];
+      setUnidades(uniqueUnidades.sort());
 
       // Get last sync time
       if (data && data.length > 0) {
@@ -111,12 +134,18 @@ export function ExternalEmployeesList() {
         e.full_name.toLowerCase().includes(term) ||
         e.email?.toLowerCase().includes(term) ||
         e.registration_number?.toLowerCase().includes(term) ||
+        e.cpf?.toLowerCase().includes(term) ||
+        e.cod_vendedor?.toLowerCase().includes(term) ||
         e.external_id.toLowerCase().includes(term)
       );
     }
 
     if (departmentFilter !== "all") {
       filtered = filtered.filter(e => e.department === departmentFilter);
+    }
+
+    if (unidadeFilter !== "all") {
+      filtered = filtered.filter(e => e.unidade === unidadeFilter);
     }
 
     if (statusFilter !== "all") {
@@ -128,6 +157,12 @@ export function ExternalEmployeesList() {
     if (linkFilter !== "all") {
       filtered = filtered.filter(e => 
         linkFilter === "linked" ? e.linked_profile_id !== null : e.linked_profile_id === null
+      );
+    }
+
+    if (condutorFilter !== "all") {
+      filtered = filtered.filter(e => 
+        condutorFilter === "yes" ? e.is_condutor : !e.is_condutor
       );
     }
 
@@ -152,16 +187,21 @@ export function ExternalEmployeesList() {
   };
 
   const exportToCsv = () => {
-    const headers = ['Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Data Admissão', 'Status', 'Vinculado'];
+    const headers = ['CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Status', 'Condutor', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
     const rows = filteredEmployees.map(e => [
+      e.cpf || '',
       e.registration_number || '',
       e.full_name,
       e.email || '',
       e.phone || '',
       e.department || '',
       e.position || '',
+      e.unidade || '',
       e.hire_date ? format(new Date(e.hire_date), 'dd/MM/yyyy') : '',
       e.is_active ? 'Ativo' : 'Inativo',
+      e.is_condutor ? 'Sim' : 'Não',
+      e.cod_vendedor || '',
+      e.lider_direto?.full_name || '',
       e.linked_profile_id ? 'Sim' : 'Não'
     ]);
 
@@ -218,53 +258,80 @@ export function ExternalEmployeesList() {
       </CardHeader>
       <CardContent>
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nome, email ou matrícula..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+        <div className="flex flex-col gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome, email, CPF, matrícula ou cód. vendedor..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <Building2 className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Departamento" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos departamentos</SelectItem>
+                {departments.map(dept => (
+                  <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={unidadeFilter} onValueChange={setUnidadeFilter}>
+              <SelectTrigger className="w-full sm:w-[150px]">
+                <MapPin className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Unidade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas unidades</SelectItem>
+                {unidades.map(unidade => (
+                  <SelectItem key={unidade} value={unidade}>{unidade}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-            <SelectTrigger className="w-full sm:w-[200px]">
-              <Building2 className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Departamento" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os departamentos</SelectItem>
-              {departments.map(dept => (
-                <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-[150px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="active">Ativos</SelectItem>
-              <SelectItem value="inactive">Inativos</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={linkFilter} onValueChange={setLinkFilter}>
-            <SelectTrigger className="w-full sm:w-[150px]">
-              <Link2 className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Vínculo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="linked">Vinculados</SelectItem>
-              <SelectItem value="unlinked">Não vinculados</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-[130px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="active">Ativos</SelectItem>
+                <SelectItem value="inactive">Inativos</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={condutorFilter} onValueChange={setCondutorFilter}>
+              <SelectTrigger className="w-full sm:w-[130px]">
+                <Car className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Condutor" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="yes">Condutores</SelectItem>
+                <SelectItem value="no">Não condutores</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={linkFilter} onValueChange={setLinkFilter}>
+              <SelectTrigger className="w-full sm:w-[150px]">
+                <Link2 className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Vínculo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="linked">Vinculados</SelectItem>
+                <SelectItem value="unlinked">Não vinculados</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 mb-6">
           <div className="bg-muted/50 rounded-lg p-3 text-center">
             <div className="text-2xl font-bold text-foreground">{employees.length}</div>
             <div className="text-xs text-muted-foreground">Total</div>
@@ -278,8 +345,12 @@ export function ExternalEmployeesList() {
             <div className="text-xs text-muted-foreground">Inativos</div>
           </div>
           <div className="bg-muted/50 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-primary">{departments.length}</div>
-            <div className="text-xs text-muted-foreground">Departamentos</div>
+            <div className="text-2xl font-bold text-orange-600">{employees.filter(e => e.is_condutor).length}</div>
+            <div className="text-xs text-muted-foreground">Condutores</div>
+          </div>
+          <div className="bg-muted/50 rounded-lg p-3 text-center">
+            <div className="text-2xl font-bold text-primary">{unidades.length}</div>
+            <div className="text-xs text-muted-foreground">Unidades</div>
           </div>
           <div className="bg-muted/50 rounded-lg p-3 text-center">
             <div className="text-2xl font-bold text-blue-600">{employees.filter(e => e.linked_profile_id).length}</div>
@@ -304,23 +375,45 @@ export function ExternalEmployeesList() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Matrícula</TableHead>
+                  <TableHead>CPF</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Departamento</TableHead>
                   <TableHead>Cargo</TableHead>
-                  <TableHead>Admissão</TableHead>
+                  <TableHead>Unidade</TableHead>
+                  <TableHead>Líder</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-center">Vínculo</TableHead>
+                  <TableHead className="text-center">Info</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredEmployees.map((employee) => (
                   <TableRow key={employee.id}>
                     <TableCell className="font-mono text-sm">
-                      {employee.registration_number || employee.external_id}
+                      {employee.cpf || employee.registration_number || '-'}
                     </TableCell>
-                    <TableCell className="font-medium">{employee.full_name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{employee.full_name}</span>
+                        {employee.is_condutor && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Badge variant="outline" className="gap-1 bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800">
+                                  <Car className="h-3 w-3" />
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Condutor autorizado</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                      {employee.cod_vendedor && (
+                        <span className="text-xs text-muted-foreground">Cód: {employee.cod_vendedor}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {employee.email || '-'}
                     </TableCell>
@@ -340,11 +433,30 @@ export function ExternalEmployeesList() {
                         </Badge>
                       ) : '-'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {employee.hire_date 
-                        ? format(new Date(employee.hire_date), 'dd/MM/yyyy', { locale: ptBR })
-                        : '-'
-                      }
+                    <TableCell>
+                      {employee.unidade ? (
+                        <Badge variant="outline" className="gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {employee.unidade}
+                        </Badge>
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {employee.lider_direto ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <Badge variant="outline" className="gap-1">
+                                <UserCircle className="h-3 w-3" />
+                                {employee.lider_direto.full_name.split(' ')[0]}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Líder: {employee.lider_direto.full_name}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : '-'}
                     </TableCell>
                     <TableCell>
                       <Badge variant={employee.is_active ? "default" : "secondary"}>
@@ -358,12 +470,10 @@ export function ExternalEmployeesList() {
                             {employee.linked_profile_id ? (
                               <Badge variant="outline" className="gap-1 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">
                                 <Link2 className="h-3 w-3" />
-                                Vinculado
                               </Badge>
                             ) : (
                               <Badge variant="outline" className="gap-1 text-muted-foreground">
                                 <Link2Off className="h-3 w-3" />
-                                Não vinculado
                               </Badge>
                             )}
                           </TooltipTrigger>
@@ -371,7 +481,7 @@ export function ExternalEmployeesList() {
                             {employee.linked_profile_id && employee.profiles ? (
                               <p>Vinculado a: {employee.profiles.first_name} {employee.profiles.last_name}</p>
                             ) : (
-                              <p>Nenhum usuário do sistema com este email</p>
+                              <p>Não vinculado ao sistema</p>
                             )}
                           </TooltipContent>
                         </Tooltip>

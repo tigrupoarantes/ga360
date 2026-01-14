@@ -260,7 +260,9 @@ export type Database = {
       }
       external_employees: {
         Row: {
+          cod_vendedor: string | null
           company_id: string | null
+          cpf: string | null
           created_at: string | null
           department: string | null
           email: string | null
@@ -269,6 +271,8 @@ export type Database = {
           hire_date: string | null
           id: string
           is_active: boolean | null
+          is_condutor: boolean | null
+          lider_direto_id: string | null
           linked_profile_id: string | null
           metadata: Json | null
           phone: string | null
@@ -276,10 +280,13 @@ export type Database = {
           registration_number: string | null
           source_system: string | null
           synced_at: string | null
+          unidade: string | null
           updated_at: string | null
         }
         Insert: {
+          cod_vendedor?: string | null
           company_id?: string | null
+          cpf?: string | null
           created_at?: string | null
           department?: string | null
           email?: string | null
@@ -288,6 +295,8 @@ export type Database = {
           hire_date?: string | null
           id?: string
           is_active?: boolean | null
+          is_condutor?: boolean | null
+          lider_direto_id?: string | null
           linked_profile_id?: string | null
           metadata?: Json | null
           phone?: string | null
@@ -295,10 +304,13 @@ export type Database = {
           registration_number?: string | null
           source_system?: string | null
           synced_at?: string | null
+          unidade?: string | null
           updated_at?: string | null
         }
         Update: {
+          cod_vendedor?: string | null
           company_id?: string | null
+          cpf?: string | null
           created_at?: string | null
           department?: string | null
           email?: string | null
@@ -307,6 +319,8 @@ export type Database = {
           hire_date?: string | null
           id?: string
           is_active?: boolean | null
+          is_condutor?: boolean | null
+          lider_direto_id?: string | null
           linked_profile_id?: string | null
           metadata?: Json | null
           phone?: string | null
@@ -314,6 +328,7 @@ export type Database = {
           registration_number?: string | null
           source_system?: string | null
           synced_at?: string | null
+          unidade?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -322,6 +337,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_employees_lider_direto_id_fkey"
+            columns: ["lider_direto_id"]
+            isOneToOne: false
+            referencedRelation: "external_employees"
             referencedColumns: ["id"]
           },
           {
