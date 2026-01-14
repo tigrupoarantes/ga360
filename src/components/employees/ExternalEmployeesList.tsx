@@ -11,9 +11,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, Car, MapPin, UserCircle } from "lucide-react";
+import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, Car, MapPin, UserCircle, UserPlus } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { ConvertToUsersDialog } from "./ConvertToUsersDialog";
 
 interface LinkedProfile {
   id: string;
@@ -75,12 +76,17 @@ export function ExternalEmployeesList() {
   const [unidades, setUnidades] = useState<string[]>([]);
   const [relinkingAll, setRelinkingAll] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [convertibleCount, setConvertibleCount] = useState(0);
 
   // Verificar se o usuário pode ver todas as empresas
   const canViewAllCompanies = role === 'super_admin' || role === 'ceo';
 
   useEffect(() => {
     fetchEmployees();
+    if (canViewAllCompanies) {
+      fetchConvertibleCount();
+    }
   }, [selectedCompanyId, canViewAllCompanies]);
 
   useEffect(() => {
@@ -142,6 +148,24 @@ export function ExternalEmployeesList() {
       toast.error('Erro ao carregar funcionários');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchConvertibleCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('external_employees')
+        .select('*', { count: 'exact', head: true })
+        .not('email', 'is', null)
+        .neq('email', '')
+        .is('linked_profile_id', null)
+        .eq('is_active', true);
+
+      if (!error) {
+        setConvertibleCount(count || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching convertible count:', error);
     }
   };
 
@@ -260,6 +284,21 @@ export function ExternalEmployeesList() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {canViewAllCompanies && (
+              <Button 
+                size="sm" 
+                onClick={() => setConvertDialogOpen(true)}
+                disabled={convertibleCount === 0}
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                Criar Usuários
+                {convertibleCount > 0 && (
+                  <Badge variant="secondary" className="ml-2">
+                    {convertibleCount}
+                  </Badge>
+                )}
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={relinkAllEmployees} disabled={relinkingAll}>
               {relinkingAll ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -279,6 +318,17 @@ export function ExternalEmployeesList() {
           </div>
         </div>
       </CardHeader>
+
+      {/* Convert to Users Dialog */}
+      <ConvertToUsersDialog 
+        open={convertDialogOpen} 
+        onOpenChange={setConvertDialogOpen}
+        companyId={companyFilter !== "all" ? companyFilter : null}
+        onSuccess={() => {
+          fetchEmployees();
+          fetchConvertibleCount();
+        }}
+      />
       <CardContent>
         {/* Filters */}
         <div className="flex flex-col gap-4 mb-6">

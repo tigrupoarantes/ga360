@@ -2068,6 +2068,10 @@ export type Database = {
       }
       calculate_level: { Args: { total_points: number }; Returns: number }
       cleanup_expired_2fa_codes: { Args: never; Returns: undefined }
+      count_convertible_employees: {
+        Args: { p_company_id?: string }
+        Returns: number
+      }
       has_company_access: {
         Args: { _company_id: string; _user_id: string }
         Returns: boolean
