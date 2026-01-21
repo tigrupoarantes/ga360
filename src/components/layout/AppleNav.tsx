@@ -21,7 +21,12 @@ import {
   ChevronRight,
   TrendingUp, 
   Gamepad2, 
-  Crosshair
+  Crosshair,
+  Building,
+  Shield,
+  DollarSign,
+  Scale,
+  FileSearch
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -69,6 +74,18 @@ const navigation: NavItem[] = [
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
   { name: 'Metas', href: '/metas', icon: Target },
   { name: 'OKRs', href: '/okrs', icon: Crosshair },
+  { 
+    name: 'Governança EC', 
+    icon: Building,
+    children: [
+      { name: 'Home', href: '/governanca-ec', icon: LayoutDashboard },
+      { name: 'Governança', href: '/governanca-ec/governanca', icon: Shield },
+      { name: 'Financeiro', href: '/governanca-ec/financeiro', icon: DollarSign },
+      { name: 'Pessoas & Cultura', href: '/governanca-ec/pessoas-cultura', icon: Users },
+      { name: 'Jurídico', href: '/governanca-ec/juridico', icon: Scale },
+      { name: 'Auditoria', href: '/governanca-ec/auditoria', icon: FileSearch },
+    ]
+  },
   { name: 'Trade', href: '/trade', icon: ShoppingCart },
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Gamificação', href: '/gamificacao', icon: Gamepad2 },
