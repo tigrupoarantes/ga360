@@ -60,7 +60,7 @@ const navigation: NavItem[] = [
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
   { name: 'Metas', href: '/metas', icon: Target },
   { name: 'OKRs', href: '/okrs', icon: Crosshair },
-  { name: 'Governança EC', href: '/governanca-ec', icon: Building },
+  { name: 'Governança', href: '/governanca-ec', icon: Building },
   { name: 'Trade', href: '/trade', icon: ShoppingCart },
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Gamificação', href: '/gamificacao', icon: Gamepad2 },
