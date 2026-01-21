@@ -177,7 +177,8 @@ export function DatalakeConnectionForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="api_proxy">API Proxy</SelectItem>
+                      <SelectItem value="sql_server_proxy">SQL Server (via API Proxy)</SelectItem>
+                      <SelectItem value="api_proxy">API Proxy Genérico</SelectItem>
                       <SelectItem value="rest_api">REST API</SelectItem>
                     </SelectContent>
                   </Select>
