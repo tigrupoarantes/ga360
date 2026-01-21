@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { 
   LayoutDashboard, 
@@ -16,32 +16,19 @@ import {
   Search,
   Menu,
   X,
-  Building2,
   ChevronDown,
   ChevronRight,
   TrendingUp, 
   Gamepad2, 
   Crosshair,
-  Building,
-  Shield,
-  DollarSign,
-  Scale,
-  FileSearch
+  Building
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
-import { useCompany } from "@/contexts/CompanyContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RoleGuard } from "@/components/auth/RoleGuard";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,7 +38,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { supabase } from "@/integrations/supabase/client";
 
 type NavItem = {
   name: string;
@@ -74,18 +60,7 @@ const navigation: NavItem[] = [
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
   { name: 'Metas', href: '/metas', icon: Target },
   { name: 'OKRs', href: '/okrs', icon: Crosshair },
-  { 
-    name: 'Governança EC', 
-    icon: Building,
-    children: [
-      { name: 'Home', href: '/governanca-ec', icon: LayoutDashboard },
-      { name: 'Governança', href: '/governanca-ec/governanca', icon: Shield },
-      { name: 'Financeiro', href: '/governanca-ec/financeiro', icon: DollarSign },
-      { name: 'Pessoas & Cultura', href: '/governanca-ec/pessoas-cultura', icon: Users },
-      { name: 'Jurídico', href: '/governanca-ec/juridico', icon: Scale },
-      { name: 'Auditoria', href: '/governanca-ec/auditoria', icon: FileSearch },
-    ]
-  },
+  { name: 'Governança EC', href: '/governanca-ec', icon: Building },
   { name: 'Trade', href: '/trade', icon: ShoppingCart },
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Gamificação', href: '/gamificacao', icon: Gamepad2 },
@@ -96,7 +71,6 @@ export function AppleNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile, role, signOut } = useAuth();
-  const { selectedCompanyId, setSelectedCompanyId, companies, setCompanies } = useCompany();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
@@ -116,22 +90,6 @@ export function AppleNav() {
     });
     return initialState;
   });
-
-  useEffect(() => {
-    const fetchCompanies = async () => {
-      const { data } = await supabase
-        .from("companies")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-      
-      if (data) {
-        setCompanies(data);
-      }
-    };
-    
-    fetchCompanies();
-  }, [setCompanies]);
 
   const displayName = profile?.first_name && profile?.last_name
     ? `${profile.first_name} ${profile.last_name}`
@@ -235,29 +193,6 @@ export function AppleNav() {
 
             {/* Right Section */}
             <div className="flex items-center gap-2">
-              {/* Company Selector - Desktop */}
-              <div className="hidden md:block">
-                <Select 
-                  value={selectedCompanyId || "all"} 
-                  onValueChange={(value) => setSelectedCompanyId(value === "all" ? null : value)}
-                >
-                  <SelectTrigger className="w-[180px] h-8 text-xs border-none bg-secondary/50 hover:bg-secondary transition-smooth">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                      <SelectValue placeholder="Todas Empresas" />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas Empresas</SelectItem>
-                    {companies.map((company) => (
-                      <SelectItem key={company.id} value={company.id}>
-                        {company.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               {/* Search Button */}
               <Button 
                 variant="ghost" 
@@ -353,27 +288,6 @@ export function AppleNav() {
           <div className="fixed inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)} />
           <div className="fixed top-14 left-0 right-0 bottom-0 bg-background animate-slide-up overflow-y-auto">
             <div className="container-apple py-6 space-y-6">
-              {/* Company Selector - Mobile */}
-              <div>
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Empresa</label>
-                <Select 
-                  value={selectedCompanyId || "all"} 
-                  onValueChange={(value) => setSelectedCompanyId(value === "all" ? null : value)}
-                >
-                  <SelectTrigger className="w-full mt-2">
-                    <SelectValue placeholder="Todas Empresas" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas Empresas</SelectItem>
-                    {companies.map((company) => (
-                      <SelectItem key={company.id} value={company.id}>
-                        {company.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               {/* Navigation Links */}
               <nav className="space-y-1">
                 {navigation.map((item) => (
