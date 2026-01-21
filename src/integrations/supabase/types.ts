@@ -258,6 +258,511 @@ export type Database = {
           },
         ]
       }
+      dl_card_bindings: {
+        Row: {
+          cache_ttl_minutes: number | null
+          card_id: string
+          created_at: string
+          id: string
+          is_enabled: boolean
+          mapping_json: Json | null
+          params_mapping_json: Json | null
+          query_id: string
+          refresh_policy: string
+          updated_at: string
+        }
+        Insert: {
+          cache_ttl_minutes?: number | null
+          card_id: string
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          mapping_json?: Json | null
+          params_mapping_json?: Json | null
+          query_id: string
+          refresh_policy?: string
+          updated_at?: string
+        }
+        Update: {
+          cache_ttl_minutes?: number | null
+          card_id?: string
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          mapping_json?: Json | null
+          params_mapping_json?: Json | null
+          query_id?: string
+          refresh_policy?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dl_card_bindings_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "ec_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dl_card_bindings_query_id_fkey"
+            columns: ["query_id"]
+            isOneToOne: false
+            referencedRelation: "dl_queries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dl_connections: {
+        Row: {
+          auth_config_json: Json | null
+          auth_type: string | null
+          base_url: string
+          created_at: string
+          created_by: string | null
+          headers_json: Json | null
+          id: string
+          is_enabled: boolean
+          name: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          auth_config_json?: Json | null
+          auth_type?: string | null
+          base_url: string
+          created_at?: string
+          created_by?: string | null
+          headers_json?: Json | null
+          id?: string
+          is_enabled?: boolean
+          name: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          auth_config_json?: Json | null
+          auth_type?: string | null
+          base_url?: string
+          created_at?: string
+          created_by?: string | null
+          headers_json?: Json | null
+          id?: string
+          is_enabled?: boolean
+          name?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dl_connections_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dl_queries: {
+        Row: {
+          body_template_json: Json | null
+          connection_id: string
+          created_at: string
+          description: string | null
+          endpoint_path: string
+          id: string
+          is_enabled: boolean
+          method: string
+          name: string
+          outputs_schema_json: Json | null
+          params_schema_json: Json | null
+          updated_at: string
+        }
+        Insert: {
+          body_template_json?: Json | null
+          connection_id: string
+          created_at?: string
+          description?: string | null
+          endpoint_path: string
+          id?: string
+          is_enabled?: boolean
+          method?: string
+          name: string
+          outputs_schema_json?: Json | null
+          params_schema_json?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          body_template_json?: Json | null
+          connection_id?: string
+          created_at?: string
+          description?: string | null
+          endpoint_path?: string
+          id?: string
+          is_enabled?: boolean
+          method?: string
+          name?: string
+          outputs_schema_json?: Json | null
+          params_schema_json?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dl_queries_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "dl_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dl_query_runs: {
+        Row: {
+          binding_id: string | null
+          card_id: string | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          params_used_json: Json | null
+          query_id: string
+          response_snapshot_json: Json | null
+          rows_returned: number | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          binding_id?: string | null
+          card_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          params_used_json?: Json | null
+          query_id: string
+          response_snapshot_json?: Json | null
+          rows_returned?: number | null
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          binding_id?: string | null
+          card_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          params_used_json?: Json | null
+          query_id?: string
+          response_snapshot_json?: Json | null
+          rows_returned?: number | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dl_query_runs_binding_id_fkey"
+            columns: ["binding_id"]
+            isOneToOne: false
+            referencedRelation: "dl_card_bindings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dl_query_runs_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "ec_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dl_query_runs_query_id_fkey"
+            columns: ["query_id"]
+            isOneToOne: false
+            referencedRelation: "dl_queries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ec_areas: {
+        Row: {
+          created_at: string
+          description: string | null
+          icon: string | null
+          id: string
+          is_active: boolean
+          name: string
+          order: number
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          order?: number
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          order?: number
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ec_card_records: {
+        Row: {
+          card_id: string
+          checklist_json: Json | null
+          competence: string
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          datalake_snapshot_json: Json | null
+          due_date: string | null
+          id: string
+          manual_payload_json: Json | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          card_id: string
+          checklist_json?: Json | null
+          competence: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          datalake_snapshot_json?: Json | null
+          due_date?: string | null
+          id?: string
+          manual_payload_json?: Json | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          card_id?: string
+          checklist_json?: Json | null
+          competence?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          datalake_snapshot_json?: Json | null
+          due_date?: string | null
+          id?: string
+          manual_payload_json?: Json | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ec_card_records_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "ec_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ec_card_records_completed_by_fkey"
+            columns: ["completed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ec_card_records_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ec_cards: {
+        Row: {
+          area_id: string
+          backup_id: string | null
+          checklist_template_json: Json | null
+          created_at: string
+          description: string | null
+          due_rule_json: Json | null
+          id: string
+          is_active: boolean
+          manual_fields_schema_json: Json | null
+          order: number
+          periodicity_type: string
+          required_evidences_json: Json | null
+          responsible_id: string | null
+          risk_days_threshold: number | null
+          scope_json: Json | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          area_id: string
+          backup_id?: string | null
+          checklist_template_json?: Json | null
+          created_at?: string
+          description?: string | null
+          due_rule_json?: Json | null
+          id?: string
+          is_active?: boolean
+          manual_fields_schema_json?: Json | null
+          order?: number
+          periodicity_type?: string
+          required_evidences_json?: Json | null
+          responsible_id?: string | null
+          risk_days_threshold?: number | null
+          scope_json?: Json | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          area_id?: string
+          backup_id?: string | null
+          checklist_template_json?: Json | null
+          created_at?: string
+          description?: string | null
+          due_rule_json?: Json | null
+          id?: string
+          is_active?: boolean
+          manual_fields_schema_json?: Json | null
+          order?: number
+          periodicity_type?: string
+          required_evidences_json?: Json | null
+          responsible_id?: string | null
+          risk_days_threshold?: number | null
+          scope_json?: Json | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ec_cards_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "ec_areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ec_cards_backup_id_fkey"
+            columns: ["backup_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ec_cards_responsible_id_fkey"
+            columns: ["responsible_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ec_record_comments: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          record_id: string
+          text: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          record_id: string
+          text: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          record_id?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ec_record_comments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ec_record_comments_record_id_fkey"
+            columns: ["record_id"]
+            isOneToOne: false
+            referencedRelation: "ec_card_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ec_record_evidences: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          file_path: string | null
+          id: string
+          record_id: string
+          type: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          file_path?: string | null
+          id?: string
+          record_id: string
+          type?: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          file_path?: string | null
+          id?: string
+          record_id?: string
+          type?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ec_record_evidences_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ec_record_evidences_record_id_fkey"
+            columns: ["record_id"]
+            isOneToOne: false
+            referencedRelation: "ec_card_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       external_employees: {
         Row: {
           cod_vendedor: string | null
