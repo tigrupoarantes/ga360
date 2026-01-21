@@ -33,6 +33,10 @@ import AdminOrganization from "./pages/AdminOrganization";
 import AdminPermissions from "./pages/AdminPermissions";
 import AdminSettings from "./pages/AdminSettings";
 import AdminEmployees from "./pages/AdminEmployees";
+import AdminGovernancaEC from "./pages/AdminGovernancaEC";
+import GovernancaEC from "./pages/GovernancaEC";
+import GovernancaECArea from "./pages/GovernancaECArea";
+import GovernancaECCardDetail from "./pages/GovernancaECCardDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -216,6 +220,38 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
                     <AdminEmployees />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/governanca-ec"
+                element={
+                  <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
+                    <AdminGovernancaEC />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/governanca-ec"
+                element={
+                  <ProtectedRoute>
+                    <GovernancaEC />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/governanca-ec/:areaSlug"
+                element={
+                  <ProtectedRoute>
+                    <GovernancaECArea />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/governanca-ec/:areaSlug/:cardId"
+                element={
+                  <ProtectedRoute>
+                    <GovernancaECCardDetail />
                   </ProtectedRoute>
                 }
               />

@@ -12,7 +12,12 @@ import {
   LogOut,
   Building2,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Shield,
+  DollarSign,
+  Scale,
+  FileSearch,
+  Building
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -45,6 +50,18 @@ const navigation: NavItem[] = [
   { name: 'Processos', href: '/processos', icon: FileText },
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
   { name: 'Portal de Metas', href: '/metas', icon: Target },
+  { 
+    name: 'Governança EC', 
+    icon: Building,
+    children: [
+      { name: 'Home', href: '/governanca-ec', icon: LayoutDashboard },
+      { name: 'Governança', href: '/governanca-ec/governanca', icon: Shield },
+      { name: 'Financeiro', href: '/governanca-ec/financeiro', icon: DollarSign },
+      { name: 'Pessoas & Cultura', href: '/governanca-ec/pessoas-cultura', icon: Users },
+      { name: 'Jurídico', href: '/governanca-ec/juridico', icon: Scale },
+      { name: 'Auditoria', href: '/governanca-ec/auditoria', icon: FileSearch },
+    ]
+  },
   { name: 'Trade Marketing', href: '/trade', icon: ShoppingCart },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
 ];
