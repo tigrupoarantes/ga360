@@ -49,7 +49,7 @@ export default function GovernancaECArea() {
     <MainLayout>
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <BackButton fallbackPath="/governanca-ec" />
+          <BackButton to="/governanca-ec" />
           <div>
             <h1 className="text-3xl font-bold text-foreground">{area.name}</h1>
             <p className="text-muted-foreground mt-1">
