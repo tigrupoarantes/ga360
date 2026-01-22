@@ -9,6 +9,7 @@ import { ECManualForm } from "./ECManualForm";
 import { ECDatalakeViewer } from "./ECDatalakeViewer";
 import { ECEvidenceUpload } from "./ECEvidenceUpload";
 import { ECComments } from "./ECComments";
+import { ECCardTasks } from "./ECCardTasks";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
@@ -19,7 +20,8 @@ import {
   Calendar,
   User,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  ListTodo
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -174,23 +176,27 @@ export function ECCardDetail({ card }: ECCardDetailProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="summary" className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4" />
-            Resumo
+            <span className="hidden sm:inline">Resumo</span>
+          </TabsTrigger>
+          <TabsTrigger value="tasks" className="flex items-center gap-2">
+            <ListTodo className="h-4 w-4" />
+            <span className="hidden sm:inline">Tarefas</span>
           </TabsTrigger>
           <TabsTrigger value="manual" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
-            Atualização Manual
+            <span className="hidden sm:inline">Manual</span>
           </TabsTrigger>
           <TabsTrigger value="datalake" className="flex items-center gap-2" disabled={!hasDatalake}>
             <Database className="h-4 w-4" />
-            Datalake
-            {!hasDatalake && <span className="text-xs">(N/A)</span>}
+            <span className="hidden sm:inline">Datalake</span>
+            {!hasDatalake && <span className="text-xs hidden sm:inline">(N/A)</span>}
           </TabsTrigger>
           <TabsTrigger value="comments" className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4" />
-            Comentários
+            <span className="hidden sm:inline">Comentários</span>
           </TabsTrigger>
         </TabsList>
 
@@ -250,6 +256,10 @@ export function ECCardDetail({ card }: ECCardDetailProps) {
               <p className="text-muted-foreground text-sm">Nenhuma atualização ainda</p>
             )}
           </Card>
+        </TabsContent>
+
+        <TabsContent value="tasks">
+          <ECCardTasks cardId={card.id} recordId={currentRecord?.id} />
         </TabsContent>
 
         <TabsContent value="manual">
