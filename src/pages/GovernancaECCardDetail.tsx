@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { BackButton } from "@/components/ui/back-button";
 import { ECCardDetail } from "@/components/governanca-ec/ECCardDetail";
@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function GovernancaECCardDetail() {
   const { areaSlug, cardId } = useParams<{ areaSlug: string; cardId: string }>();
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'summary';
 
   const { data: card, isLoading } = useQuery({
     queryKey: ['ec-card', cardId],
@@ -63,7 +65,7 @@ export default function GovernancaECCardDetail() {
           </div>
         </div>
 
-        <ECCardDetail card={card} />
+        <ECCardDetail card={card} initialTab={initialTab} />
       </div>
     </MainLayout>
   );
