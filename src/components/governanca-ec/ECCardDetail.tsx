@@ -30,12 +30,13 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface ECCardDetailProps {
   card: any;
+  initialTab?: string;
 }
 
-export function ECCardDetail({ card }: ECCardDetailProps) {
+export function ECCardDetail({ card, initialTab = 'summary' }: ECCardDetailProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('summary');
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   // Buscar registros do card
   const { data: records, isLoading: recordsLoading } = useQuery({
