@@ -54,13 +54,15 @@ interface ECCardFormProps {
   onOpenChange: (open: boolean) => void;
   card?: any;
   areas: any[];
+  defaultAreaId?: string;
 }
 
 export function ECCardForm({ 
   open, 
   onOpenChange, 
   card,
-  areas 
+  areas,
+  defaultAreaId
 }: ECCardFormProps) {
   const queryClient = useQueryClient();
 
@@ -112,7 +114,7 @@ export function ECCardForm({
       });
     } else {
       form.reset({
-        area_id: '',
+        area_id: defaultAreaId || '',
         title: '',
         description: '',
         periodicity_type: 'monthly',
@@ -125,7 +127,7 @@ export function ECCardForm({
         required_evidences_json: '[]',
       });
     }
-  }, [card, form]);
+  }, [card, form, defaultAreaId]);
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -175,6 +177,7 @@ export function ECCardForm({
     onSuccess: () => {
       toast.success(card ? 'Card atualizado' : 'Card criado');
       queryClient.invalidateQueries({ queryKey: ['ec-cards-admin'] });
+      queryClient.invalidateQueries({ queryKey: ['ec-cards'] });
       onOpenChange(false);
     },
     onError: (error: any) => {
@@ -194,30 +197,32 @@ export function ECCardForm({
         <ScrollArea className="max-h-[70vh] pr-4">
           <Form {...form}>
             <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="area_id"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Área</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione a área" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {areas?.map((area) => (
-                          <SelectItem key={area.id} value={area.id}>
-                            {area.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {!defaultAreaId && (
+                <FormField
+                  control={form.control}
+                  name="area_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Área</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione a área" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {areas?.map((area) => (
+                            <SelectItem key={area.id} value={area.id}>
+                              {area.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}

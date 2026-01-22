@@ -4,10 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ECCard } from "./ECCard";
 import { ECFilters } from "./ECFilters";
-import { ECCardTaskForm } from "./ECCardTaskForm";
+import { ECCardForm } from "./admin/ECCardForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LayoutGrid, List, Plus, Search } from "lucide-react";
 
@@ -20,7 +19,7 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [showCardForm, setShowCardForm] = useState(false);
 
   const { data: cards, isLoading } = useQuery({
     queryKey: ['ec-cards', areaId],
@@ -94,16 +93,14 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
     );
   }
 
-  const cardOptions = cards?.map(c => ({ id: c.id, title: c.title })) || [];
-
   return (
     <div className="space-y-4">
-      {/* Header com botão Nova Tarefa */}
+      {/* Header com botão Novo Card */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{areaName}</h2>
-        <Button onClick={() => setShowTaskForm(true)} disabled={!cards || cards.length === 0}>
+        <Button onClick={() => setShowCardForm(true)}>
           <Plus className="h-4 w-4 mr-2" />
-          Nova Tarefa
+          Novo Card
         </Button>
       </div>
 
@@ -143,12 +140,20 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
       {/* Cards */}
       {filteredCards?.length === 0 ? (
         <Card className="p-8 text-center">
-          <p className="text-muted-foreground">Nenhum card encontrado</p>
+          <LayoutGrid className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="font-semibold mb-2">Nenhum card nesta área</h3>
+          <p className="text-muted-foreground text-sm mb-4">
+            Crie o primeiro card de {areaName} para começar a gerenciar entregáveis e tarefas.
+          </p>
+          <Button onClick={() => setShowCardForm(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Criar Primeiro Card
+          </Button>
         </Card>
       ) : viewMode === 'grid' ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredCards?.map((card) => (
-            <ECCard 
+            <ECCard
               key={card.id} 
               card={card} 
               record={latestRecords?.[card.id]}
@@ -169,11 +174,12 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
         </div>
       )}
 
-      {/* Dialog Nova Tarefa */}
-      <ECCardTaskForm
-        open={showTaskForm}
-        onOpenChange={setShowTaskForm}
-        cards={cardOptions}
+      {/* Dialog Novo Card */}
+      <ECCardForm
+        open={showCardForm}
+        onOpenChange={setShowCardForm}
+        areas={[{ id: areaId, name: areaName }]}
+        defaultAreaId={areaId}
       />
     </div>
   );
