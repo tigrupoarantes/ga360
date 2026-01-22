@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,17 @@ import { ECFilters } from "./ECFilters";
 import { ECCardForm } from "./admin/ECCardForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LayoutGrid, List, Plus, Search } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 
 interface ECAreaViewProps {
   areaId: string;
@@ -16,10 +27,13 @@ interface ECAreaViewProps {
 }
 
 export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
+  const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showCardForm, setShowCardForm] = useState(false);
+  const [editingCard, setEditingCard] = useState<any>(null);
+  const [deletingCard, setDeletingCard] = useState<any>(null);
 
   const { data: cards, isLoading } = useQuery({
     queryKey: ['ec-cards', areaId],
@@ -78,6 +92,39 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
     const record = latestRecords?.[card.id];
     return matchesSearch && record?.status === statusFilter;
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (cardId: string) => {
+      const { error } = await supabase
+        .from('ec_cards')
+        .update({ is_active: false })
+        .eq('id', cardId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ec-cards', areaId] });
+      toast.success('Card excluído com sucesso');
+      setDeletingCard(null);
+    },
+    onError: () => {
+      toast.error('Erro ao excluir card');
+    },
+  });
+
+  const handleEdit = (card: any) => {
+    setEditingCard(card);
+    setShowCardForm(true);
+  };
+
+  const handleDelete = (card: any) => {
+    setDeletingCard(card);
+  };
+
+  const confirmDelete = () => {
+    if (deletingCard) {
+      deleteMutation.mutate(deletingCard.id);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -158,6 +205,8 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
               card={card} 
               record={latestRecords?.[card.id]}
               viewMode="grid"
+              onEdit={handleEdit}
+              onDelete={handleDelete}
             />
           ))}
         </div>
@@ -169,18 +218,46 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
               card={card} 
               record={latestRecords?.[card.id]}
               viewMode="list"
+              onEdit={handleEdit}
+              onDelete={handleDelete}
             />
           ))}
         </div>
       )}
 
-      {/* Dialog Novo Card */}
+      {/* Dialog Novo/Editar Card */}
       <ECCardForm
         open={showCardForm}
-        onOpenChange={setShowCardForm}
+        onOpenChange={(open) => {
+          setShowCardForm(open);
+          if (!open) setEditingCard(null);
+        }}
+        card={editingCard}
         areas={[{ id: areaId, name: areaName }]}
         defaultAreaId={areaId}
       />
+
+      {/* Dialog Confirmação de Exclusão */}
+      <AlertDialog open={!!deletingCard} onOpenChange={(open) => !open && setDeletingCard(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir card</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o card "{deletingCard?.title}"? 
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

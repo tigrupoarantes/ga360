@@ -1,6 +1,5 @@
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ECStatusBadge, ECStatus } from "./ECStatusBadge";
 import { useNavigate, useParams } from "react-router-dom";
@@ -8,8 +7,13 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, User, ArrowRight, ListTodo } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Calendar, ArrowRight, ListTodo, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface ECCardProps {
   card: {
@@ -32,6 +36,8 @@ interface ECCardProps {
     updated_at: string;
   } | null;
   viewMode: 'grid' | 'list';
+  onEdit?: (card: any) => void;
+  onDelete?: (card: any) => void;
 }
 
 const periodicityLabels: Record<string, string> = {
@@ -45,7 +51,7 @@ const periodicityLabels: Record<string, string> = {
   manual_trigger: 'Manual',
 };
 
-export function ECCard({ card, record, viewMode }: ECCardProps) {
+export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps) {
   const navigate = useNavigate();
   const { areaSlug } = useParams();
 
@@ -79,6 +85,36 @@ export function ECCard({ card, record, viewMode }: ECCardProps) {
     e.stopPropagation();
     navigate(`/governanca-ec/${areaSlug}/${card.id}?tab=tasks`);
   };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onEdit?.(card);
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete?.(card);
+  };
+
+  const ActionsMenu = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+        <Button variant="ghost" size="icon" className="h-7 w-7">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={handleEdit}>
+          <Pencil className="h-4 w-4 mr-2" />
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">
+          <Trash2 className="h-4 w-4 mr-2" />
+          Excluir
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   if (viewMode === 'list') {
     return (
@@ -128,6 +164,7 @@ export function ECCard({ card, record, viewMode }: ECCardProps) {
               <span className="hidden md:inline">{responsibleName}</span>
             </div>
 
+            <ActionsMenu />
             <ArrowRight className="h-4 w-4" />
           </div>
         </div>
@@ -156,9 +193,12 @@ export function ECCard({ card, record, viewMode }: ECCardProps) {
             </Button>
           )}
         </div>
-        <span className="text-xs bg-muted px-2 py-0.5 rounded">
-          {periodicityLabels[card.periodicity_type] || card.periodicity_type}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className="text-xs bg-muted px-2 py-0.5 rounded">
+            {periodicityLabels[card.periodicity_type] || card.periodicity_type}
+          </span>
+          <ActionsMenu />
+        </div>
       </div>
 
       <h3 className="font-semibold mb-1">{card.title}</h3>
