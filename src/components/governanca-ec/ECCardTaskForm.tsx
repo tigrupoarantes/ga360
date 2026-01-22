@@ -41,6 +41,7 @@ import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 
 const taskFormSchema = z.object({
+  card_id: z.string().optional(),
   title: z.string().min(1, "Título é obrigatório"),
   description: z.string().optional(),
   assignee_id: z.string().optional(),
@@ -63,17 +64,25 @@ interface Task {
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
 }
 
+interface CardOption {
+  id: string;
+  title: string;
+}
+
 interface ECCardTaskFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  cardId: string;
+  cardId?: string;
   recordId?: string;
   task?: Task | null;
+  cards?: CardOption[];
+  onSuccess?: () => void;
 }
 
-export function ECCardTaskForm({ open, onOpenChange, cardId, recordId, task }: ECCardTaskFormProps) {
+export function ECCardTaskForm({ open, onOpenChange, cardId, recordId, task, cards, onSuccess }: ECCardTaskFormProps) {
   const queryClient = useQueryClient();
   const isEditing = !!task;
+  const showCardSelector = !cardId && cards && cards.length > 0;
 
   const { data: profiles } = useQuery({
     queryKey: ['profiles-for-tasks'],
@@ -91,6 +100,7 @@ export function ECCardTaskForm({ open, onOpenChange, cardId, recordId, task }: E
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskFormSchema),
     defaultValues: {
+      card_id: cardId || '',
       title: '',
       description: '',
       assignee_id: '',
@@ -102,6 +112,7 @@ export function ECCardTaskForm({ open, onOpenChange, cardId, recordId, task }: E
   useEffect(() => {
     if (task) {
       form.reset({
+        card_id: task.card_id,
         title: task.title,
         description: task.description || '',
         assignee_id: task.assignee_id || '',
@@ -111,6 +122,7 @@ export function ECCardTaskForm({ open, onOpenChange, cardId, recordId, task }: E
       });
     } else {
       form.reset({
+        card_id: cardId || '',
         title: '',
         description: '',
         assignee_id: '',
@@ -118,12 +130,17 @@ export function ECCardTaskForm({ open, onOpenChange, cardId, recordId, task }: E
         status: 'pending',
       });
     }
-  }, [task, form]);
+  }, [task, form, cardId]);
 
   const mutation = useMutation({
     mutationFn: async (values: TaskFormValues) => {
+      const targetCardId = cardId || values.card_id;
+      if (!targetCardId) {
+        throw new Error('Card não selecionado');
+      }
+
       const payload = {
-        card_id: cardId,
+        card_id: targetCardId,
         record_id: recordId || null,
         title: values.title,
         description: values.description || null,
@@ -146,12 +163,18 @@ export function ECCardTaskForm({ open, onOpenChange, cardId, recordId, task }: E
           .insert({ ...payload, created_by: user?.id });
         if (error) throw error;
       }
+
+      return targetCardId;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ec-card-tasks', cardId] });
+    onSuccess: (targetCardId) => {
+      queryClient.invalidateQueries({ queryKey: ['ec-card-tasks'] });
+      if (targetCardId) {
+        queryClient.invalidateQueries({ queryKey: ['ec-card-tasks', targetCardId] });
+      }
       toast({ title: isEditing ? "Tarefa atualizada" : "Tarefa criada" });
       onOpenChange(false);
       form.reset();
+      onSuccess?.();
     },
     onError: (error) => {
       console.error('Task mutation error:', error);
@@ -172,6 +195,33 @@ export function ECCardTaskForm({ open, onOpenChange, cardId, recordId, task }: E
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {showCardSelector && (
+              <FormField
+                control={form.control}
+                name="card_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Card *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o card" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {cards?.map((card) => (
+                          <SelectItem key={card.id} value={card.id}>
+                            {card.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
             <FormField
               control={form.control}
               name="title"
