@@ -1,10 +1,13 @@
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { ECStatusBadge, ECStatus } from "./ECStatusBadge";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, User, ArrowRight } from "lucide-react";
+import { Calendar, User, ArrowRight, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ECCardProps {
@@ -45,6 +48,20 @@ export function ECCard({ card, record, viewMode }: ECCardProps) {
   const navigate = useNavigate();
   const { areaSlug } = useParams();
 
+  // Buscar contagem de tarefas pendentes
+  const { data: pendingTasksCount } = useQuery({
+    queryKey: ['ec-card-pending-tasks-count', card.id],
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('ec_card_tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('card_id', card.id)
+        .in('status', ['pending', 'in_progress']);
+      if (error) throw error;
+      return count || 0;
+    },
+  });
+
   const responsibleName = card.responsible 
     ? `${card.responsible.first_name} ${card.responsible.last_name}`.trim() || 'Sem nome'
     : 'Não atribuído';
@@ -77,6 +94,12 @@ export function ECCard({ card, record, viewMode }: ECCardProps) {
               <span className="text-xs bg-muted px-2 py-0.5 rounded">
                 {periodicityLabels[card.periodicity_type] || card.periodicity_type}
               </span>
+              {pendingTasksCount !== undefined && pendingTasksCount > 0 && (
+                <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/30 flex items-center gap-1">
+                  <ListTodo className="h-3 w-3" />
+                  {pendingTasksCount}
+                </Badge>
+              )}
             </div>
 
             {record?.due_date && (
@@ -108,7 +131,15 @@ export function ECCard({ card, record, viewMode }: ECCardProps) {
       onClick={handleClick}
     >
       <div className="flex items-start justify-between gap-2 mb-3">
-        <ECStatusBadge status={record?.status || 'pending'} size="sm" />
+        <div className="flex items-center gap-2">
+          <ECStatusBadge status={record?.status || 'pending'} size="sm" />
+          {pendingTasksCount !== undefined && pendingTasksCount > 0 && (
+            <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/30 flex items-center gap-1 text-xs">
+              <ListTodo className="h-3 w-3" />
+              {pendingTasksCount}
+            </Badge>
+          )}
+        </div>
         <span className="text-xs bg-muted px-2 py-0.5 rounded">
           {periodicityLabels[card.periodicity_type] || card.periodicity_type}
         </span>
