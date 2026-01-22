@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ECCard } from "./ECCard";
 import { ECFilters } from "./ECFilters";
+import { ECCardTaskForm } from "./ECCardTaskForm";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LayoutGrid, List, Search } from "lucide-react";
+import { LayoutGrid, List, Plus, Search } from "lucide-react";
 
 interface ECAreaViewProps {
   areaId: string;
@@ -19,6 +20,7 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [showTaskForm, setShowTaskForm] = useState(false);
 
   const { data: cards, isLoading } = useQuery({
     queryKey: ['ec-cards', areaId],
@@ -92,8 +94,19 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
     );
   }
 
+  const cardOptions = cards?.map(c => ({ id: c.id, title: c.title })) || [];
+
   return (
     <div className="space-y-4">
+      {/* Header com botão Nova Tarefa */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">{areaName}</h2>
+        <Button onClick={() => setShowTaskForm(true)} disabled={!cards || cards.length === 0}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nova Tarefa
+        </Button>
+      </div>
+
       {/* Filtros e controles */}
       <div className="flex flex-col md:flex-row gap-4">
         <div className="relative flex-1">
@@ -155,6 +168,13 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
           ))}
         </div>
       )}
+
+      {/* Dialog Nova Tarefa */}
+      <ECCardTaskForm
+        open={showTaskForm}
+        onOpenChange={setShowTaskForm}
+        cards={cardOptions}
+      />
     </div>
   );
 }
