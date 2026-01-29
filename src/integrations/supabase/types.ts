@@ -136,6 +136,7 @@ export type Database = {
           external_id: string | null
           id: string
           is_active: boolean
+          is_auditable: boolean | null
           logo_url: string | null
           name: string
           updated_at: string
@@ -147,6 +148,7 @@ export type Database = {
           external_id?: string | null
           id?: string
           is_active?: boolean
+          is_auditable?: boolean | null
           logo_url?: string | null
           name: string
           updated_at?: string
@@ -158,6 +160,7 @@ export type Database = {
           external_id?: string | null
           id?: string
           is_active?: boolean
+          is_auditable?: boolean | null
           logo_url?: string | null
           name?: string
           updated_at?: string
