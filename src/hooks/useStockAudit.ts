@@ -250,12 +250,30 @@ export function useStockAudit(auditId?: string) {
         .single();
       
       if (error) throw error;
-      return data;
+      return { auditData: data, auditId };
     },
-    onSuccess: () => {
+    onSuccess: async ({ auditId: completedAuditId }) => {
       queryClient.invalidateQueries({ queryKey: ["stock-audit", auditId] });
       queryClient.invalidateQueries({ queryKey: ["stock-audits"] });
       toast.success("Auditoria concluída com sucesso!");
+      
+      // Trigger report generation in background
+      try {
+        const { data, error } = await supabase.functions.invoke("generate-stock-audit-report", {
+          body: { auditId: completedAuditId },
+        });
+        
+        if (error) {
+          console.error("Report generation error:", error);
+          toast.error("Erro ao gerar relatório", { description: "A auditoria foi salva, mas o relatório não foi enviado." });
+        } else if (data?.emailSent) {
+          toast.success("Relatório enviado para Governança!");
+        } else if (data?.reason === "no_email_configured") {
+          toast.info("Relatório não enviado: email de governança não configurado.");
+        }
+      } catch (e) {
+        console.error("Report generation failed:", e);
+      }
     },
     onError: (error) => {
       toast.error("Erro ao concluir auditoria", { description: error.message });

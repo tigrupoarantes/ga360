@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.create-users-from-employees]
 verify_jwt = true
+
+[functions.generate-stock-audit-report]
+verify_jwt = true
