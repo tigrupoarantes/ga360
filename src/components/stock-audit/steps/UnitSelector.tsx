@@ -11,7 +11,7 @@ interface UnitSelectorProps {
 }
 
 export function UnitSelector({ onSelect }: UnitSelectorProps) {
-  // Fetch companies as units
+  // Fetch companies marked as auditable
   const { data: companies = [], isLoading } = useQuery({
     queryKey: ["companies-for-audit"],
     queryFn: async () => {
@@ -19,6 +19,7 @@ export function UnitSelector({ onSelect }: UnitSelectorProps) {
         .from("companies")
         .select("id, name, logo_url, color")
         .eq("is_active", true)
+        .eq("is_auditable", true)
         .order("name");
       if (error) throw error;
       return data;
@@ -109,10 +110,13 @@ export function UnitSelector({ onSelect }: UnitSelectorProps) {
         })}
       </div>
 
-      {companies.length === 0 && (
+      {companies.length === 0 && !isLoading && (
         <div className="text-center py-12 text-muted-foreground">
           <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p>Nenhuma empresa cadastrada</p>
+          <p className="font-medium">Nenhuma empresa habilitada para auditoria</p>
+          <p className="text-sm mt-2">
+            Configure as empresas auditáveis em Admin → Estrutura Organizacional
+          </p>
         </div>
       )}
     </div>

@@ -25,6 +25,7 @@ interface Company {
   name: string;
   cnpj?: string;
   is_active: boolean;
+  is_auditable?: boolean;
   logo_url?: string;
   color?: string;
 }

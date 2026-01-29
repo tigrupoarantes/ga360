@@ -12,6 +12,7 @@ interface Company {
   name: string;
   cnpj?: string;
   is_active: boolean;
+  is_auditable?: boolean;
   logo_url?: string;
   color?: string;
 }
@@ -35,6 +36,7 @@ export function CompanyFormDialog({
     name: "",
     cnpj: "",
     is_active: true,
+    is_auditable: false,
     logo_url: "",
     color: "#0B3D91",
   });
@@ -48,6 +50,7 @@ export function CompanyFormDialog({
           name: "",
           cnpj: "",
           is_active: true,
+          is_auditable: false,
           logo_url: "",
           color: "#0B3D91",
         });
@@ -67,6 +70,7 @@ export function CompanyFormDialog({
             name: formData.name,
             cnpj: formData.cnpj || null,
             is_active: formData.is_active,
+            is_auditable: formData.is_auditable ?? false,
             logo_url: formData.logo_url || null,
             color: formData.color || null,
           })
@@ -83,6 +87,7 @@ export function CompanyFormDialog({
           name: formData.name,
           cnpj: formData.cnpj || null,
           is_active: formData.is_active,
+          is_auditable: formData.is_auditable ?? false,
           logo_url: formData.logo_url || null,
           color: formData.color || null,
         });
@@ -174,6 +179,17 @@ export function CompanyFormDialog({
               checked={formData.is_active}
               onCheckedChange={(checked) =>
                 setFormData({ ...formData, is_active: checked })
+              }
+            />
+          </div>
+
+          <div className="flex items-center justify-between py-2">
+            <Label htmlFor="is_auditable">Habilitada para Auditoria</Label>
+            <Switch
+              id="is_auditable"
+              checked={formData.is_auditable ?? false}
+              onCheckedChange={(checked) =>
+                setFormData({ ...formData, is_auditable: checked })
               }
             />
           </div>
