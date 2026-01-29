@@ -38,6 +38,8 @@ import AdminDatalake from "./pages/AdminDatalake";
 import GovernancaEC from "./pages/GovernancaEC";
 import GovernancaECArea from "./pages/GovernancaECArea";
 import GovernancaECCardDetail from "./pages/GovernancaECCardDetail";
+import StockAuditStart from "./pages/StockAuditStart";
+import StockAuditExecution from "./pages/StockAuditExecution";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -261,6 +263,22 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <GovernancaECCardDetail />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/governanca-ec/auditoria/estoque"
+                element={
+                  <ProtectedRoute>
+                    <StockAuditStart />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/governanca-ec/auditoria/estoque/:auditId"
+                element={
+                  <ProtectedRoute>
+                    <StockAuditExecution />
                   </ProtectedRoute>
                 }
               />

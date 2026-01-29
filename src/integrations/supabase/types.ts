@@ -2096,6 +2096,263 @@ export type Database = {
           },
         ]
       }
+      stock_audit_item_photos: {
+        Row: {
+          created_at: string | null
+          id: string
+          photo_url: string
+          stock_audit_item_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          photo_url: string
+          stock_audit_item_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          photo_url?: string
+          stock_audit_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_audit_item_photos_stock_audit_item_id_fkey"
+            columns: ["stock_audit_item_id"]
+            isOneToOne: false
+            referencedRelation: "stock_audit_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_audit_items: {
+        Row: {
+          audited_at: string | null
+          created_at: string | null
+          final_diff_qty: number | null
+          final_physical_qty: number | null
+          id: string
+          is_in_sample: boolean | null
+          item_notes: string | null
+          location: string | null
+          physical_qty: number | null
+          recount_qty: number | null
+          result: string | null
+          root_cause_code: string | null
+          root_cause_notes: string | null
+          sku_code: string
+          sku_description: string | null
+          stock_audit_id: string
+          system_qty: number
+          uom: string | null
+        }
+        Insert: {
+          audited_at?: string | null
+          created_at?: string | null
+          final_diff_qty?: number | null
+          final_physical_qty?: number | null
+          id?: string
+          is_in_sample?: boolean | null
+          item_notes?: string | null
+          location?: string | null
+          physical_qty?: number | null
+          recount_qty?: number | null
+          result?: string | null
+          root_cause_code?: string | null
+          root_cause_notes?: string | null
+          sku_code: string
+          sku_description?: string | null
+          stock_audit_id: string
+          system_qty: number
+          uom?: string | null
+        }
+        Update: {
+          audited_at?: string | null
+          created_at?: string | null
+          final_diff_qty?: number | null
+          final_physical_qty?: number | null
+          id?: string
+          is_in_sample?: boolean | null
+          item_notes?: string | null
+          location?: string | null
+          physical_qty?: number | null
+          recount_qty?: number | null
+          result?: string | null
+          root_cause_code?: string | null
+          root_cause_notes?: string | null
+          sku_code?: string
+          sku_description?: string | null
+          stock_audit_id?: string
+          system_qty?: number
+          uom?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_audit_items_stock_audit_id_fkey"
+            columns: ["stock_audit_id"]
+            isOneToOne: false
+            referencedRelation: "stock_audits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_audit_settings: {
+        Row: {
+          cc_emails: Json | null
+          company_id: string | null
+          created_at: string | null
+          default_blind_count_enabled: boolean | null
+          default_sample_size: number | null
+          default_tolerance_abs: number | null
+          default_tolerance_pct: number | null
+          governance_email: string | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          cc_emails?: Json | null
+          company_id?: string | null
+          created_at?: string | null
+          default_blind_count_enabled?: boolean | null
+          default_sample_size?: number | null
+          default_tolerance_abs?: number | null
+          default_tolerance_pct?: number | null
+          governance_email?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Update: {
+          cc_emails?: Json | null
+          company_id?: string | null
+          created_at?: string | null
+          default_blind_count_enabled?: boolean | null
+          default_sample_size?: number | null
+          default_tolerance_abs?: number | null
+          default_tolerance_pct?: number | null
+          governance_email?: string | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_audit_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stock_audits: {
+        Row: {
+          auditor_user_id: string
+          base_file_meta: Json | null
+          base_file_type: string | null
+          base_file_url: string | null
+          blind_count_enabled: boolean | null
+          card_id: string | null
+          company_id: string
+          completed_at: string | null
+          created_at: string | null
+          cutoff_datetime: string | null
+          executed_date: string | null
+          id: string
+          movement_during_audit: boolean | null
+          movement_notes: string | null
+          planned_date: string | null
+          sample_size: number | null
+          sampling_method: string | null
+          status: string | null
+          total_items_loaded: number | null
+          unit_id: string
+          updated_at: string | null
+          witness_cpf: string | null
+          witness_name: string | null
+          witness_term_accepted: boolean | null
+        }
+        Insert: {
+          auditor_user_id: string
+          base_file_meta?: Json | null
+          base_file_type?: string | null
+          base_file_url?: string | null
+          blind_count_enabled?: boolean | null
+          card_id?: string | null
+          company_id: string
+          completed_at?: string | null
+          created_at?: string | null
+          cutoff_datetime?: string | null
+          executed_date?: string | null
+          id?: string
+          movement_during_audit?: boolean | null
+          movement_notes?: string | null
+          planned_date?: string | null
+          sample_size?: number | null
+          sampling_method?: string | null
+          status?: string | null
+          total_items_loaded?: number | null
+          unit_id: string
+          updated_at?: string | null
+          witness_cpf?: string | null
+          witness_name?: string | null
+          witness_term_accepted?: boolean | null
+        }
+        Update: {
+          auditor_user_id?: string
+          base_file_meta?: Json | null
+          base_file_type?: string | null
+          base_file_url?: string | null
+          blind_count_enabled?: boolean | null
+          card_id?: string | null
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string | null
+          cutoff_datetime?: string | null
+          executed_date?: string | null
+          id?: string
+          movement_during_audit?: boolean | null
+          movement_notes?: string | null
+          planned_date?: string | null
+          sample_size?: number | null
+          sampling_method?: string | null
+          status?: string | null
+          total_items_loaded?: number | null
+          unit_id?: string
+          updated_at?: string | null
+          witness_cpf?: string | null
+          witness_name?: string | null
+          witness_term_accepted?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_audits_auditor_user_id_fkey"
+            columns: ["auditor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_audits_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "ec_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_audits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_audits_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sync_logs: {
         Row: {
           company_id: string | null
