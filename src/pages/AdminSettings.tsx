@@ -1,11 +1,12 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Settings, UserPlus, Mail, MessageSquare, Cog } from 'lucide-react';
+import { ArrowLeft, Settings, UserPlus, Mail, MessageSquare, Cog, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { InvitesList } from '@/components/settings/InvitesList';
 import { EmailConfigSection } from '@/components/settings/EmailConfigSection';
 import { WhatsAppConfigSection } from '@/components/settings/WhatsAppConfigSection';
+import { StockAuditSettingsSection } from '@/components/settings/StockAuditSettingsSection';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -40,7 +41,7 @@ export default function AdminSettings() {
 
         {/* Tabs */}
         <Tabs defaultValue="invites" className="animate-fade-in-up">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="invites" className="flex items-center gap-2">
               <UserPlus className="h-4 w-4" />
               <span className="hidden sm:inline">Convites</span>
@@ -52,6 +53,10 @@ export default function AdminSettings() {
             <TabsTrigger value="whatsapp" className="flex items-center gap-2">
               <MessageSquare className="h-4 w-4" />
               <span className="hidden sm:inline">WhatsApp</span>
+            </TabsTrigger>
+            <TabsTrigger value="audit" className="flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              <span className="hidden sm:inline">Auditoria</span>
             </TabsTrigger>
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Cog className="h-4 w-4" />
@@ -69,6 +74,10 @@ export default function AdminSettings() {
 
           <TabsContent value="whatsapp" className="mt-6">
             <WhatsAppConfigSection />
+          </TabsContent>
+
+          <TabsContent value="audit" className="mt-6">
+            <StockAuditSettingsSection />
           </TabsContent>
 
           <TabsContent value="general" className="mt-6">

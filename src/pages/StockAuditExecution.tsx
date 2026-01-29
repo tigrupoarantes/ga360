@@ -2,19 +2,26 @@ import { useParams, useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { BackButton } from "@/components/ui/back-button";
 import { StockAuditWizard } from "@/components/stock-audit/StockAuditWizard";
+import { StockAuditReportViewer } from "@/components/stock-audit/StockAuditReportViewer";
 import { useStockAudit } from "@/hooks/useStockAudit";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Building2, Calendar, User } from "lucide-react";
+import { CheckCircle2, Building2, Calendar, User, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function StockAuditExecution() {
   const { auditId } = useParams<{ auditId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { audit, stats, isLoading } = useStockAudit(auditId);
+
+  const handleReportGenerated = () => {
+    queryClient.invalidateQueries({ queryKey: ["stock-audit", auditId] });
+  };
 
   if (isLoading) {
     return (
@@ -102,6 +109,25 @@ export default function StockAuditExecution() {
                   )}
                 </div>
               )}
+
+              {/* Report Section */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Relatório de Auditoria
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <StockAuditReportViewer
+                    auditId={audit.id}
+                    reportHtml={audit.report_html}
+                    reportSentAt={audit.report_sent_at}
+                    reportSentTo={audit.report_sent_to}
+                    onReportGenerated={handleReportGenerated}
+                  />
+                </CardContent>
+              </Card>
 
               <Button 
                 variant="outline" 
