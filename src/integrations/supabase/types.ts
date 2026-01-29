@@ -2263,6 +2263,9 @@ export type Database = {
           movement_during_audit: boolean | null
           movement_notes: string | null
           planned_date: string | null
+          report_html: string | null
+          report_sent_at: string | null
+          report_sent_to: string[] | null
           sample_size: number | null
           sampling_method: string | null
           status: string | null
@@ -2289,6 +2292,9 @@ export type Database = {
           movement_during_audit?: boolean | null
           movement_notes?: string | null
           planned_date?: string | null
+          report_html?: string | null
+          report_sent_at?: string | null
+          report_sent_to?: string[] | null
           sample_size?: number | null
           sampling_method?: string | null
           status?: string | null
@@ -2315,6 +2321,9 @@ export type Database = {
           movement_during_audit?: boolean | null
           movement_notes?: string | null
           planned_date?: string | null
+          report_html?: string | null
+          report_sent_at?: string | null
+          report_sent_to?: string[] | null
           sample_size?: number | null
           sampling_method?: string | null
           status?: string | null

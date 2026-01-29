@@ -29,6 +29,9 @@ export interface StockAudit {
   created_at: string;
   completed_at: string | null;
   updated_at: string;
+  report_html: string | null;
+  report_sent_at: string | null;
+  report_sent_to: string[] | null;
   unit?: { id: string; name: string };
 }
 
@@ -68,7 +71,8 @@ export function useStockAudit(auditId?: string) {
         .eq("id", auditId)
         .single();
       if (error) throw error;
-      return data as StockAudit;
+      // Cast to include the new fields that may not be in types yet
+      return data as unknown as StockAudit;
     },
     enabled: !!auditId,
   });

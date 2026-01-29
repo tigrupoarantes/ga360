@@ -184,10 +184,33 @@ serve(async (req) => {
 
     if (emailError) {
       console.error("Email send error:", emailError);
+      
+      // Still save the report even if email fails
+      await supabase
+        .from("stock_audits")
+        .update({
+          report_html: htmlReport,
+        })
+        .eq("id", auditId);
+
       return new Response(
-        JSON.stringify({ success: true, emailSent: false, reason: "email_failed", error: emailError.message }),
+        JSON.stringify({ success: true, emailSent: false, reason: "email_failed", error: emailError.message, reportSaved: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Save the report and email tracking info
+    const { error: updateError } = await supabase
+      .from("stock_audits")
+      .update({
+        report_html: htmlReport,
+        report_sent_at: new Date().toISOString(),
+        report_sent_to: emailTo,
+      })
+      .eq("id", auditId);
+
+    if (updateError) {
+      console.error("Error saving report to DB:", updateError);
     }
 
     console.log(`Report email sent to: ${emailTo.join(", ")}`);
