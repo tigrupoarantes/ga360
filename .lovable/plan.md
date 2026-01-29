@@ -1,102 +1,16 @@
+# ✅ Concluído: Usar SMTP Corporativo no Relatório de Auditoria
 
+## Resumo da Implementação
 
-# Plano: Usar SMTP Corporativo no Relatório de Auditoria
+A função `generate-stock-audit-report` foi atualizada para usar o **SMTP corporativo** configurado no sistema, removendo a dependência do Resend.
 
-## Problema Identificado
-
-A função `generate-stock-audit-report` está usando **Resend** para enviar e-mails, mas o projeto está configurado para usar **SMTP corporativo** (mail.grupoarantes.emp.br).
-
-### Configuração Atual (system_settings)
-```json
-{
-  "provider": "smtp",
-  "host": "mail.grupoarantes.emp.br",
-  "port": "465",
-  "user": "ga360@grupoarantes.emp.br",
-  "encryption": "tls"
-}
-```
-
----
-
-## Solução
-
-Modificar a edge function `generate-stock-audit-report` para:
-1. **Buscar configurações** de email do `system_settings`
-2. **Usar SMTP** diretamente (com a biblioteca denomailer, já usada em `send-email-smtp`)
-3. **Remover dependência** do Resend
-
----
-
-## Arquivo a Modificar
+### Mudanças Realizadas
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/generate-stock-audit-report/index.ts` | Substituir Resend por SMTP |
+| `supabase/functions/generate-stock-audit-report/index.ts` | Resend → SMTP via denomailer |
 
----
-
-## Detalhes da Implementação
-
-### Antes (usando Resend)
-```typescript
-import { Resend } from "https://esm.sh/resend@4.0.0";
-
-const resendApiKey = Deno.env.get("RESEND_API_KEY");
-const resend = new Resend(resendApiKey);
-
-await resend.emails.send({
-  from: "GA 360 <noreply@grupoarantes.com.br>",
-  to: emailTo,
-  subject: `[Auditoria Estoque] ${unitName} - ${auditDate}`,
-  html: htmlReport,
-});
-```
-
-### Depois (usando SMTP)
-```typescript
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
-
-// Buscar config do banco
-const { data: emailConfig } = await supabase
-  .from("system_settings")
-  .select("value")
-  .eq("key", "email_config")
-  .single();
-
-const smtp = emailConfig?.value?.smtp;
-const fromName = emailConfig?.value?.from_name || "GA 360";
-const fromEmail = emailConfig?.value?.from_email || smtp?.user;
-
-// Configurar cliente SMTP
-const clientConfig = {
-  connection: {
-    hostname: smtp.host,
-    port: parseInt(smtp.port),
-    auth: { username: smtp.user, password: smtpPassword },
-    tls: smtp.encryption === 'ssl' || smtp.port === '465',
-  },
-};
-
-const client = new SMTPClient(clientConfig);
-await client.send({
-  from: `${fromName} <${fromEmail}>`,
-  to: emailTo,
-  subject: `[Auditoria Estoque] ${unitName} - ${auditDate}`,
-  html: htmlReport,
-});
-await client.close();
-```
-
----
-
-## Tratamento de Senha SMTP
-
-A senha SMTP precisa ser armazenada como secret no ambiente. Verificar se existe `SMTP_PASSWORD` configurado. Se não, solicitar ao usuário.
-
----
-
-## Fluxo Atualizado
+### Fluxo Atualizado
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -110,15 +24,13 @@ A senha SMTP precisa ser armazenada como secret no ambiente. Verificar se existe
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Configuração Utilizada
 
-## Nota sobre Porta 465
+- **Host**: mail.grupoarantes.emp.br
+- **Porta**: 465 (SSL implícito)
+- **Usuário**: ga360@grupoarantes.emp.br
+- **Senha**: SMTP_PASSWORD (secret configurado)
 
-A porta 465 com "tls" na configuração indica SSL implícito. A conexão deve ser feita com `tls: true` desde o início (não STARTTLS).
+### Próximo Passo
 
----
-
-## Verificação de Secret
-
-Preciso confirmar se `SMTP_PASSWORD` está configurado nas secrets do projeto.
-
+Testar o reenvio do relatório para validar o funcionamento.

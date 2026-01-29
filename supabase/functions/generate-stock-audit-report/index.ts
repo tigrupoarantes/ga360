@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.85.0";
-import { Resend } from "https://esm.sh/resend@4.0.0";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -33,6 +33,20 @@ interface AuditData {
   sample_size: number | null;
 }
 
+interface EmailConfig {
+  enabled: boolean;
+  provider: string;
+  from_name: string;
+  from_email: string;
+  reply_to: string;
+  smtp: {
+    host: string;
+    port: string;
+    user: string;
+    encryption: 'tls' | 'ssl' | 'none';
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -49,7 +63,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
+    const smtpPassword = Deno.env.get("SMTP_PASSWORD");
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -103,6 +117,43 @@ serve(async (req) => {
       console.warn("No governance email configured, skipping email");
       return new Response(
         JSON.stringify({ success: true, emailSent: false, reason: "no_email_configured" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Fetch SMTP email configuration
+    const { data: emailConfigData, error: emailConfigError } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "email_config")
+      .single();
+
+    if (emailConfigError || !emailConfigData?.value) {
+      console.error("Error fetching email config:", emailConfigError);
+      return new Response(
+        JSON.stringify({ success: true, emailSent: false, reason: "email_config_not_found" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const emailConfig = emailConfigData.value as EmailConfig;
+
+    if (!emailConfig.enabled) {
+      console.warn("Email is disabled in system settings");
+      return new Response(
+        JSON.stringify({ success: true, emailSent: false, reason: "email_disabled" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!emailConfig.smtp?.host || !emailConfig.smtp?.user || !smtpPassword) {
+      console.error("SMTP configuration incomplete:", {
+        host: emailConfig.smtp?.host,
+        user: emailConfig.smtp?.user,
+        hasPassword: !!smtpPassword,
+      });
+      return new Response(
+        JSON.stringify({ success: true, emailSent: false, reason: "smtp_config_incomplete" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -162,28 +213,68 @@ serve(async (req) => {
       movementNotes: audit.movement_notes,
     });
 
-    // Send email via Resend
-    if (!resendApiKey) {
-      console.warn("RESEND_API_KEY not configured");
-      return new Response(
-        JSON.stringify({ success: true, emailSent: false, reason: "resend_not_configured" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const resend = new Resend(resendApiKey);
+    // Configure and send via SMTP
+    const smtpHost = emailConfig.smtp.host;
+    const smtpPort = parseInt(emailConfig.smtp.port) || 465;
+    const smtpUser = emailConfig.smtp.user;
+    const encryption = emailConfig.smtp.encryption || "tls";
+    const fromName = emailConfig.from_name || "GA 360";
+    const fromEmail = emailConfig.from_email || smtpUser;
 
     const emailTo = [governanceEmail, ...ccEmails].filter(Boolean);
-    
-    const { error: emailError } = await resend.emails.send({
-      from: "GA 360 <noreply@grupoarantes.com.br>",
-      to: emailTo,
-      subject: `[Auditoria Estoque] ${unitName} - ${auditDate}`,
-      html: htmlReport,
-    });
 
-    if (emailError) {
-      console.error("Email send error:", emailError);
+    console.log(`Sending email via SMTP: ${smtpHost}:${smtpPort} from ${fromEmail} to ${emailTo.join(", ")}`);
+
+    try {
+      // Configure SMTP client based on encryption type
+      // Port 465 uses implicit SSL (tls: true from start)
+      // Port 587 uses STARTTLS (tls: false, then upgrade)
+      const useTls = encryption === "ssl" || smtpPort === 465;
+
+      const client = new SMTPClient({
+        connection: {
+          hostname: smtpHost,
+          port: smtpPort,
+          tls: useTls,
+          auth: {
+            username: smtpUser,
+            password: smtpPassword,
+          },
+        },
+      });
+
+      await client.send({
+        from: `${fromName} <${fromEmail}>`,
+        to: emailTo,
+        subject: `[Auditoria Estoque] ${unitName} - ${auditDate}`,
+        content: "auto",
+        html: htmlReport,
+      });
+
+      await client.close();
+      console.log("✅ Report email sent successfully via SMTP");
+
+      // Save the report and email tracking info
+      const { error: updateError } = await supabase
+        .from("stock_audits")
+        .update({
+          report_html: htmlReport,
+          report_sent_at: new Date().toISOString(),
+          report_sent_to: emailTo,
+        })
+        .eq("id", auditId);
+
+      if (updateError) {
+        console.error("Error saving report to DB:", updateError);
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, emailSent: true, sentTo: emailTo }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+
+    } catch (smtpError: unknown) {
+      console.error("❌ SMTP send error:", smtpError);
       
       // Still save the report even if email fails
       await supabase
@@ -193,32 +284,12 @@ serve(async (req) => {
         })
         .eq("id", auditId);
 
+      const errorMessage = smtpError instanceof Error ? smtpError.message : "Unknown SMTP error";
       return new Response(
-        JSON.stringify({ success: true, emailSent: false, reason: "email_failed", error: emailError.message, reportSaved: true }),
+        JSON.stringify({ success: true, emailSent: false, reason: "smtp_failed", error: errorMessage, reportSaved: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Save the report and email tracking info
-    const { error: updateError } = await supabase
-      .from("stock_audits")
-      .update({
-        report_html: htmlReport,
-        report_sent_at: new Date().toISOString(),
-        report_sent_to: emailTo,
-      })
-      .eq("id", auditId);
-
-    if (updateError) {
-      console.error("Error saving report to DB:", updateError);
-    }
-
-    console.log(`Report email sent to: ${emailTo.join(", ")}`);
-
-    return new Response(
-      JSON.stringify({ success: true, emailSent: true, sentTo: emailTo }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
 
   } catch (error: unknown) {
     console.error("Error generating report:", error);
