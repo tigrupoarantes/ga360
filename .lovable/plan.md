@@ -1,39 +1,35 @@
 
 
-# Plano: Relatório Automático de Auditoria de Estoque com IA
+# Plano: Configuração de Destinatários + Visualização de Relatórios no Histórico
 
-## Visão Geral
+## Resumo
 
-Implementar a geração automática de relatório de auditoria de estoque ao finalizar uma auditoria. O relatório será:
-1. **Gerado por IA** com análise de divergências e causa raiz
-2. **Formatado em PDF** profissional
-3. **Enviado por e-mail** para o responsável da Governança
+Implementar 3 funcionalidades:
+1. **Tela de configuração** dos e-mails destinatários do relatório de auditoria
+2. **Visualização do relatório** ao clicar em uma auditoria concluída no histórico
+3. **Opção de gerar/regenerar relatório** quando não houver ou para reenviar
 
 ---
 
-## Arquitetura
+## Arquitetura Atual
 
-```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│                       FLUXO DE FINALIZAÇÃO                               │
-│                                                                          │
-│  [1] AuditFinalization.tsx                                              │
-│       │                                                                  │
-│       ▼ Ao clicar "Concluir Auditoria"                                  │
-│  [2] useStockAudit.completeAudit()                                      │
-│       │                                                                  │
-│       ▼ Após salvar status = "completed"                                │
-│  [3] Chama edge function: generate-stock-audit-report                  │
-│       │                                                                  │
-│       ├─── Busca dados da auditoria no banco                           │
-│       ├─── Busca settings (governance_email, cc_emails)                │
-│       ├─── Chama Lovable AI para análise                               │
-│       ├─── Gera PDF com os dados + análise                             │
-│       └─── Envia email via Resend com PDF anexo                        │
-│                                                                          │
-│  [4] Toast de sucesso/erro para o auditor                               │
-└──────────────────────────────────────────────────────────────────────────┘
-```
+A tabela `stock_audit_settings` já possui os campos necessários:
+- `governance_email` → E-mail principal do responsável
+- `cc_emails` → Lista JSON de e-mails em cópia
+
+Porém, a tabela `stock_audits` não armazena o relatório gerado. Precisamos adicionar campos para isso.
+
+---
+
+## Mudanças no Banco de Dados
+
+### Adicionar colunas na tabela stock_audits
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `report_html` | `text` | Conteúdo HTML do relatório gerado |
+| `report_sent_at` | `timestamptz` | Data/hora do envio do email |
+| `report_sent_to` | `text[]` | Lista de emails que receberam |
 
 ---
 
@@ -41,161 +37,158 @@ Implementar a geração automática de relatório de auditoria de estoque ao fin
 
 | Arquivo | Ação |
 |---------|------|
-| `supabase/functions/generate-stock-audit-report/index.ts` | **Criar** - Edge function principal |
-| `supabase/config.toml` | **Modificar** - Adicionar nova função |
-| `src/hooks/useStockAudit.ts` | **Modificar** - Chamar edge function após completar |
-| `src/components/stock-audit/steps/AuditFinalization.tsx` | **Modificar** - Adicionar feedback de envio |
+| **Migração SQL** | Adicionar colunas `report_html`, `report_sent_at`, `report_sent_to` |
+| `src/components/settings/StockAuditSettingsSection.tsx` | **Criar** - Form para configurar emails |
+| `src/pages/AdminSettings.tsx` | **Modificar** - Adicionar nova aba "Auditoria" |
+| `supabase/functions/generate-stock-audit-report/index.ts` | **Modificar** - Salvar HTML no banco |
+| `src/pages/StockAuditExecution.tsx` | **Modificar** - Exibir relatório e botão regenerar |
+| `src/hooks/useStockAudit.ts` | **Modificar** - Adicionar função regenerateReport |
 
 ---
 
-## Detalhes da Implementação
+## Detalhes das Implementações
 
-### 1. Edge Function: generate-stock-audit-report
+### 1. Nova Aba em Configurações: "Auditoria de Estoque"
 
-**Responsabilidades:**
-- Receber `auditId` no request
-- Buscar dados completos da auditoria e itens
-- Buscar configurações de email (`stock_audit_settings`)
-- Chamar Lovable AI para análise de divergências
-- Gerar PDF via serviço externo ou HTML inline
-- Enviar email via Resend
-
-**Dados para o relatório:**
-
-| Seção | Conteúdo |
-|-------|----------|
-| Cabeçalho | Logo, Data, Unidade |
-| Resumo | Total contado, OK, Divergentes, Recontados |
-| Divergências | Tabela com SKU, Descrição, Sistema vs Físico, Diferença |
-| Análise IA | Padrões identificados, possíveis causas, recomendações |
-| Testemunha | Nome, CPF, Declaração |
-| Movimentação | Se houve, notas explicativas |
-
-**Prompt para IA:**
-
-```text
-Você é um especialista em auditoria de estoque e controles internos.
-Analise os dados desta auditoria e forneça:
-1. Resumo executivo (2-3 frases)
-2. Análise das divergências encontradas
-3. Possíveis causas raiz
-4. Recomendações de ação corretiva
-5. Nível de risco (Baixo/Médio/Alto)
-```
-
-### 2. Modificações no useStockAudit.ts
-
-Após `completeAudit.mutateAsync()` retornar sucesso:
-- Chamar `supabase.functions.invoke('generate-stock-audit-report')`
-- Tratar erros silenciosamente (não bloquear o fluxo)
-- Mostrar toast de sucesso quando email for enviado
-
-### 3. Modificações no AuditFinalization.tsx
-
-- Adicionar estado para tracking do envio de email
-- Mostrar indicador "Enviando relatório..." após concluir
-- Exibir mensagem de sucesso quando email for disparado
-
----
-
-## Template do Email
-
-```html
-Assunto: [Auditoria Estoque] {Unidade} - {Data}
-
-Olá,
-
-A auditoria de estoque da unidade {Unidade} foi concluída.
-
-RESUMO:
-- Total de itens contados: X
-- Itens OK: X (X%)
-- Divergências: X (X%)
-
-O relatório completo está anexo a este email.
-
-Atenciosamente,
-GA 360 - Governança Corporativa
-```
-
----
-
-## Estrutura do PDF (via HTML inline no email ou base64)
+Local: `/admin/settings` → Nova aba
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  [LOGO GA360]        RELATÓRIO DE AUDITORIA DE ESTOQUE     │
-│                      Data: dd/mm/yyyy                       │
+│  📦 Configurações de Auditoria de Estoque                   │
 ├─────────────────────────────────────────────────────────────┤
-│  UNIDADE: Chok Distribuidora de Alimentos Ltda.            │
-│  AUDITOR: Nome do Auditor                                   │
-│  TESTEMUNHA: William Cintra (CPF: 357.553.898-02)          │
+│                                                             │
+│  E-mail do Responsável (Governança) *                       │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ fabiano.dias@grupoarantes.com.br                      │ │
+│  └───────────────────────────────────────────────────────┘ │
+│                                                             │
+│  E-mails em Cópia (um por linha)                           │
+│  ┌───────────────────────────────────────────────────────┐ │
+│  │ controladoria@grupoarantes.com.br                     │ │
+│  │ diretor@grupoarantes.com.br                           │ │
+│  └───────────────────────────────────────────────────────┘ │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │           💾 Salvar Configurações                   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2. Visualização do Relatório (Auditoria Concluída)
+
+Ao clicar em uma auditoria concluída no histórico, mostrar:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  ✅ Auditoria Concluída                                     │
+│  Unidade: Chok Distribuidora                                │
+│  Concluída em: 29/01/2026 às 14:30                         │
 ├─────────────────────────────────────────────────────────────┤
-│  RESUMO EXECUTIVO                                           │
+│                                                             │
+│  📊 Resumo                                                  │
 │  ┌───────┬───────┬────────────┬────────────┐               │
 │  │ Total │  OK   │ Divergente │ Recontado  │               │
 │  │   6   │   1   │     5      │     0      │               │
 │  └───────┴───────┴────────────┴────────────┘               │
-├─────────────────────────────────────────────────────────────┤
-│  ITENS DIVERGENTES                                          │
-│  ┌────────────┬─────────────────────┬────────┬─────────┐   │
-│  │   Código   │     Descrição       │Sistema │ Físico  │   │
-│  │ 900008581  │ BALY 473ML COCO     │  648   │  1500   │   │
-│  │ ...        │ ...                 │  ...   │  ...    │   │
-│  └────────────┴─────────────────────┴────────┴─────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│  ANÁLISE E RECOMENDAÇÕES (Gerada por IA)                   │
-│                                                             │
-│  [Texto gerado pelo Lovable AI com análise de padrões,     │
-│   possíveis causas e recomendações de ação]                │
 │                                                             │
 ├─────────────────────────────────────────────────────────────┤
-│  NÍVEL DE RISCO: [ALTO/MÉDIO/BAIXO]                        │
-├─────────────────────────────────────────────────────────────┤
-│  OBSERVAÇÕES                                                │
-│  [X] Movimentação durante auditoria: Não                   │
 │                                                             │
-│  Gerado em: dd/mm/yyyy às HH:mm                            │
+│  📧 Relatório                                               │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  ✅ Enviado em 29/01/2026 às 14:32                  │   │
+│  │  Para: fabiano.dias@grupoarantes.com.br             │   │
+│  │                                                     │   │
+│  │  [👁 Ver Relatório]  [📧 Reenviar]                   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  --- OU, se não houver relatório ---                       │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  ⚠️ Relatório não gerado                            │   │
+│  │                                                     │   │
+│  │  [📄 Gerar Relatório]                               │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### 3. Visualização do HTML do Relatório
+
+Ao clicar em "Ver Relatório":
+- Abrir Dialog/Modal com o HTML renderizado
+- Opção de abrir em nova aba para impressão
+
 ---
 
-## Configuração Necessária
+## Fluxo Completo
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                                                                          │
+│   [Admin] Configura emails em /admin/settings → aba "Auditoria"         │
+│       │                                                                  │
+│       ▼                                                                  │
+│   [Auditor] Realiza auditoria e clica "Concluir"                        │
+│       │                                                                  │
+│       ▼                                                                  │
+│   [Sistema] Salva auditoria + gera relatório IA + envia email           │
+│       │                                                                  │
+│       ├─── Salva report_html, report_sent_at, report_sent_to            │
+│       │                                                                  │
+│       ▼                                                                  │
+│   [Histórico] Auditor/Admin clica na auditoria                          │
+│       │                                                                  │
+│       ├─── Se tem relatório → mostra "Ver Relatório" + "Reenviar"       │
+│       └─── Se não tem → mostra "Gerar Relatório"                        │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Modificação da Edge Function
+
+A função `generate-stock-audit-report` será atualizada para:
+
+1. **Salvar o HTML** na coluna `report_html` da auditoria
+2. **Registrar** `report_sent_at` e `report_sent_to` após envio
+3. **Aceitar flag `resend`** para reenviar relatório existente
+
+```typescript
+// Após gerar HTML e enviar email:
+await supabase
+  .from("stock_audits")
+  .update({
+    report_html: htmlReport,
+    report_sent_at: new Date().toISOString(),
+    report_sent_to: emailTo,
+  })
+  .eq("id", auditId);
+```
+
+---
+
+## Campos de Configuração
 
 ### Tabela stock_audit_settings
 
-Verificar se existe registro e se `governance_email` está preenchido:
+| Campo | Valor Exemplo |
+|-------|---------------|
+| `governance_email` | fabiano.dias@grupoarantes.com.br |
+| `cc_emails` | ["controladoria@grupoarantes.com.br"] |
 
-```sql
--- Se não existir, criar registro padrão
-INSERT INTO stock_audit_settings (governance_email)
-VALUES ('fabiano.dias@grupoarantes.com.br')
-ON CONFLICT DO NOTHING;
-```
+Se não existir registro, criar ao salvar.
 
 ---
 
-## Fluxo do Auditor (Atualizado)
+## Resumo das Entregas
 
-```text
-1. Auditor preenche dados da testemunha
-2. Clica "Concluir Auditoria"
-3. Sistema salva status = "completed"
-4. Mostra: "Gerando relatório..."
-5. Edge function processa e envia email
-6. Mostra: "Auditoria concluída! Relatório enviado para governança."
-7. Redireciona para lista de auditorias
-```
-
----
-
-## Tratamento de Erros
-
-| Cenário | Comportamento |
-|---------|---------------|
-| Email não configurado | Continua sem enviar, log de warning |
-| Falha na IA | Gera relatório sem seção de análise |
-| Falha no Resend | Toast de aviso, mas auditoria já está salva |
-| Rate limit IA | Usa fallback com texto padrão |
+| Funcionalidade | Onde |
+|----------------|------|
+| Configurar emails destinatários | `/admin/settings` → aba "Auditoria" |
+| Ver relatório de auditoria concluída | Clique na auditoria no histórico |
+| Gerar relatório se não existir | Botão na tela de detalhes |
+| Reenviar relatório | Botão na tela de detalhes |
 
