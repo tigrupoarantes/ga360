@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, ArrowLeft } from "lucide-react";
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Download, Lightbulb } from "lucide-react";
 import { useStockAudit } from "@/hooks/useStockAudit";
 import {
   Select,
@@ -93,13 +93,27 @@ export function BaseUploader({ auditId, onComplete, onBack }: BaseUploaderProps)
     const mapping: ColumnMapping = {};
     const lowerColumns = columns.map(c => c.toLowerCase());
 
-    // Auto-detect common column names
+    // Auto-detect common column names - expanded patterns for ERP compatibility
     const patterns: Record<string, string[]> = {
-      sku_code: ["sku", "codigo", "código", "cod", "code", "produto", "item"],
-      system_qty: ["qty", "quantidade", "qtd", "estoque", "saldo", "stock"],
-      sku_description: ["descricao", "descrição", "description", "nome", "name"],
-      uom: ["um", "unidade", "unit", "uom", "medida"],
-      location: ["local", "localizacao", "localização", "location", "endereco", "endereço"],
+      sku_code: [
+        "codigo", "código", "cod", "sku", "produto", "item", 
+        "codprod", "cod_prod", "code", "id_produto"
+      ],
+      system_qty: [
+        "atual", "quantidade", "qtd", "saldo", "estoque", 
+        "qty", "qtd_atual", "qtde", "stock", "inventario"
+      ],
+      sku_description: [
+        "descricao", "descrição", "nome", "desc", "description",
+        "nome_produto", "produto_nome", "name"
+      ],
+      uom: [
+        "un", "unidade", "um", "uom", "medida", "unit"
+      ],
+      location: [
+        "local", "localizacao", "localização", "endereco", 
+        "endereço", "location", "posicao", "end"
+      ],
     };
 
     Object.entries(patterns).forEach(([field, keywords]) => {
@@ -112,6 +126,22 @@ export function BaseUploader({ auditId, onComplete, onBack }: BaseUploaderProps)
     });
 
     return mapping;
+  };
+
+  const downloadTemplate = () => {
+    const csvContent = [
+      "CODIGO;DESCRICAO;UNIDADE;QUANTIDADE",
+      "SKU001;Produto Exemplo 1;UN;100",
+      "SKU002;Produto Exemplo 2;CX;50",
+    ].join("\n");
+    
+    const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "template_auditoria_estoque.csv";
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,29 +215,55 @@ export function BaseUploader({ auditId, onComplete, onBack }: BaseUploaderProps)
       </div>
 
       {step === "upload" && (
-        <Card className="border-2 border-dashed">
-          <CardContent className="py-12">
-            <div className="text-center">
-              <FileSpreadsheet className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-              <Label htmlFor="csv-upload" className="cursor-pointer">
-                <span className="text-lg font-medium text-primary hover:underline">
-                  Clique para selecionar
-                </span>
-                <span className="text-muted-foreground"> ou arraste um arquivo</span>
-              </Label>
-              <p className="text-sm text-muted-foreground mt-2">
-                Formatos aceitos: CSV, XLS, XLSX
-              </p>
-              <Input
-                id="csv-upload"
-                type="file"
-                accept=".csv,.txt,.xls,.xlsx"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-            </div>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          {/* Template Download Section */}
+          <Card className="bg-muted/50">
+            <CardContent className="py-6">
+              <div className="flex items-center gap-4">
+                <div className="flex-shrink-0">
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Lightbulb className="h-5 w-5 text-primary" />
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-foreground">Precisa de um modelo?</p>
+                  <p className="text-sm text-muted-foreground">
+                    Preencha com os dados do seu ERP e importe aqui
+                  </p>
+                </div>
+                <Button variant="outline" onClick={downloadTemplate} className="flex-shrink-0">
+                  <Download className="h-4 w-4 mr-2" />
+                  Baixar Template CSV
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Upload Section */}
+          <Card className="border-2 border-dashed">
+            <CardContent className="py-12">
+              <div className="text-center">
+                <FileSpreadsheet className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                <Label htmlFor="csv-upload" className="cursor-pointer">
+                  <span className="text-lg font-medium text-primary hover:underline">
+                    Clique para selecionar
+                  </span>
+                  <span className="text-muted-foreground"> ou arraste um arquivo</span>
+                </Label>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Formatos aceitos: CSV, XLS, XLSX
+                </p>
+                <Input
+                  id="csv-upload"
+                  type="file"
+                  accept=".csv,.txt,.xls,.xlsx"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {step === "map" && (
