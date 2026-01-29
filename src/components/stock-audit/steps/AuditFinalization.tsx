@@ -13,7 +13,9 @@ import {
   AlertTriangle, 
   ClipboardCheck,
   User,
-  FileCheck
+  FileCheck,
+  Mail,
+  Loader2
 } from "lucide-react";
 import { useStockAudit } from "@/hooks/useStockAudit";
 
