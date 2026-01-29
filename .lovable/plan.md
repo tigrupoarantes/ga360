@@ -1,194 +1,124 @@
 
 
-# Plano: Configuração de Destinatários + Visualização de Relatórios no Histórico
+# Plano: Usar SMTP Corporativo no Relatório de Auditoria
 
-## Resumo
+## Problema Identificado
 
-Implementar 3 funcionalidades:
-1. **Tela de configuração** dos e-mails destinatários do relatório de auditoria
-2. **Visualização do relatório** ao clicar em uma auditoria concluída no histórico
-3. **Opção de gerar/regenerar relatório** quando não houver ou para reenviar
+A função `generate-stock-audit-report` está usando **Resend** para enviar e-mails, mas o projeto está configurado para usar **SMTP corporativo** (mail.grupoarantes.emp.br).
 
----
-
-## Arquitetura Atual
-
-A tabela `stock_audit_settings` já possui os campos necessários:
-- `governance_email` → E-mail principal do responsável
-- `cc_emails` → Lista JSON de e-mails em cópia
-
-Porém, a tabela `stock_audits` não armazena o relatório gerado. Precisamos adicionar campos para isso.
-
----
-
-## Mudanças no Banco de Dados
-
-### Adicionar colunas na tabela stock_audits
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `report_html` | `text` | Conteúdo HTML do relatório gerado |
-| `report_sent_at` | `timestamptz` | Data/hora do envio do email |
-| `report_sent_to` | `text[]` | Lista de emails que receberam |
-
----
-
-## Arquivos a Criar/Modificar
-
-| Arquivo | Ação |
-|---------|------|
-| **Migração SQL** | Adicionar colunas `report_html`, `report_sent_at`, `report_sent_to` |
-| `src/components/settings/StockAuditSettingsSection.tsx` | **Criar** - Form para configurar emails |
-| `src/pages/AdminSettings.tsx` | **Modificar** - Adicionar nova aba "Auditoria" |
-| `supabase/functions/generate-stock-audit-report/index.ts` | **Modificar** - Salvar HTML no banco |
-| `src/pages/StockAuditExecution.tsx` | **Modificar** - Exibir relatório e botão regenerar |
-| `src/hooks/useStockAudit.ts` | **Modificar** - Adicionar função regenerateReport |
-
----
-
-## Detalhes das Implementações
-
-### 1. Nova Aba em Configurações: "Auditoria de Estoque"
-
-Local: `/admin/settings` → Nova aba
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  📦 Configurações de Auditoria de Estoque                   │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  E-mail do Responsável (Governança) *                       │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │ fabiano.dias@grupoarantes.com.br                      │ │
-│  └───────────────────────────────────────────────────────┘ │
-│                                                             │
-│  E-mails em Cópia (um por linha)                           │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │ controladoria@grupoarantes.com.br                     │ │
-│  │ diretor@grupoarantes.com.br                           │ │
-│  └───────────────────────────────────────────────────────┘ │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │           💾 Salvar Configurações                   │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+### Configuração Atual (system_settings)
+```json
+{
+  "provider": "smtp",
+  "host": "mail.grupoarantes.emp.br",
+  "port": "465",
+  "user": "ga360@grupoarantes.emp.br",
+  "encryption": "tls"
+}
 ```
 
-### 2. Visualização do Relatório (Auditoria Concluída)
+---
 
-Ao clicar em uma auditoria concluída no histórico, mostrar:
+## Solução
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  ✅ Auditoria Concluída                                     │
-│  Unidade: Chok Distribuidora                                │
-│  Concluída em: 29/01/2026 às 14:30                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  📊 Resumo                                                  │
-│  ┌───────┬───────┬────────────┬────────────┐               │
-│  │ Total │  OK   │ Divergente │ Recontado  │               │
-│  │   6   │   1   │     5      │     0      │               │
-│  └───────┴───────┴────────────┴────────────┘               │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  📧 Relatório                                               │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  ✅ Enviado em 29/01/2026 às 14:32                  │   │
-│  │  Para: fabiano.dias@grupoarantes.com.br             │   │
-│  │                                                     │   │
-│  │  [👁 Ver Relatório]  [📧 Reenviar]                   │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  --- OU, se não houver relatório ---                       │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  ⚠️ Relatório não gerado                            │   │
-│  │                                                     │   │
-│  │  [📄 Gerar Relatório]                               │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 3. Visualização do HTML do Relatório
-
-Ao clicar em "Ver Relatório":
-- Abrir Dialog/Modal com o HTML renderizado
-- Opção de abrir em nova aba para impressão
+Modificar a edge function `generate-stock-audit-report` para:
+1. **Buscar configurações** de email do `system_settings`
+2. **Usar SMTP** diretamente (com a biblioteca denomailer, já usada em `send-email-smtp`)
+3. **Remover dependência** do Resend
 
 ---
 
-## Fluxo Completo
+## Arquivo a Modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/generate-stock-audit-report/index.ts` | Substituir Resend por SMTP |
+
+---
+
+## Detalhes da Implementação
+
+### Antes (usando Resend)
+```typescript
+import { Resend } from "https://esm.sh/resend@4.0.0";
+
+const resendApiKey = Deno.env.get("RESEND_API_KEY");
+const resend = new Resend(resendApiKey);
+
+await resend.emails.send({
+  from: "GA 360 <noreply@grupoarantes.com.br>",
+  to: emailTo,
+  subject: `[Auditoria Estoque] ${unitName} - ${auditDate}`,
+  html: htmlReport,
+});
+```
+
+### Depois (usando SMTP)
+```typescript
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+
+// Buscar config do banco
+const { data: emailConfig } = await supabase
+  .from("system_settings")
+  .select("value")
+  .eq("key", "email_config")
+  .single();
+
+const smtp = emailConfig?.value?.smtp;
+const fromName = emailConfig?.value?.from_name || "GA 360";
+const fromEmail = emailConfig?.value?.from_email || smtp?.user;
+
+// Configurar cliente SMTP
+const clientConfig = {
+  connection: {
+    hostname: smtp.host,
+    port: parseInt(smtp.port),
+    auth: { username: smtp.user, password: smtpPassword },
+    tls: smtp.encryption === 'ssl' || smtp.port === '465',
+  },
+};
+
+const client = new SMTPClient(clientConfig);
+await client.send({
+  from: `${fromName} <${fromEmail}>`,
+  to: emailTo,
+  subject: `[Auditoria Estoque] ${unitName} - ${auditDate}`,
+  html: htmlReport,
+});
+await client.close();
+```
+
+---
+
+## Tratamento de Senha SMTP
+
+A senha SMTP precisa ser armazenada como secret no ambiente. Verificar se existe `SMTP_PASSWORD` configurado. Se não, solicitar ao usuário.
+
+---
+
+## Fluxo Atualizado
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
+│  generate-stock-audit-report                                             │
 │                                                                          │
-│   [Admin] Configura emails em /admin/settings → aba "Auditoria"         │
-│       │                                                                  │
-│       ▼                                                                  │
-│   [Auditor] Realiza auditoria e clica "Concluir"                        │
-│       │                                                                  │
-│       ▼                                                                  │
-│   [Sistema] Salva auditoria + gera relatório IA + envia email           │
-│       │                                                                  │
-│       ├─── Salva report_html, report_sent_at, report_sent_to            │
-│       │                                                                  │
-│       ▼                                                                  │
-│   [Histórico] Auditor/Admin clica na auditoria                          │
-│       │                                                                  │
-│       ├─── Se tem relatório → mostra "Ver Relatório" + "Reenviar"       │
-│       └─── Se não tem → mostra "Gerar Relatório"                        │
-│                                                                          │
+│  1. Busca email_config do system_settings                               │
+│  2. Obtém SMTP_PASSWORD das variáveis de ambiente                       │
+│  3. Conecta via SMTP (mail.grupoarantes.emp.br:465)                     │
+│  4. Envia e-mail com relatório HTML                                     │
+│  5. Salva report_html e tracking no banco                               │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Modificação da Edge Function
+## Nota sobre Porta 465
 
-A função `generate-stock-audit-report` será atualizada para:
-
-1. **Salvar o HTML** na coluna `report_html` da auditoria
-2. **Registrar** `report_sent_at` e `report_sent_to` após envio
-3. **Aceitar flag `resend`** para reenviar relatório existente
-
-```typescript
-// Após gerar HTML e enviar email:
-await supabase
-  .from("stock_audits")
-  .update({
-    report_html: htmlReport,
-    report_sent_at: new Date().toISOString(),
-    report_sent_to: emailTo,
-  })
-  .eq("id", auditId);
-```
+A porta 465 com "tls" na configuração indica SSL implícito. A conexão deve ser feita com `tls: true` desde o início (não STARTTLS).
 
 ---
 
-## Campos de Configuração
+## Verificação de Secret
 
-### Tabela stock_audit_settings
-
-| Campo | Valor Exemplo |
-|-------|---------------|
-| `governance_email` | fabiano.dias@grupoarantes.com.br |
-| `cc_emails` | ["controladoria@grupoarantes.com.br"] |
-
-Se não existir registro, criar ao salvar.
-
----
-
-## Resumo das Entregas
-
-| Funcionalidade | Onde |
-|----------------|------|
-| Configurar emails destinatários | `/admin/settings` → aba "Auditoria" |
-| Ver relatório de auditoria concluída | Clique na auditoria no histórico |
-| Gerar relatório se não existir | Botão na tela de detalhes |
-| Reenviar relatório | Botão na tela de detalhes |
+Preciso confirmar se `SMTP_PASSWORD` está configurado nas secrets do projeto.
 
