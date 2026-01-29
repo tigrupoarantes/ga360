@@ -1,105 +1,84 @@
 
 
-# Plano: Adicionar Campo "Auditável" no Cadastro de Empresas
+# Plano: Adicionar Download de Template + Melhorar Auto-Detecção
 
 ## Objetivo
 
-Simplificar a tela de seleção de unidades para auditoria, exibindo apenas as empresas marcadas como "auditáveis".
+Adicionar botão para baixar template padrão e expandir os padrões de detecção automática de colunas do ERP.
 
 ---
 
-## Mudanças Necessárias
+## Template CSV Atualizado
 
-### 1. Migração SQL
+Ordem das colunas ajustada (UNIDADE antes de QUANTIDADE):
 
-Adicionar coluna `is_auditable` na tabela `companies`:
+| Coluna | Obrigatório | Exemplo |
+|--------|-------------|---------|
+| CODIGO | Sim | SKU001 |
+| DESCRICAO | Não | Produto Exemplo |
+| UNIDADE | Não | UN |
+| QUANTIDADE | Sim | 100 |
 
-```sql
-ALTER TABLE companies 
-ADD COLUMN is_auditable BOOLEAN DEFAULT false;
-
--- Atualizar empresas existentes que devem ser auditáveis
--- (pode ser feito manualmente depois via Admin)
+**Conteúdo do arquivo gerado:**
+```csv
+CODIGO;DESCRICAO;UNIDADE;QUANTIDADE
+SKU001;Produto Exemplo 1;UN;100
+SKU002;Produto Exemplo 2;CX;50
 ```
 
 ---
 
-### 2. Formulário de Empresa (CompanyFormDialog.tsx)
+## Mudanças no BaseUploader.tsx
 
-**Adicionar novo campo Switch:**
+### 1. Nova Seção de Template
 
-| Campo | Tipo | Default |
-|-------|------|---------|
-| `is_auditable` | Boolean | `false` |
+Adicionar card acima da área de upload:
 
-Interface atualizada:
-```typescript
-interface Company {
-  id?: string;
-  name: string;
-  cnpj?: string;
-  is_active: boolean;
-  is_auditable: boolean;  // NOVO
-  logo_url?: string;
-  color?: string;
-}
-```
-
-UI - Adicionar abaixo do Switch "Empresa Ativa":
 ```text
-┌─────────────────────────────────────┐
-│ Empresa Ativa               [ON]    │
-│ Habilitada para Auditoria   [OFF]   │ ← NOVO
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  💡 Precisa de um modelo?                               │
+│                                                         │
+│  [📥 Baixar Template CSV]                               │
+│                                                         │
+│  "Preencha com os dados do seu ERP e importe aqui"     │
+└─────────────────────────────────────────────────────────┘
 ```
 
----
-
-### 3. Seletor de Unidades (UnitSelector.tsx)
-
-**Atualizar query para filtrar empresas auditáveis:**
+### 2. Função downloadTemplate
 
 ```typescript
-// ANTES
-.eq("is_active", true)
-
-// DEPOIS
-.eq("is_active", true)
-.eq("is_auditable", true)
+const downloadTemplate = () => {
+  const csvContent = [
+    "CODIGO;DESCRICAO;UNIDADE;QUANTIDADE",
+    "SKU001;Produto Exemplo 1;UN;100",
+    "SKU002;Produto Exemplo 2;CX;50",
+  ].join("\n");
+  
+  const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "template_auditoria_estoque.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+};
 ```
 
-**Atualizar mensagem de estado vazio:**
-```text
-"Nenhuma empresa habilitada para auditoria.
-Configure as empresas auditáveis em Admin > Estrutura Organizacional."
-```
+### 3. Padrões de Detecção Expandidos
+
+| Campo | Padrões a Detectar |
+|-------|-------------------|
+| `sku_code` | codigo, código, cod, sku, produto, item, codprod, cod_prod, code, id_produto |
+| `system_qty` | atual, quantidade, qtd, saldo, estoque, qty, qtd_atual, qtde, stock, inventario |
+| `sku_description` | descricao, descrição, nome, desc, description, nome_produto, name |
+| `uom` | un, unidade, um, uom, medida, unit |
+| `location` | local, localizacao, localização, endereco, endereço, location, posicao, end |
 
 ---
 
-## Arquivos a Modificar
+## Arquivo a Modificar
 
 | Arquivo | Ação |
 |---------|------|
-| Migração SQL | Adicionar coluna `is_auditable` |
-| `src/components/admin/CompanyFormDialog.tsx` | Adicionar campo Switch |
-| `src/components/stock-audit/steps/UnitSelector.tsx` | Filtrar por `is_auditable = true` |
-
----
-
-## Fluxo Resultante
-
-```text
-1. Admin acessa Estrutura Organizacional
-2. Edita empresa → Liga "Habilitada para Auditoria"
-3. Auditor acessa Auditoria de Estoque
-4. Vê apenas empresas auditáveis
-```
-
----
-
-## Benefícios
-
-- **Tela mais limpa**: Apenas unidades relevantes aparecem
-- **Controle centralizado**: Admin define quem é auditável
-- **Flexibilidade**: Fácil adicionar/remover unidades do processo
+| `src/components/stock-audit/steps/BaseUploader.tsx` | Adicionar botão template + expandir padrões de detecção |
 
