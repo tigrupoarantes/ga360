@@ -6,6 +6,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface OpenAIConfig {
+  enabled: boolean;
+  api_key: string;
+  default_model: string;
+  transcription_model: string;
+}
+
+async function getOpenAIConfig(supabase: any): Promise<{ apiKey: string; transcriptionModel: string }> {
+  // Try to get config from database first
+  const { data: settings } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", "openai_config")
+    .single();
+
+  const openaiConfig = settings?.value as OpenAIConfig | null;
+  
+  if (openaiConfig?.enabled && openaiConfig?.api_key) {
+    return {
+      apiKey: openaiConfig.api_key,
+      transcriptionModel: openaiConfig.transcription_model || "whisper-1",
+    };
+  }
+
+  // Fallback to environment variable
+  const envApiKey = Deno.env.get("OPENAI_API_KEY");
+  if (envApiKey) {
+    return {
+      apiKey: envApiKey,
+      transcriptionModel: "whisper-1",
+    };
+  }
+
+  throw new Error("OpenAI não está configurado. Configure a API Key em Configurações > IA.");
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -23,6 +59,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    // Get OpenAI configuration
+    const { apiKey, transcriptionModel } = await getOpenAIConfig(supabase);
+
+    console.log(`Using OpenAI transcription model: ${transcriptionModel}`);
+
     // Update transcription status to processing
     await supabase
       .from('meeting_transcriptions')
@@ -32,22 +73,16 @@ serve(async (req) => {
     // Convert base64 to audio buffer
     const audioBuffer = Uint8Array.from(atob(audioBase64), c => c.charCodeAt(0));
 
-    // Call Lovable AI for transcription using Whisper
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
-
     // Create form data for audio file
     const formData = new FormData();
     const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
     formData.append('file', audioBlob, 'audio.mp3');
-    formData.append('model', 'whisper-1');
+    formData.append('model', transcriptionModel);
 
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: formData,
     });
@@ -60,6 +95,10 @@ serve(async (req) => {
         .from('meeting_transcriptions')
         .update({ status: 'failed' })
         .eq('meeting_id', meetingId);
+      
+      if (response.status === 401) {
+        throw new Error('API Key inválida. Verifique a configuração em Configurações > IA.');
+      }
       
       throw new Error('Failed to transcribe audio');
     }

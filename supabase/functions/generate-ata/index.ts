@@ -6,6 +6,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface OpenAIConfig {
+  enabled: boolean;
+  api_key: string;
+  default_model: string;
+  transcription_model: string;
+}
+
+async function getOpenAIConfig(supabase: any): Promise<{ apiKey: string; model: string }> {
+  // Try to get config from database first
+  const { data: settings } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", "openai_config")
+    .single();
+
+  const openaiConfig = settings?.value as OpenAIConfig | null;
+  
+  if (openaiConfig?.enabled && openaiConfig?.api_key) {
+    return {
+      apiKey: openaiConfig.api_key,
+      model: openaiConfig.default_model || "gpt-4o",
+    };
+  }
+
+  // Fallback to environment variable
+  const envApiKey = Deno.env.get("OPENAI_API_KEY");
+  if (envApiKey) {
+    return {
+      apiKey: envApiKey,
+      model: "gpt-4o",
+    };
+  }
+
+  throw new Error("OpenAI não está configurado. Configure a API Key em Configurações > IA.");
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -22,6 +58,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
+
+    // Get OpenAI configuration
+    const { apiKey, model } = await getOpenAIConfig(supabase);
+
+    console.log(`Using OpenAI model: ${model}`);
 
     // Fetch meeting data and transcription
     const { data: meeting, error: meetingError } = await supabase
@@ -44,12 +85,6 @@ serve(async (req) => {
       throw new Error('Transcription not found for this meeting');
     }
 
-    // Call Lovable AI to generate ATA
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
-    }
-
     const systemPrompt = `Você é um assistente especializado em gerar atas de reunião (ATAs) corporativas. 
 Analise a transcrição fornecida e extraia informações estruturadas.`;
 
@@ -70,14 +105,14 @@ Por favor, extraia e retorne um JSON com:
 
 Retorne APENAS o JSON, sem texto adicional.`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -88,7 +123,12 @@ Retorne APENAS o JSON, sem texto adicional.`;
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('LLM error:', error);
+      console.error('OpenAI API error:', error);
+      
+      if (response.status === 401) {
+        throw new Error('API Key inválida. Verifique a configuração em Configurações > IA.');
+      }
+      
       throw new Error('Failed to generate ATA');
     }
 

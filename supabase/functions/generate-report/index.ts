@@ -32,6 +32,42 @@ Tipos de gráfico suportados: bar, pie, line
 
 Responda sempre em português brasileiro.`;
 
+interface OpenAIConfig {
+  enabled: boolean;
+  api_key: string;
+  default_model: string;
+  transcription_model: string;
+}
+
+async function getOpenAIConfig(supabase: any): Promise<{ apiKey: string; model: string }> {
+  // Try to get config from database first
+  const { data: settings } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", "openai_config")
+    .single();
+
+  const openaiConfig = settings?.value as OpenAIConfig | null;
+  
+  if (openaiConfig?.enabled && openaiConfig?.api_key) {
+    return {
+      apiKey: openaiConfig.api_key,
+      model: openaiConfig.default_model || "gpt-4o",
+    };
+  }
+
+  // Fallback to environment variable
+  const envApiKey = Deno.env.get("OPENAI_API_KEY");
+  if (envApiKey) {
+    return {
+      apiKey: envApiKey,
+      model: "gpt-4o",
+    };
+  }
+
+  throw new Error("OpenAI não está configurado. Configure a API Key em Configurações > IA.");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -47,15 +83,14 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Get OpenAI configuration
+    const { apiKey, model } = await getOpenAIConfig(supabase);
+
+    console.log(`Using OpenAI model: ${model}`);
     console.log("Fetching data for report generation...");
 
     // Fetch relevant data in parallel
@@ -200,16 +235,16 @@ ${filters ? `Filtros aplicados: ${JSON.stringify(filters)}` : ''}
 
 Por favor, gere um relatório completo e profissional baseado na solicitação acima, usando os dados disponíveis.`;
 
-    console.log("Calling Lovable AI for report generation...");
+    console.log("Calling OpenAI API for report generation...");
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: model,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userPrompt },
@@ -225,15 +260,15 @@ Por favor, gere um relatório completo e profissional baseado na solicitação a
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (response.status === 401) {
         return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: "API Key inválida. Verifique a configuração em Configurações > IA." }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      throw new Error(`AI gateway error: ${response.status}`);
+      console.error("OpenAI API error:", response.status, errorText);
+      throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     return new Response(response.body, {

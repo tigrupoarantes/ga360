@@ -47,6 +47,42 @@ interface EmailConfig {
   };
 }
 
+interface OpenAIConfig {
+  enabled: boolean;
+  api_key: string;
+  default_model: string;
+  transcription_model: string;
+}
+
+async function getOpenAIConfig(supabase: any): Promise<{ apiKey: string; model: string } | null> {
+  // Try to get config from database first
+  const { data: settings } = await supabase
+    .from("system_settings")
+    .select("value")
+    .eq("key", "openai_config")
+    .single();
+
+  const openaiConfig = settings?.value as OpenAIConfig | null;
+  
+  if (openaiConfig?.enabled && openaiConfig?.api_key) {
+    return {
+      apiKey: openaiConfig.api_key,
+      model: openaiConfig.default_model || "gpt-4o",
+    };
+  }
+
+  // Fallback to environment variable
+  const envApiKey = Deno.env.get("OPENAI_API_KEY");
+  if (envApiKey) {
+    return {
+      apiKey: envApiKey,
+      model: "gpt-4o",
+    };
+  }
+
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -64,9 +100,11 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const smtpPassword = Deno.env.get("SMTP_PASSWORD");
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
+    // Get OpenAI configuration
+    const openaiConfig = await getOpenAIConfig(supabase);
 
     // Fetch audit data with unit and auditor
     const { data: audit, error: auditError } = await supabase
@@ -171,9 +209,9 @@ serve(async (req) => {
 
     // Generate AI analysis
     let aiAnalysis = "";
-    if (lovableApiKey && divergentItems.length > 0) {
+    if (openaiConfig && divergentItems.length > 0) {
       try {
-        aiAnalysis = await generateAIAnalysis(lovableApiKey, audit, divergentItems, { total, ok, divergent });
+        aiAnalysis = await generateAIAnalysis(openaiConfig.apiKey, openaiConfig.model, audit, divergentItems, { total, ok, divergent });
       } catch (e) {
         console.error("AI analysis failed:", e);
         aiAnalysis = "Análise automática não disponível.";
@@ -181,7 +219,7 @@ serve(async (req) => {
     } else if (divergentItems.length === 0) {
       aiAnalysis = "✅ Nenhuma divergência encontrada. A auditoria indica conformidade total do estoque físico com o sistema.";
     } else {
-      aiAnalysis = "Análise automática não configurada.";
+      aiAnalysis = "Análise automática não configurada. Configure a API Key da OpenAI em Configurações > IA.";
     }
 
     // Format date
@@ -302,7 +340,8 @@ serve(async (req) => {
 });
 
 async function generateAIAnalysis(
-  apiKey: string, 
+  apiKey: string,
+  model: string,
   audit: AuditData, 
   divergentItems: AuditItem[],
   stats: { total: number; ok: number; divergent: number }
@@ -338,14 +377,14 @@ Por favor, forneça:
 
 Seja objetivo e focado em insights acionáveis.`;
 
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      model: model,
       messages: [
         { role: "system", content: "Você é um auditor especialista em controles internos e gestão de estoques." },
         { role: "user", content: prompt }
@@ -355,8 +394,8 @@ Seja objetivo e focado em insights acionáveis.`;
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("AI API error:", response.status, errorText);
-    throw new Error(`AI API error: ${response.status}`);
+    console.error("OpenAI API error:", response.status, errorText);
+    throw new Error(`OpenAI API error: ${response.status}`);
   }
 
   const data = await response.json();

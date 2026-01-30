@@ -65,3 +65,6 @@ verify_jwt = true
 
 [functions.generate-stock-audit-report]
 verify_jwt = true
+
+[functions.test-openai-connection]
+verify_jwt = true
