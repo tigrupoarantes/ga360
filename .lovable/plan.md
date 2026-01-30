@@ -1,160 +1,142 @@
 
 
-# Plano: Campo Centro de Custo nas Áreas Organizacionais
+# Plano: Migração Completa para Supabase Externo
 
 ## Visão Geral
 
-Adicionar um campo "Centro de Custo" nas áreas organizacionais para permitir integração com os ERPs do Grupo Arantes, possibilitando amarrar funcionários aos centros de custo correspondentes.
+Migrar todo o backend do projeto GA 360 do Lovable Cloud para seu projeto Supabase próprio, incluindo:
+- Schema completo do banco de dados
+- Dados existentes
+- 22 Edge Functions
+- Configuração de secrets
 
 ---
 
-## Mudanças no Banco de Dados
+## Passo a Passo da Migração
 
-### Tabela `areas` - Adicionar coluna
+### Etapa 1: Exportar Schema do Banco de Dados
 
-| Coluna | Tipo | Obrigatório | Descrição |
-|--------|------|-------------|-----------|
-| `cost_center` | `text` | Não | Código do centro de custo no ERP |
+No seu Supabase externo, execute todo o SQL das migrations em sequência. As migrations estão em `supabase/migrations/` e devem ser executadas na ordem cronológica.
 
----
+**Opção mais fácil:** Gerar um SQL consolidado com todo o schema atual.
 
-## Arquivos a Modificar
+### Etapa 2: Exportar os Dados
 
-| Arquivo | Ação |
-|---------|------|
-| **Migração SQL** | Adicionar coluna `cost_center` na tabela `areas` |
-| `src/components/admin/AreaFormDialog.tsx` | Adicionar campo Centro de Custo no formulário |
-| `src/components/admin/AreaTreeView.tsx` | Exibir o centro de custo na árvore (quando preenchido) |
-| `src/pages/AdminOrganization.tsx` | Atualizar interface Area para incluir `cost_center` |
+Usando o painel do Lovable Cloud ou SQL, exportar os dados das tabelas principais:
+- `profiles`, `companies`, `areas`, `user_roles`, `user_permissions`, `user_companies`
+- `meetings`, `meeting_participants`, `meeting_rooms`, `meeting_atas`, `meeting_tasks`, `meeting_transcriptions`
+- `goals`, `goal_types`, `goal_entries`, `okr_objectives`, `okr_key_results`
+- `processes`, `process_executions`, `process_execution_items`
+- `external_employees`, `sellers`, `sales`, `sales_sync_logs`
+- `ec_cards`, `ec_areas`, `ec_instances`, `ec_comments`, `ec_tasks`
+- `stock_audits`, `stock_audit_items`, `stock_audit_samples`
+- `gamification tables`, `invites`, `system_settings`, `two_factor_codes`
 
----
+### Etapa 3: Configurar Secrets no Supabase Externo
 
-## Detalhes da Implementação
+No Dashboard do seu Supabase → Settings → Secrets, adicionar:
 
-### 1. Formulário de Área Atualizado
+| Secret | Descrição |
+|--------|-----------|
+| `SMTP_PASSWORD` | Senha do email SMTP corporativo |
+| `SYNC_API_KEY` | Chave para sincronização com ERPs |
+| `RESEND_API_KEY` | Chave da API Resend (se continuar usando) |
+| `LOVABLE_API_KEY` | Chave para Lovable AI (funcionalidades de IA) |
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  Nova Área / Editar Área                                    │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  Nome da Área *                                             │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │ Comercial                                             │ │
-│  └───────────────────────────────────────────────────────┘ │
-│                                                             │
-│  Centro de Custo                                            │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │ 1001                                                  │ │
-│  └───────────────────────────────────────────────────────┘ │
-│  Código conforme cadastrado no ERP                         │
-│                                                             │
-│  Área Superior (opcional)                                   │
-│  ┌───────────────────────────────────────────────────────┐ │
-│  │ Nenhuma (área raiz)                               ▼ │ │
-│  └───────────────────────────────────────────────────────┘ │
-│                                                             │
-│             [Cancelar]  [Criar área]                       │
-└─────────────────────────────────────────────────────────────┘
+### Etapa 4: Deploy das Edge Functions
+
+Usar Supabase CLI para fazer deploy das 22 funções:
+
+```bash
+# Instalar CLI
+npm install -g supabase
+
+# Login
+supabase login
+
+# Linkar ao projeto
+supabase link --project-ref SEU_PROJECT_ID
+
+# Deploy de todas as funções
+supabase functions deploy
 ```
 
-### 2. Visualização na Árvore de Áreas
+### Etapa 5: Atualizar Variáveis de Ambiente no Lovable
 
-As áreas com centro de custo serão exibidas com o código entre parênteses:
+Atualizar o arquivo `.env` com as novas credenciais:
 
-```text
-📁 Comercial (CC: 1001)
-   📁 Vendas (CC: 1002)
-      📁 Vendas Externas (CC: 1003)
-   📁 Marketing
-📁 Financeiro (CC: 2001)
-   📁 Contabilidade (CC: 2002)
+```
+VITE_SUPABASE_PROJECT_ID="seu_project_id"
+VITE_SUPABASE_PUBLISHABLE_KEY="sua_anon_key"
+VITE_SUPABASE_URL="https://seu_project_id.supabase.co"
 ```
 
----
+### Etapa 6: Configurar Storage Buckets
 
-## Vinculação de Funcionários
-
-A vinculação de funcionários ao centro de custo será feita **indiretamente**:
-
-1. O funcionário está vinculado a uma **área** (via `area_id` no profile ou `department` no external_employees)
-2. A **área** possui o **centro de custo**
-3. Assim, ao consultar o funcionário, podemos obter o centro de custo através da área
-
-### Fluxo de Relacionamento
-
-```text
-┌───────────────────┐     ┌──────────────────┐     ┌───────────────┐
-│    Funcionário    │────▶│      Área        │────▶│ Centro Custo  │
-│  (profile.area_id)│     │   (areas.id)     │     │(areas.cost_   │
-│                   │     │                  │     │   center)     │
-└───────────────────┘     └──────────────────┘     └───────────────┘
-```
+Criar os buckets no novo Supabase:
+- `avatars` (público)
+- `ec-evidences` (privado)
+- `stock-audit-files` (privado)
 
 ---
 
-## Migração SQL
+## Arquivos Que Você Receberá
 
-```sql
--- Adicionar coluna de centro de custo na tabela areas
-ALTER TABLE areas 
-ADD COLUMN cost_center text;
-
--- Índice para consultas rápidas por centro de custo
-CREATE INDEX idx_areas_cost_center ON areas(cost_center) 
-WHERE cost_center IS NOT NULL;
-
--- Comentário para documentação
-COMMENT ON COLUMN areas.cost_center IS 
-  'Código do centro de custo conforme ERP';
-```
+| Arquivo | Conteúdo |
+|---------|----------|
+| `schema.sql` | Script SQL consolidado com todas as tabelas, tipos, funções, triggers e RLS |
+| `functions/` | Código de todas as 22 Edge Functions (já estão no repositório) |
 
 ---
 
-## Fluxo de Uso
+## Edge Functions a Migrar (22 total)
 
-```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│                                                                          │
-│   [Admin] Acessa /admin/estrutura                                       │
-│       │                                                                  │
-│       ▼                                                                  │
-│   [Admin] Cria/Edita uma área                                           │
-│       │                                                                  │
-│       ├─── Preenche Nome (obrigatório)                                  │
-│       ├─── Preenche Centro de Custo (opcional)                          │
-│       └─── Seleciona Área Superior (opcional)                           │
-│       │                                                                  │
-│       ▼                                                                  │
-│   [Sistema] Salva a área com o centro de custo                          │
-│       │                                                                  │
-│       ▼                                                                  │
-│   [Funcionário] É vinculado à área                                      │
-│       │                                                                  │
-│       ▼                                                                  │
-│   [Relatórios/Integrações] Podem consultar centro de custo via área    │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Considerações Futuras
-
-Esta implementação abre possibilidades para:
-
-1. **Relatórios por Centro de Custo** - Agrupar métricas por CC
-2. **Sincronização ERP** - Validar CCs contra o cadastro do ERP
-3. **Rateio de Custos** - Alocar despesas por centro de custo
-4. **Filtros Avançados** - Filtrar funcionários/metas por CC
+| Função | JWT | Descrição |
+|--------|-----|-----------|
+| `confirm-attendance` | false | Confirma presença em reunião |
+| `create-user` | true | Cria novo usuário |
+| `create-users-from-employees` | true | Converte funcionários em usuários |
+| `elevenlabs-scribe-token` | true | Token para transcrição ElevenLabs |
+| `generate-ata` | true | Gera ata de reunião |
+| `generate-report` | true | Gera relatórios personalizados |
+| `generate-stock-audit-report` | true | Relatório de auditoria de estoque |
+| `import-users` | true | Importa usuários via CSV |
+| `recalculate-goals` | false | Recalcula metas |
+| `send-2fa-code` | false | Envia código 2FA |
+| `send-attendance-confirmation` | true | Envia convite de confirmação |
+| `send-email-smtp` | true | Envia email via SMTP |
+| `send-invite` | true | Envia convite de acesso |
+| `send-meeting-notification` | true | Notifica sobre reunião |
+| `send-meeting-reminders` | false | Lembretes de reunião (cron) |
+| `send-whatsapp-reminder` | true | Lembrete via WhatsApp |
+| `sync-employees` | false | Sincroniza funcionários do ERP |
+| `sync-sales` | false | Sincroniza vendas do ERP |
+| `sync-sellers` | false | Sincroniza vendedores do ERP |
+| `test-smtp-connection` | true | Testa conexão SMTP |
+| `transcribe-meeting` | true | Transcreve reunião |
+| `verify-2fa-code` | false | Verifica código 2FA |
 
 ---
 
-## Resumo das Entregas
+## Checklist Pós-Migração
 
-| Funcionalidade | Local |
-|----------------|-------|
-| Campo Centro de Custo | Formulário de criação/edição de área |
-| Visualização do CC | Árvore de áreas na estrutura organizacional |
-| Vinculação com funcionário | Via relacionamento area_id → cost_center |
+- [ ] Schema criado no Supabase externo
+- [ ] Dados importados para todas as tabelas
+- [ ] Secrets configurados
+- [ ] Edge Functions deployed via CLI
+- [ ] Storage buckets criados
+- [ ] `.env` atualizado com novas credenciais
+- [ ] Teste de login funcionando
+- [ ] Teste de criação de reunião
+- [ ] Teste de envio de email
+
+---
+
+## Próximos Passos
+
+1. **Gerar o SQL consolidado** do schema para você executar no Supabase externo
+2. **Fornecer instruções detalhadas** para exportar os dados
+3. **Atualizar as credenciais** no arquivo `.env`
+
+Posso gerar o script SQL consolidado do schema agora?
 
