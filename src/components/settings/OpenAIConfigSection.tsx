@@ -25,7 +25,12 @@ const DEFAULT_CONFIG: OpenAIConfig = {
 };
 
 const CHAT_MODELS = [
-  // Modelos mais recentes (GPT-4.1 / o-series)
+  // Modelos GPT-5 (mais recentes)
+  { value: 'gpt-5.2', label: 'GPT-5.2 (Último Lançamento)' },
+  { value: 'gpt-5', label: 'GPT-5' },
+  { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
+  { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
+  // Modelos GPT-4.1 / o-series
   { value: 'gpt-4.1', label: 'GPT-4.1 (Mais Avançado)' },
   { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
   { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano (Ultra-leve)' },
