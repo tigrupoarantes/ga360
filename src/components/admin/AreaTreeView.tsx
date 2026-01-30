@@ -16,6 +16,7 @@ interface Area {
   id: string;
   name: string;
   parent_id: string | null;
+  cost_center?: string | null;
 }
 
 interface AreaTreeNode extends Area {
@@ -94,6 +95,11 @@ function TreeNode({
         
         <span className="flex-1 text-sm font-medium text-foreground">
           {node.name}
+          {node.cost_center && (
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              (CC: {node.cost_center})
+            </span>
+          )}
         </span>
 
         <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">

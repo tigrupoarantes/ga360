@@ -24,6 +24,7 @@ interface Area {
   id: string;
   name: string;
   parent_id: string | null;
+  cost_center?: string | null;
 }
 
 interface AreaFormDialogProps {
@@ -31,13 +32,14 @@ interface AreaFormDialogProps {
   onOpenChange: (open: boolean) => void;
   area: Area | null;
   areas: Area[];
-  onSave: (data: { name: string; parent_id: string | null }) => Promise<void>;
+  onSave: (data: { name: string; parent_id: string | null; cost_center: string | null }) => Promise<void>;
   companyId?: string | null;
 }
 
 const areaSchema = z.object({
   name: z.string().trim().min(2, { message: 'Nome deve ter no mínimo 2 caracteres' }),
   parent_id: z.union([z.string(), z.null()]),
+  cost_center: z.union([z.string().trim(), z.null()]).transform(val => val === '' ? null : val),
 });
 
 export function AreaFormDialog({ 
@@ -53,6 +55,7 @@ export function AreaFormDialog({
   const [formData, setFormData] = useState({
     name: '',
     parent_id: null as string | null,
+    cost_center: '' as string,
   });
 
   useEffect(() => {
@@ -61,11 +64,13 @@ export function AreaFormDialog({
         setFormData({
           name: area.name,
           parent_id: area.parent_id,
+          cost_center: area.cost_center || '',
         });
       } else {
         setFormData({
           name: '',
           parent_id: null,
+          cost_center: '',
         });
       }
       setErrors({});
@@ -78,7 +83,7 @@ export function AreaFormDialog({
     setLoading(true);
 
     try {
-      const validated = areaSchema.parse(formData) as { name: string; parent_id: string | null };
+      const validated = areaSchema.parse(formData) as { name: string; parent_id: string | null; cost_center: string | null };
       await onSave(validated);
       onOpenChange(false);
     } catch (error) {
@@ -139,6 +144,19 @@ export function AreaFormDialog({
               {errors.name && (
                 <p className="text-sm text-destructive">{errors.name}</p>
               )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cost_center">Centro de Custo</Label>
+              <Input
+                id="cost_center"
+                placeholder="Ex: 1001, CC-VENDAS"
+                value={formData.cost_center}
+                onChange={(e) => setFormData({ ...formData, cost_center: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Código conforme cadastrado no ERP
+              </p>
             </div>
 
             <div className="space-y-2">
