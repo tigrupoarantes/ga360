@@ -1,137 +1,77 @@
 
 
-## Plano: Configuração de API Key OpenAI nas Configurações Gerais
+## Plano: Adicionar Mais Modelos OpenAI/ChatGPT
 
-Vou criar uma seção nas Configurações Gerais para você adicionar sua API Key da OpenAI e migrar as edge functions para usar diretamente a OpenAI ao invés do Lovable AI.
-
----
-
-## Visão Geral
-
-| Item | Descrição |
-|------|-----------|
-| **Objetivo** | Permitir configurar API Key da OpenAI via interface |
-| **Local** | Aba "Geral" em Admin > Configurações |
-| **Armazenamento** | Tabela `system_settings` com key `openai_config` |
-| **Impacto** | 4 edge functions serão atualizadas |
+Vou expandir a lista de modelos disponíveis na configuração de IA, incluindo os modelos mais recentes da OpenAI.
 
 ---
 
-## O Que Será Criado
+## Modelos a Adicionar
 
-### 1. Novo Componente de Configuração
-- `OpenAIConfigSection.tsx` - Formulário para configurar a integração OpenAI
-- Campo para API Key (com máscara de senha)
-- Seletor de modelo padrão (gpt-4o, gpt-4-turbo, gpt-3.5-turbo)
-- Switch para habilitar/desabilitar a integração
-- Botão para testar a conexão
+### Modelos de Chat (GPT)
 
-### 2. Edge Function de Teste
-- `test-openai-connection` - Valida se a API Key está funcionando
+| Modelo | Descrição | Uso Recomendado |
+|--------|-----------|-----------------|
+| `gpt-4.1` | Modelo mais recente e avançado | Tarefas complexas de raciocínio |
+| `gpt-4.1-mini` | Versão compacta do GPT-4.1 | Equilíbrio custo/performance |
+| `gpt-4.1-nano` | Versão ultra-leve | Alto volume, tarefas simples |
+| `o3` | Modelo de raciocínio avançado | Problemas complexos, análise profunda |
+| `o3-mini` | Raciocínio otimizado | Bom custo-benefício para raciocínio |
+| `o4-mini` | Último modelo de raciocínio | Melhor performance em análise |
+| `gpt-4o` | Modelo omni atual | Multimodal (texto + imagem) |
+| `gpt-4o-mini` | Versão econômica do 4o | Uso geral econômico |
+| `gpt-4-turbo` | GPT-4 otimizado | Contexto longo |
+| `gpt-3.5-turbo` | Modelo legado | Tarefas simples, muito econômico |
 
-### 3. Atualização das Edge Functions de IA
-As seguintes funções serão atualizadas para ler a config da OpenAI:
-- `generate-report` - Relatórios via assistente IA
-- `generate-ata` - Geração de ATAs de reunião
-- `transcribe-meeting` - Transcrição de áudio (Whisper)
-- `generate-stock-audit-report` - Relatório de auditoria
+### Modelos de Transcrição
 
----
-
-## Interface Visual
-
-```text
-┌─────────────────────────────────────────────────────────┐
-│ 🤖 Integração OpenAI                                    │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│ [✓] Habilitar OpenAI                                    │
-│                                                         │
-│ ┌─────────────────────────────────────────────────────┐ │
-│ │ API Key OpenAI *                                    │ │
-│ │ [sk-••••••••••••••••••••••••••••••••••••••••••••] │ │
-│ │ Obtenha sua API key em platform.openai.com         │ │
-│ └─────────────────────────────────────────────────────┘ │
-│                                                         │
-│ ┌─────────────────────────────────────────────────────┐ │
-│ │ Modelo Padrão                                       │ │
-│ │ [gpt-4o                                  ▼]        │ │
-│ └─────────────────────────────────────────────────────┘ │
-│                                                         │
-│ ┌─────────────────────────────────────────────────────┐ │
-│ │ Modelo para Transcrição                             │ │
-│ │ [whisper-1                               ▼]        │ │
-│ └─────────────────────────────────────────────────────┘ │
-│                                                         │
-│ [🔌 Testar Conexão]                                     │
-│                                                         │
-│ ⚠️ A API Key será armazenada de forma segura e usada   │
-│    apenas nas funções de IA do sistema.                 │
-└─────────────────────────────────────────────────────────┘
-```
+| Modelo | Descrição |
+|--------|-----------|
+| `whisper-1` | Modelo padrão de transcrição |
+| `gpt-4o-transcribe` | Transcrição via GPT-4o (mais preciso) |
+| `gpt-4o-mini-transcribe` | Transcrição econômica |
 
 ---
 
-## Seção Técnica
+## Alteração no Código
 
-### Estrutura de Dados (system_settings)
-
-```json
-{
-  "key": "openai_config",
-  "value": {
-    "enabled": true,
-    "api_key": "sk-...",
-    "default_model": "gpt-4o",
-    "transcription_model": "whisper-1"
-  }
-}
-```
-
-### Arquivos a Criar/Modificar
-
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `src/components/settings/OpenAIConfigSection.tsx` | Criar | Componente de configuração |
-| `src/pages/AdminSettings.tsx` | Modificar | Adicionar aba IA ou incluir na aba Geral |
-| `supabase/functions/test-openai-connection/index.ts` | Criar | Testar conexão com OpenAI |
-| `supabase/functions/generate-report/index.ts` | Modificar | Usar OpenAI ao invés de Lovable AI |
-| `supabase/functions/generate-ata/index.ts` | Modificar | Usar OpenAI ao invés de Lovable AI |
-| `supabase/functions/transcribe-meeting/index.ts` | Modificar | Usar OpenAI ao invés de Lovable AI |
-| `supabase/functions/generate-stock-audit-report/index.ts` | Modificar | Usar OpenAI ao invés de Lovable AI |
-
-### Lógica das Edge Functions
+Atualizar o array `CHAT_MODELS` no arquivo `src/components/settings/OpenAIConfigSection.tsx`:
 
 ```typescript
-// Prioridade de API Key:
-// 1. Buscar openai_config da tabela system_settings
-// 2. Se não configurado, usar OPENAI_API_KEY das env vars (fallback)
-// 3. Se nenhum, retornar erro informativo
+const CHAT_MODELS = [
+  // Modelos mais recentes (GPT-4.1 / o-series)
+  { value: 'gpt-4.1', label: 'GPT-4.1 (Mais Avançado)' },
+  { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+  { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano (Ultra-leve)' },
+  { value: 'o4-mini', label: 'O4 Mini (Raciocínio)' },
+  { value: 'o3', label: 'O3 (Raciocínio Avançado)' },
+  { value: 'o3-mini', label: 'O3 Mini (Raciocínio Econômico)' },
+  // Modelos GPT-4o
+  { value: 'gpt-4o', label: 'GPT-4o (Recomendado)' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Econômico)' },
+  // Modelos legados
+  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (Legado)' },
+];
 
-const { data: settings } = await supabase
-  .from('system_settings')
-  .select('value')
-  .eq('key', 'openai_config')
-  .single();
-
-const openaiConfig = settings?.value;
-const apiKey = openaiConfig?.api_key || Deno.env.get('OPENAI_API_KEY');
-const model = openaiConfig?.default_model || 'gpt-4o';
+const TRANSCRIPTION_MODELS = [
+  { value: 'whisper-1', label: 'Whisper-1 (Padrão)' },
+  { value: 'gpt-4o-transcribe', label: 'GPT-4o Transcribe (Mais Preciso)' },
+  { value: 'gpt-4o-mini-transcribe', label: 'GPT-4o Mini Transcribe' },
+];
 ```
-
-### Endpoints OpenAI
-
-| Função | Endpoint | Modelo |
-|--------|----------|--------|
-| Chat/Completions | `https://api.openai.com/v1/chat/completions` | gpt-4o |
-| Transcrição | `https://api.openai.com/v1/audio/transcriptions` | whisper-1 |
 
 ---
 
-## Segurança
+## Arquivos a Modificar
 
-- API Key armazenada na tabela `system_settings` com RLS ativo
-- Apenas usuários com role `super_admin` podem acessar/modificar
-- Campo exibido como password no frontend
-- Validação da key antes de salvar (via teste de conexão)
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/settings/OpenAIConfigSection.tsx` | Expandir arrays `CHAT_MODELS` e `TRANSCRIPTION_MODELS` |
+
+---
+
+## Resultado Esperado
+
+O dropdown de modelos mostrará todos os modelos disponíveis organizados por categoria, permitindo escolher desde os mais avançados (GPT-4.1, O3/O4) até os mais econômicos (GPT-3.5-turbo).
 
