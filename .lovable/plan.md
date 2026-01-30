@@ -1,96 +1,54 @@
-# Migração GA 360 - Lovable Cloud → Supabase Externo
 
-## ✅ Status: Scripts Gerados
 
-Os scripts de migração foram gerados com sucesso e estão disponíveis em `docs/migration/`.
+## Plano: Atualizar Credenciais do Supabase Externo
 
----
-
-## 📁 Arquivos Gerados
-
-| Arquivo | Descrição | Linhas |
-|---------|-----------|--------|
-| `docs/migration/schema-completo.sql` | Schema consolidado (tabelas, tipos, funções, triggers) | ~1500 |
-| `docs/migration/rls-policies.sql` | Todas as políticas RLS | ~600 |
-| `docs/migration/storage-buckets.sql` | Buckets de storage e políticas | ~80 |
-| `docs/migration/seed-data.sql` | Dados iniciais (badges, config, áreas) | ~70 |
-| `docs/migration/README.md` | Instruções completas | - |
+### Objetivo
+Atualizar o frontend do GA 360 para apontar para o novo projeto Supabase externo, completando a migração.
 
 ---
 
-## 🚀 Próximos Passos
+### Mudanças Necessárias
 
-### Etapa 1: Executar Scripts no Supabase Externo
+#### Arquivo: `.env`
 
-1. Acesse o **SQL Editor** do seu Supabase
-2. Execute os scripts **nesta ordem**:
-   - `schema-completo.sql`
-   - `rls-policies.sql`
-   - `storage-buckets.sql`
-   - `seed-data.sql`
+Atualizar as variáveis de ambiente com as novas credenciais:
 
-### Etapa 2: Configurar Secrets
+| Variável | Valor Atual (Lovable Cloud) | Novo Valor (Supabase Externo) |
+|----------|----------------------------|-------------------------------|
+| `VITE_SUPABASE_URL` | `https://aqromdreppgztagafinr.supabase.co` | `https://zveqhxaiwghexfobjaek.supabase.co` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | `eyJhbG...9q9k` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2ZXFoeGFpd2doZXhmb2JqYWVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3OTM0ODAsImV4cCI6MjA4NTM2OTQ4MH0.N2EEwDUfWlZTWlHMJAC777eELMxmpyOyrJ087kPex3Y` |
+| `VITE_SUPABASE_PROJECT_ID` | `aqromdreppgztagafinr` | `zveqhxaiwghexfobjaek` |
 
-No Dashboard do Supabase → **Settings → Edge Functions → Secrets**:
+---
 
-| Secret | Valor |
-|--------|-------|
-| `SMTP_PASSWORD` | Sua senha SMTP |
-| `SYNC_API_KEY` | Chave da API de sincronização |
-| `RESEND_API_KEY` | Chave do Resend (se usar) |
-| `LOVABLE_API_KEY` | Chave do Lovable AI |
+### Validação Pós-Atualização
 
-### Etapa 3: Deploy das Edge Functions
+Após a atualização, você deve testar:
 
-```bash
-# No terminal, na pasta do projeto
-npm install -g supabase
-supabase login
-supabase link --project-ref SEU_PROJECT_ID
-supabase functions deploy
+1. **Login/Logout** - Verificar se a autenticação funciona
+2. **Carregamento de dados** - Dashboard deve exibir dados do novo banco
+3. **Criação de registros** - Testar criação de reunião ou tarefa
+4. **Edge Functions** - Testar envio de email ou notificação
+
+---
+
+### Seção Técnica
+
+O cliente Supabase em `src/integrations/supabase/client.ts` já lê as variáveis de ambiente dinamicamente:
+
+```typescript
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 ```
 
-### Etapa 4: Atualizar Credenciais no Lovable
-
-Depois de configurar o Supabase externo, me informe:
-- **Project ID**: `xxx`
-- **Anon Key**: `xxx`
-- **URL**: `https://xxx.supabase.co`
-
-E eu atualizarei o arquivo `.env` para apontar para seu novo backend.
-
-### Etapa 5: Atribuir Role Super Admin
-
-Após criar seu usuário no novo Supabase, execute:
-
-```sql
-INSERT INTO public.user_roles (user_id, role)
-VALUES ('SEU_USER_ID', 'super_admin')
-ON CONFLICT (user_id, role) DO NOTHING;
-```
+Portanto, apenas atualizar o `.env` é suficiente - não há necessidade de modificar código.
 
 ---
 
-## ✅ Checklist Pós-Migração
+### Lembrete Importante
 
-- [ ] Scripts SQL executados no Supabase externo
-- [ ] Secrets configurados
-- [ ] Edge Functions deployed via CLI
-- [ ] `.env` atualizado com novas credenciais
-- [ ] Role `super_admin` atribuída
-- [ ] Teste de login OK
-- [ ] Teste de criação de reunião OK
-- [ ] Teste de envio de email OK
-
----
-
-## 📊 Exportar Dados do Lovable Cloud
-
-Se precisar exportar os dados existentes, posso gerar queries de exportação para cada tabela.
-
----
-
-## 🔧 Suporte
-
-Se encontrar erros durante a migração, me informe a mensagem de erro e ajudarei a resolver.
+Certifique-se de que no Supabase externo você já:
+- Executou o script para atribuir `super_admin` ao seu usuário
+- Configurou todos os Secrets necessários nas Edge Functions
+- Verificou que o schema e RLS policies estão aplicados
 
