@@ -35,6 +35,7 @@ interface Area {
   name: string;
   parent_id: string | null;
   company_id: string | null;
+  cost_center?: string | null;
 }
 
 export default function AdminOrganization() {

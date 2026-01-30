@@ -17,6 +17,7 @@ export type Database = {
       areas: {
         Row: {
           company_id: string | null
+          cost_center: string | null
           created_at: string | null
           id: string
           name: string
@@ -25,6 +26,7 @@ export type Database = {
         }
         Insert: {
           company_id?: string | null
+          cost_center?: string | null
           created_at?: string | null
           id?: string
           name: string
@@ -33,6 +35,7 @@ export type Database = {
         }
         Update: {
           company_id?: string | null
+          cost_center?: string | null
           created_at?: string | null
           id?: string
           name?: string
