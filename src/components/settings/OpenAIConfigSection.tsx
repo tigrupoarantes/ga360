@@ -25,14 +25,25 @@ const DEFAULT_CONFIG: OpenAIConfig = {
 };
 
 const CHAT_MODELS = [
+  // Modelos mais recentes (GPT-4.1 / o-series)
+  { value: 'gpt-4.1', label: 'GPT-4.1 (Mais Avançado)' },
+  { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+  { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano (Ultra-leve)' },
+  { value: 'o4-mini', label: 'O4 Mini (Raciocínio)' },
+  { value: 'o3', label: 'O3 (Raciocínio Avançado)' },
+  { value: 'o3-mini', label: 'O3 Mini (Raciocínio Econômico)' },
+  // Modelos GPT-4o
   { value: 'gpt-4o', label: 'GPT-4o (Recomendado)' },
   { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Econômico)' },
+  // Modelos legados
   { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
+  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (Legado)' },
 ];
 
 const TRANSCRIPTION_MODELS = [
-  { value: 'whisper-1', label: 'Whisper-1' },
+  { value: 'whisper-1', label: 'Whisper-1 (Padrão)' },
+  { value: 'gpt-4o-transcribe', label: 'GPT-4o Transcribe (Mais Preciso)' },
+  { value: 'gpt-4o-mini-transcribe', label: 'GPT-4o Mini Transcribe' },
 ];
 
 export function OpenAIConfigSection() {
