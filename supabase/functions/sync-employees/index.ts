@@ -20,6 +20,11 @@ interface EmployeeRecord {
   cod_vendedor?: string;
   lider_direto_id?: string;
   
+  // Campos CNH (Gestão de Ativos)
+  cnh_numero?: string;
+  cnh_categoria?: string;
+  cnh_validade?: string;
+  
   // Formato antigo (retrocompatibilidade)
   external_id?: string;
   full_name?: string;
@@ -235,6 +240,11 @@ serve(async (req) => {
         const unidade = emp.unidade;
         const codVendedor = emp.cod_vendedor;
         const isCondutor = emp.is_condutor || false;
+        
+        // Campos CNH
+        const cnhNumero = emp.cnh_numero;
+        const cnhCategoria = emp.cnh_categoria;
+        const cnhValidade = emp.cnh_validade;
 
         let isActive = true;
         if (emp.status !== undefined) {
@@ -275,7 +285,11 @@ serve(async (req) => {
           hire_date: emp.hire_date || null,
           is_active: isActive,
           metadata: emp.metadata || null,
-          synced_at: new Date().toISOString()
+          synced_at: new Date().toISOString(),
+          // Campos CNH
+          cnh_numero: cnhNumero || null,
+          cnh_categoria: cnhCategoria || null,
+          cnh_validade: cnhValidade || null
         };
 
         let employeeId: string;

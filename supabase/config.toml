@@ -60,6 +60,9 @@ verify_jwt = false
 [functions.sync-employees]
 verify_jwt = false
 
+[functions.sync-companies]
+verify_jwt = false
+
 [functions.create-users-from-employees]
 verify_jwt = true
 

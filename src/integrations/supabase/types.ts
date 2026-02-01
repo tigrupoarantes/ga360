@@ -133,39 +133,51 @@ export type Database = {
       }
       companies: {
         Row: {
+          address: string | null
           cnpj: string | null
           color: string | null
           created_at: string
+          email: string | null
           external_id: string | null
           id: string
           is_active: boolean
           is_auditable: boolean | null
           logo_url: string | null
           name: string
+          phone: string | null
+          razao_social: string | null
           updated_at: string
         }
         Insert: {
+          address?: string | null
           cnpj?: string | null
           color?: string | null
           created_at?: string
+          email?: string | null
           external_id?: string | null
           id?: string
           is_active?: boolean
           is_auditable?: boolean | null
           logo_url?: string | null
           name: string
+          phone?: string | null
+          razao_social?: string | null
           updated_at?: string
         }
         Update: {
+          address?: string | null
           cnpj?: string | null
           color?: string | null
           created_at?: string
+          email?: string | null
           external_id?: string | null
           id?: string
           is_active?: boolean
           is_auditable?: boolean | null
           logo_url?: string | null
           name?: string
+          phone?: string | null
+          razao_social?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -845,6 +857,9 @@ export type Database = {
       }
       external_employees: {
         Row: {
+          cnh_categoria: string | null
+          cnh_numero: string | null
+          cnh_validade: string | null
           cod_vendedor: string | null
           company_id: string | null
           cpf: string | null
@@ -869,6 +884,9 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          cnh_categoria?: string | null
+          cnh_numero?: string | null
+          cnh_validade?: string | null
           cod_vendedor?: string | null
           company_id?: string | null
           cpf?: string | null
@@ -893,6 +911,9 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          cnh_categoria?: string | null
+          cnh_numero?: string | null
+          cnh_validade?: string | null
           cod_vendedor?: string | null
           company_id?: string | null
           cpf?: string | null
