@@ -16,7 +16,7 @@ export function EmployeeSyncDocs() {
     toast.success('Copiado para a área de transferência');
   };
 
-  const apiEndpoint = `https://aqromdreppgztagafinr.supabase.co/functions/v1/sync-employees`;
+  const apiEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-employees`;
 
   const sqlViewExample = `-- View para sincronização de funcionários (Gestão de Ativos → GA360)
 CREATE VIEW vw_sync_employees_ga360 AS
