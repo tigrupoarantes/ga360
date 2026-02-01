@@ -116,7 +116,7 @@ export function SyncStatus() {
     }
   };
 
-  const apiEndpoint = `https://aqromdreppgztagafinr.supabase.co/functions/v1/sync-sales`;
+  const apiEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sales`;
 
   const sqlViewExample = `CREATE VIEW vw_vendas_sync AS
 SELECT 
