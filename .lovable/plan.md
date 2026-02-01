@@ -1,215 +1,148 @@
 
 
-## Plano: Preparar GA360 para Sincronização com Ativos Arantes
+## Plano: Migrar GA360 para Supabase Externo
 
-Este plano implementa as melhorias necessárias no GA360 para receber sincronização completa de empresas e funcionários do sistema Ativos Arantes.
+Este plano atualiza todas as referências do projeto para apontar para o Supabase externo `zveqhxaiwghexfobjaek.supabase.co`.
 
 ---
 
-## Visão Geral
+## Diagnóstico do Problema
+
+O projeto ainda está configurado para o Lovable Cloud (`aqromdreppgztagafinr`), mas deveria estar usando o Supabase externo (`zveqhxaiwghexfobjaek`).
+
+**Erro reportado pelo Gestão de Ativos:**
+```
+Erro ao verificar empresa: Could not find the table 'public.empresas' in the schema cache
+```
+
+Este erro ocorre porque:
+1. O Gestão de Ativos está tentando acessar o projeto errado
+2. Ou está usando uma service key de um projeto diferente
+
+---
+
+## Arquivos que Precisam ser Atualizados
+
+| Arquivo | Valor Atual | Valor Correto |
+|---------|-------------|---------------|
+| `.env` | `aqromdreppgztagafinr` | `zveqhxaiwghexfobjaek` |
+| `supabase/config.toml` | `project_id = "aqromdreppgztagafinr"` | `project_id = "zveqhxaiwghexfobjaek"` |
+| `src/components/employees/EmployeeSyncDocs.tsx` | URL hardcoded antiga | URL dinâmica ou nova |
+| `src/components/goals/SyncStatus.tsx` | URL hardcoded antiga | URL dinâmica ou nova |
+
+---
+
+## Parte 1: Atualizar Variáveis de Ambiente
+
+**Arquivo:** `.env`
+
+```env
+VITE_SUPABASE_PROJECT_ID="zveqhxaiwghexfobjaek"
+VITE_SUPABASE_PUBLISHABLE_KEY="[ANON_KEY_DO_PROJETO_EXTERNO]"
+VITE_SUPABASE_URL="https://zveqhxaiwghexfobjaek.supabase.co"
+```
+
+**Nota:** Preciso que você forneça a `anon key` do projeto externo.
+
+---
+
+## Parte 2: Atualizar Config do Supabase
+
+**Arquivo:** `supabase/config.toml`
+
+```toml
+project_id = "zveqhxaiwghexfobjaek"
+```
+
+---
+
+## Parte 3: Corrigir URLs Hardcoded
+
+### 3.1 EmployeeSyncDocs.tsx
+
+Atualizar para usar variável de ambiente:
+
+```typescript
+// Antes
+const apiEndpoint = `https://aqromdreppgztagafinr.supabase.co/functions/v1/sync-employees`;
+
+// Depois
+const apiEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-employees`;
+```
+
+### 3.2 SyncStatus.tsx
+
+```typescript
+// Antes
+const apiEndpoint = `https://aqromdreppgztagafinr.supabase.co/functions/v1/sync-sales`;
+
+// Depois
+const apiEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sales`;
+```
+
+---
+
+## Parte 4: Credenciais Necessárias
+
+Preciso que você confirme/forneça:
+
+| Credencial | Onde Obter |
+|------------|------------|
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Dashboard Supabase → Settings → API → anon public |
+| `SUPABASE_SERVICE_ROLE_KEY` | Dashboard Supabase → Settings → API → service_role (para secrets) |
+| `SYNC_API_KEY` | Secret customizado para autenticação das APIs de sync |
+
+---
+
+## Parte 5: Deploy das Edge Functions
+
+Após atualizar as configurações, será necessário fazer o deploy de todas as 22 Edge Functions no projeto externo:
 
 ```text
-┌─────────────────────────────┐         ┌─────────────────────────────┐
-│     ATIVOS ARANTES          │         │         GA360               │
-│   (Origem - Master)         │         │    (Destino)                │
-├─────────────────────────────┤         ├─────────────────────────────┤
-│  empresas                   │ ──────► │  companies (atualizado)     │
-│  funcionarios               │ ──────► │  external_employees (atual) │
-│  equipes                    │ ──────► │  areas (futuro)             │
-└─────────────────────────────┘         └─────────────────────────────┘
-        │                                           │
-        └─────────────── SYNC API ──────────────────┘
-              POST /sync-companies (NOVO)
-              POST /sync-employees (existente)
+confirm-attendance, create-user, create-users-from-employees, 
+elevenlabs-scribe-token, generate-ata, generate-report, 
+generate-stock-audit-report, import-users, recalculate-goals, 
+send-2fa-code, send-attendance-confirmation, send-email-smtp, 
+send-invite, send-meeting-notification, send-meeting-reminders, 
+send-whatsapp-reminder, sync-companies, sync-employees, 
+sync-sales, sync-sellers, test-openai-connection, 
+test-smtp-connection, transcribe-meeting, verify-2fa-code
 ```
 
 ---
 
-## Parte 1: Alterações no Schema
+## Configuração para Gestão de Ativos
 
-### 1.1 Tabela `companies` - Novos Campos
+Após a migração, o Gestão de Ativos deve usar:
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `razao_social` | text | Razão social da empresa |
-| `address` | text | Endereço completo |
-| `phone` | text | Telefone de contato |
-| `email` | text | Email corporativo |
+| Configuração | Valor |
+|--------------|-------|
+| `GA360_SUPABASE_URL` | `https://zveqhxaiwghexfobjaek.supabase.co` |
+| `GA360_SERVICE_ROLE_KEY` | Service Role Key do projeto externo |
+| `GA360_SYNC_API_KEY` | Valor do secret SYNC_API_KEY |
 
-### 1.2 Tabela `external_employees` - Campos CNH
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `cnh_numero` | text | Número da CNH |
-| `cnh_categoria` | text | Categoria (A, B, AB, etc.) |
-| `cnh_validade` | date | Data de validade |
-
-### 1.3 Atualização de Dados Existentes
-
-Atualizar o `external_id` das empresas existentes com seus respectivos CNPJs:
-
-| Empresa | CNPJ (external_id) |
-|---------|-------------------|
-| JArantes Distribuição Nestlé | 12513175000181 |
-| Chok Distribuidora | 09277498000160 |
-| G4 Distribuidora | 10596272000107 |
-| Chokdoce | 18780714000162 |
-| Escritório Central | 26605418000196 |
-| Chokagro | 13460854000100 |
-
----
-
-## Parte 2: Nova Edge Function `sync-companies`
-
-### Endpoint
-```
-POST /sync-companies
-Header: x-api-key: {SYNC_API_KEY}
-```
-
-### Payload de Entrada
-```json
-{
-  "companies": [
-    {
-      "cnpj": "12513175000181",
-      "nome": "JArantes Distribuição Nestlé",
-      "razao_social": "J Arantes Distribuição Ltda",
-      "endereco": "Rua...",
-      "telefone": "(16) 3333-3333",
-      "email": "contato@jarantes.com.br",
-      "active": true
-    }
-  ]
-}
-```
-
-### Lógica
-1. Validar API Key
-2. Para cada empresa:
-   - Buscar por `external_id` = CNPJ (sem formatação)
-   - Se existir: UPDATE
-   - Se não existir: INSERT
-3. Retornar relatório de sincronização
-
-### Resposta
-```json
-{
-  "success": true,
-  "created": 0,
-  "updated": 6,
-  "failed": 0
-}
-```
-
----
-
-## Parte 3: Atualização do `sync-employees`
-
-### Melhorias
-- Adicionar suporte aos campos CNH (`cnh_numero`, `cnh_categoria`, `cnh_validade`)
-- Mapear `empresa_cnpj` → `company_id` (buscar empresa pelo CNPJ)
-- Suporte a `equipe_id` para vinculação futura
-
-### Novo Payload Esperado
-```json
-{
-  "company_external_id": "12513175000181",
-  "source_system": "gestao_ativos",
-  "employees": [
-    {
-      "id": "uuid-origem",
-      "nome": "Nome Completo",
-      "cpf": "12345678901",
-      "email": "email@empresa.com.br",
-      "cargo": "Motorista",
-      "departamento": "Logística",
-      "is_condutor": true,
-      "cnh_numero": "12345678901",
-      "cnh_categoria": "D",
-      "cnh_validade": "2025-12-31"
-    }
-  ]
-}
-```
-
----
-
-## Arquivos a Modificar/Criar
-
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| Migration SQL | CRIAR | Adicionar campos nas tabelas |
-| `supabase/functions/sync-companies/index.ts` | CRIAR | Nova Edge Function |
-| `supabase/functions/sync-employees/index.ts` | EDITAR | Suporte a campos CNH |
-| `supabase/config.toml` | EDITAR | Registrar sync-companies |
-
----
-
-## SQL da Migration
-
-```sql
--- 1. Adicionar campos na tabela companies
-ALTER TABLE companies 
-ADD COLUMN IF NOT EXISTS razao_social TEXT,
-ADD COLUMN IF NOT EXISTS address TEXT,
-ADD COLUMN IF NOT EXISTS phone TEXT,
-ADD COLUMN IF NOT EXISTS email TEXT;
-
--- 2. Adicionar campos CNH na tabela external_employees
-ALTER TABLE external_employees
-ADD COLUMN IF NOT EXISTS cnh_numero TEXT,
-ADD COLUMN IF NOT EXISTS cnh_categoria TEXT,
-ADD COLUMN IF NOT EXISTS cnh_validade DATE;
-
--- 3. Atualizar external_id das empresas com CNPJs
-UPDATE companies SET external_id = '12513175000181' 
-WHERE name ILIKE '%jarantes%' OR name ILIKE '%j arantes%';
-
-UPDATE companies SET external_id = '09277498000160' 
-WHERE name ILIKE '%chok distribuidora%';
-
-UPDATE companies SET external_id = '10596272000107' 
-WHERE name ILIKE '%g4%';
-
-UPDATE companies SET external_id = '18780714000162' 
-WHERE name ILIKE '%chokdoce%';
-
-UPDATE companies SET external_id = '26605418000196' 
-WHERE name ILIKE '%escritorio%' OR name ILIKE '%central%';
-
-UPDATE companies SET external_id = '13460854000100' 
-WHERE name ILIKE '%chokagro%';
-```
-
----
-
-## Credenciais Necessárias (para Ativos Arantes)
-
-O sistema Ativos Arantes precisará configurar estes secrets:
-
-| Secret | Valor |
-|--------|-------|
-| `GA360_SUPABASE_URL` | `https://aqromdreppgztagafinr.supabase.co` |
-| `GA360_SYNC_API_KEY` | *(mesmo valor do SYNC_API_KEY atual)* |
+**Endpoints de sincronização:**
+- `POST https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/sync-companies`
+- `POST https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/sync-employees`
 
 ---
 
 ## Ordem de Execução
 
-1. **Migration**: Executar alterações no schema
-2. **sync-companies**: Criar e deployar Edge Function
-3. **sync-employees**: Atualizar com campos CNH
-4. **Validação**: Testar endpoints com dados de exemplo
-5. **Documentação**: Atualizar EmployeeSyncDocs com novo endpoint
+1. Você fornece a `anon key` do projeto externo
+2. Atualizo `.env` com as novas credenciais
+3. Atualizo `supabase/config.toml` com o novo project_id
+4. Corrijo as URLs hardcoded nos componentes
+5. Deploy das Edge Functions no projeto externo
+6. Configuração dos secrets no projeto externo
+7. Teste de conectividade
 
 ---
 
-## Resultado Esperado
+## Próximo Passo Imediato
 
-Após implementação, o Ativos Arantes poderá:
-1. Sincronizar empresas → `POST /sync-companies`
-2. Sincronizar funcionários → `POST /sync-employees`
-3. Manter dados de CNH dos condutores
-4. Vincular funcionários às empresas corretas via CNPJ
+Por favor, forneça a **anon key** (chave pública) do projeto Supabase externo `zveqhxaiwghexfobjaek`. 
+
+Você pode encontrá-la em:
+**Dashboard Supabase → Settings → API → Project API keys → anon public**
 
