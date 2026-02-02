@@ -177,15 +177,22 @@ export default function AdminUsers() {
         throw new Error('Sessão não encontrada');
       }
 
-      const response = await supabase.functions.invoke('create-user', {
-        body: data,
+      // Chamar Edge Function diretamente no Supabase externo
+      const EXTERNAL_SUPABASE_URL = 'https://zveqhxaiwghexfobjaek.supabase.co';
+      
+      const response = await fetch(`${EXTERNAL_SUPABASE_URL}/functions/v1/create-user`, {
+        method: 'POST',
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
+        body: JSON.stringify(data),
       });
 
-      if (response.error) {
-        throw new Error(response.error.message);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao criar usuário');
       }
 
       toast({
