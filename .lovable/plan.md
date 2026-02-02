@@ -1,145 +1,221 @@
 
 
-## Plano: Remover Aba de Configuração de Sincronização
+## Plano: Modificar sync-employees para Suportar Múltiplas Empresas
 
-Este plano remove a aba "Configuração" da seção de Funcionários Externos, mantendo a visualização da lista e a funcionalidade de converter funcionários em usuários.
-
----
-
-## Resumo da Mudança
-
-A sincronização de funcionários agora é gerenciada exclusivamente pelo app "Gestão de Ativos", portanto a documentação de configuração no GA360 não é mais necessária e pode confundir os usuários.
-
-**O que será removido:**
-- Aba "Configuração" com documentação de endpoint/scripts
-- Componente `EmployeeSyncDocs.tsx`
-
-**O que será mantido:**
-- Lista de funcionários externos sincronizados
-- Botão "Criar Usuários" para conversão em massa
-- Filtros, busca, exportação CSV
-- Estatísticas de funcionários
+Este plano modifica a Edge Function `sync-employees` para aceitar funcionários de múltiplas empresas em uma única requisição, identificando a empresa através do campo `cnpj_empresa` de cada funcionário.
 
 ---
 
-## Arquitetura Atual vs. Nova
+## Problema Atual
 
 ```text
-ANTES (2 abas):
-┌─────────────────────────────────────────────┐
-│ Funcionários Externos                       │
-├─────────────────────────────────────────────┤
-│ [Funcionários] [Configuração]               │
-├─────────────────────────────────────────────┤
-│ • Lista de funcionários                     │
-│ • Documentação de API (será removida)       │
-└─────────────────────────────────────────────┘
+ATUAL (Limitação):
+┌─────────────────────────────────────────────────────────┐
+│ POST /sync-employees                                     │
+│                                                          │
+│ {                                                        │
+│   "company_external_id": "12513175000181", ← obrigatório│
+│   "employees": [ ... todos vão para 1 empresa ]         │
+│ }                                                        │
+└─────────────────────────────────────────────────────────┘
 
-DEPOIS (sem abas):
-┌─────────────────────────────────────────────┐
-│ Funcionários Externos                       │
-├─────────────────────────────────────────────┤
-│ • Lista de funcionários                     │
-│ • Filtros e estatísticas                    │
-│ • Botão "Criar Usuários"                    │
-└─────────────────────────────────────────────┘
+RESULTADO: Todos os 272 funcionários foram para Broker J. Arantes
+           Outras empresas: 0 funcionários
 ```
 
 ---
 
-## Arquivos a Modificar
+## Solução Proposta
 
-| Arquivo | Ação |
-|---------|------|
-| `src/pages/AdminEmployees.tsx` | Simplificar removendo Tabs |
-| `src/components/employees/EmployeeSyncDocs.tsx` | Deletar arquivo |
+```text
+NOVO (Flexível):
+┌─────────────────────────────────────────────────────────┐
+│ POST /sync-employees                                     │
+│                                                          │
+│ {                                                        │
+│   "employees": [                                         │
+│     { "nome": "João", "cnpj_empresa": "12513175000181" },│
+│     { "nome": "Maria", "cnpj_empresa": "09277498000160" }│
+│   ]                                                      │
+│ }                                                        │
+└─────────────────────────────────────────────────────────┘
+
+RESULTADO: João → Broker J. Arantes (CNPJ 12513175000181)
+           Maria → Chok Distribuidora (CNPJ 09277498000160)
+```
 
 ---
 
-## Parte 1: Simplificar AdminEmployees.tsx
+## Mapeamento Empresa → CNPJ
 
-Remover a estrutura de Tabs e renderizar diretamente o componente `ExternalEmployeesList`:
+O sistema vai mapear automaticamente baseado no `cnpj_empresa` de cada funcionário:
 
-```tsx
-import { MainLayout } from "@/components/layout/MainLayout";
-import { BackButton } from "@/components/ui/back-button";
-import { ExternalEmployeesList } from "@/components/employees/ExternalEmployeesList";
+| Empresa | CNPJ (external_id) |
+|---------|-------------------|
+| Broker J. Arantes | 12513175000181 |
+| Chok Distribuidora | 09277498000160 |
+| G4 Distribuidora | 10596272000107 |
+| Chokdoce | 18780714000162 |
+| Chokagro | 13460854000100 |
+| Escritório Central | 26605418000196 |
 
-export default function AdminEmployees() {
-  return (
-    <MainLayout>
-      <div className="space-y-6">
-        <div className="flex items-center gap-4 animate-fade-in">
-          <BackButton />
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">
-              Funcionários Externos
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Funcionários sincronizados do sistema Gestão de Ativos
-            </p>
-          </div>
-        </div>
+---
 
-        <ExternalEmployeesList />
-      </div>
-    </MainLayout>
-  );
+## Modificações na Edge Function
+
+### Novo Formato do Payload
+
+O endpoint vai aceitar dois formatos (retrocompatível):
+
+**Formato Antigo (ainda suportado):**
+```json
+{
+  "company_external_id": "12513175000181",
+  "employees": [...]
 }
 ```
 
-**Remoções:**
-- Import de `Tabs`, `TabsContent`, `TabsList`, `TabsTrigger`
-- Import de `EmployeeSyncDocs`
-- Import de ícones `Users`, `Settings`
-- Toda estrutura de Tabs
+**Formato Novo (recomendado):**
+```json
+{
+  "employees": [
+    {
+      "id": "uuid",
+      "nome": "Nome do Funcionário",
+      "cnpj_empresa": "12513175000181",
+      ...demais campos
+    }
+  ]
+}
+```
+
+### Lógica de Processamento
+
+```text
+PARA CADA funcionário:
+  1. Extrair cnpj_empresa (ou usar company_external_id global como fallback)
+  2. Buscar empresa pelo CNPJ no banco (com cache)
+  3. Se empresa não encontrada → registrar erro e pular
+  4. Inserir/atualizar funcionário na empresa correta
+```
 
 ---
 
-## Parte 2: Deletar EmployeeSyncDocs.tsx
+## Interface do EmployeeRecord Atualizada
 
-O arquivo `src/components/employees/EmployeeSyncDocs.tsx` será completamente removido, pois:
+Adicionar o campo `cnpj_empresa`:
 
-1. A documentação de endpoint API não é mais necessária no GA360
-2. Os scripts PowerShell e SQL são gerenciados pelo time de TI no Gestão de Ativos
-3. Remover elimina confusão sobre onde configurar a sincronização
-
----
-
-## Funcionalidades Mantidas
-
-| Funcionalidade | Status |
-|----------------|--------|
-| Visualizar lista de funcionários | Mantida |
-| Filtrar por empresa, departamento, unidade | Mantida |
-| Buscar por nome, CPF, email, cód. vendedor | Mantida |
-| Exportar CSV | Mantida |
-| Revincular funcionários (link_all_external_employees) | Mantida |
-| Converter em usuários (create-users-from-employees) | Mantida |
-| Estatísticas (total, ativos, condutores, etc.) | Mantida |
+```typescript
+interface EmployeeRecord {
+  // Campos existentes...
+  id?: string;
+  nome?: string;
+  cpf?: string;
+  
+  // NOVO: Identificação da empresa
+  cnpj_empresa?: string;  // CNPJ sem formatação
+  
+  // ... demais campos
+}
+```
 
 ---
 
-## Edge Functions
+## Resposta Aprimorada
 
-Nenhuma Edge Function será removida. As seguintes funções continuam ativas:
+A resposta incluirá estatísticas por empresa:
 
-- `sync-employees` - Recebe dados do Gestão de Ativos
-- `sync-companies` - Sincroniza empresas
-- `create-users-from-employees` - Converte funcionários em usuários
+```json
+{
+  "success": true,
+  "created": 500,
+  "updated": 300,
+  "failed": 5,
+  "by_company": {
+    "12513175000181": { "created": 200, "updated": 100 },
+    "09277498000160": { "created": 150, "updated": 80 },
+    "10596272000107": { "created": 80, "updated": 60 }
+  },
+  "errors": [...]
+}
+```
+
+---
+
+## Otimização: Cache de Empresas
+
+Para evitar N+1 queries, buscar todas as empresas uma vez e usar um Map:
+
+```typescript
+// Buscar todas as empresas do grupo
+const { data: companies } = await supabase
+  .from('companies')
+  .select('id, external_id');
+
+// Criar mapa CNPJ → ID
+const companyMap = new Map(
+  companies.map(c => [c.external_id, c.id])
+);
+
+// Uso durante processamento
+const companyId = companyMap.get(normalizedCnpj);
+```
+
+---
+
+## Arquivo a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/sync-employees/index.ts` | Adicionar lógica multi-empresa |
 
 ---
 
 ## Seção Técnica
 
-### Dependências Removidas
-- `@/components/employees/EmployeeSyncDocs` (import)
-- `lucide-react/Users` e `lucide-react/Settings` (não mais usados)
+### Alterações no EmployeeRecord
 
-### Componentes UI Removidos do AdminEmployees
-- `Tabs`, `TabsContent`, `TabsList`, `TabsTrigger` de `@radix-ui/react-tabs`
+```typescript
+interface EmployeeRecord {
+  // ... campos existentes ...
+  
+  // NOVO campo para identificação da empresa
+  cnpj_empresa?: string;  // CNPJ da empresa (sem formatação)
+}
+```
 
-### Verificações
-- Nenhuma outra parte do código importa `EmployeeSyncDocs`
-- O componente `ExternalEmployeesList` é independente
+### Alterações no SyncRequest
+
+```typescript
+interface SyncRequest {
+  company_external_id?: string;  // Agora OPCIONAL (fallback)
+  source_system?: string;
+  employees: EmployeeRecord[];
+}
+```
+
+### Nova Lógica de Processamento
+
+1. Carregar mapa de empresas (CNPJ → UUID)
+2. Para cada funcionário:
+   - Normalizar `cnpj_empresa` (remover pontuação)
+   - Buscar `company_id` no mapa
+   - Se não encontrado e `company_external_id` global existe, usar ele
+   - Se ainda não encontrado, registrar erro
+3. Agrupar estatísticas por empresa
+4. Retornar resposta detalhada
+
+### Tratamento de Erros
+
+- Funcionário sem `cnpj_empresa` e sem `company_external_id` global → erro
+- CNPJ não encontrado no banco → erro (funcionário ignorado)
+- Erro de inserção → registrado mas continua processando outros
+
+### Logs Aprimorados
+
+```typescript
+console.log(`[sync-employees] Received ${employees.length} records from ${sourceSystem}`);
+console.log(`[sync-employees] Identified ${uniqueCnpjs.size} unique companies`);
+console.log(`[sync-employees] Company ${cnpj}: ${created} created, ${updated} updated`);
+```
 
