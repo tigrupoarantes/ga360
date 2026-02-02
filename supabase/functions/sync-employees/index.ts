@@ -20,6 +20,9 @@ interface EmployeeRecord {
   cod_vendedor?: string;
   lider_direto_id?: string;
   
+  // NOVO: Identificação da empresa por CNPJ
+  cnpj_empresa?: string;
+  
   // Campos CNH (Gestão de Ativos)
   cnh_numero?: string;
   cnh_categoria?: string;
@@ -157,10 +160,21 @@ function getEmailByCpf(cpf: string | undefined): string | undefined {
   return cpfEmailMap[normalizedCpf] || cpfEmailMap[cpf.replace(/\D/g, '')];
 }
 
+function normalizeCnpj(cnpj: string | undefined): string | undefined {
+  if (!cnpj) return undefined;
+  return cnpj.replace(/\D/g, '');
+}
+
 interface SyncRequest {
-  company_external_id: string;
+  company_external_id?: string; // Agora OPCIONAL (fallback)
   source_system?: string;
   employees: EmployeeRecord[];
+}
+
+interface CompanyStats {
+  created: number;
+  updated: number;
+  failed: number;
 }
 
 serve(async (req) => {
@@ -189,45 +203,91 @@ serve(async (req) => {
 
     const body: SyncRequest = await req.json();
     const sourceSystem = body.source_system || 'gestao_ativos';
+    const globalCompanyExternalId = body.company_external_id;
+    
     console.log(`[sync-employees] Received ${body.employees?.length || 0} records from ${sourceSystem}`);
+    console.log(`[sync-employees] Global company_external_id: ${globalCompanyExternalId || 'not provided'}`);
 
-    if (!body.company_external_id || !body.employees || !Array.isArray(body.employees)) {
+    if (!body.employees || !Array.isArray(body.employees)) {
       return new Response(
-        JSON.stringify({ error: 'Invalid request body. Required: company_external_id, employees[]' }),
+        JSON.stringify({ error: 'Invalid request body. Required: employees[]' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const { data: company, error: companyError } = await supabase
+    // Carregar todas as empresas para criar mapa CNPJ → ID
+    const { data: companies, error: companiesError } = await supabase
       .from('companies')
-      .select('id')
-      .eq('external_id', body.company_external_id)
-      .maybeSingle();
+      .select('id, external_id, name');
 
-    if (companyError || !company) {
-      console.error('[sync-employees] Company not found:', body.company_external_id);
+    if (companiesError) {
+      console.error('[sync-employees] Error loading companies:', companiesError);
       return new Response(
-        JSON.stringify({ error: `Company not found: ${body.company_external_id}` }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Failed to load companies' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const companyId = company.id;
+    // Criar mapa CNPJ → ID (normalizado)
+    const companyMap = new Map<string, string>();
+    const companyNameMap = new Map<string, string>();
+    
+    for (const company of companies || []) {
+      if (company.external_id) {
+        const normalizedCnpj = normalizeCnpj(company.external_id);
+        if (normalizedCnpj) {
+          companyMap.set(normalizedCnpj, company.id);
+          companyNameMap.set(normalizedCnpj, company.name);
+        }
+      }
+    }
+    
+    console.log(`[sync-employees] Loaded ${companyMap.size} companies into cache`);
 
+    // Identificar CNPJs únicos no payload
+    const uniqueCnpjs = new Set<string>();
+    for (const emp of body.employees) {
+      const cnpj = normalizeCnpj(emp.cnpj_empresa);
+      if (cnpj) uniqueCnpjs.add(cnpj);
+    }
+    console.log(`[sync-employees] Identified ${uniqueCnpjs.size} unique companies in payload`);
+
+    // Fallback company ID (se fornecido global)
+    let fallbackCompanyId: string | null = null;
+    if (globalCompanyExternalId) {
+      const normalizedFallback = normalizeCnpj(globalCompanyExternalId);
+      if (normalizedFallback) {
+        fallbackCompanyId = companyMap.get(normalizedFallback) || null;
+        if (!fallbackCompanyId) {
+          console.warn(`[sync-employees] Fallback company not found: ${globalCompanyExternalId}`);
+        }
+      }
+    }
+
+    // Estatísticas globais e por empresa
+    let totalCreated = 0, totalUpdated = 0, totalFailed = 0;
+    const byCompany: Record<string, CompanyStats> = {};
+    const errors: any[] = [];
+    const processedEmployees: Array<{ externalId: string; id: string }> = [];
+
+    // Inicializar estatísticas por empresa
+    for (const cnpj of uniqueCnpjs) {
+      byCompany[cnpj] = { created: 0, updated: 0, failed: 0 };
+    }
+
+    // Criar sync log (usando a primeira empresa ou null)
+    const firstCompanyId = fallbackCompanyId || (uniqueCnpjs.size > 0 ? companyMap.get([...uniqueCnpjs][0]) : null);
+    
     const { data: syncLog } = await supabase
       .from('sync_logs')
       .insert({
-        company_id: companyId,
+        company_id: firstCompanyId,
         sync_type: 'employees',
         records_received: body.employees.length,
         status: 'running'
       })
       .select()
       .single();
-
-    let created = 0, updated = 0, failed = 0;
-    const errors: any[] = [];
-    const processedEmployees: Array<{ externalId: string; id: string }> = [];
 
     // Primeira passada: inserir/atualizar funcionários
     for (const emp of body.employees) {
@@ -255,6 +315,27 @@ serve(async (req) => {
 
         if (!externalId || !fullName) {
           throw new Error('Missing required fields: id/external_id and nome/full_name');
+        }
+
+        // Determinar company_id baseado no cnpj_empresa ou fallback
+        const empCnpj = normalizeCnpj(emp.cnpj_empresa);
+        let companyId: string | null = null;
+        
+        if (empCnpj) {
+          companyId = companyMap.get(empCnpj) || null;
+          if (!companyId) {
+            console.warn(`[sync-employees] Company not found for CNPJ: ${empCnpj}`);
+          }
+        }
+        
+        // Usar fallback se não encontrou pela cnpj_empresa
+        if (!companyId && fallbackCompanyId) {
+          companyId = fallbackCompanyId;
+        }
+        
+        // Se ainda não tem company_id, registrar erro
+        if (!companyId) {
+          throw new Error(`No company found for employee. cnpj_empresa: ${emp.cnpj_empresa || 'not provided'}, fallback: ${globalCompanyExternalId || 'not provided'}`);
         }
 
         const { data: existingEmployee } = await supabase
@@ -303,7 +384,10 @@ serve(async (req) => {
             .single();
 
           if (updateError) throw updateError;
-          updated++;
+          totalUpdated++;
+          if (empCnpj && byCompany[empCnpj]) {
+            byCompany[empCnpj].updated++;
+          }
           employeeId = updatedEmp.id;
         } else {
           const { data: newEmp, error: insertError } = await supabase
@@ -313,14 +397,21 @@ serve(async (req) => {
             .single();
 
           if (insertError) throw insertError;
-          created++;
+          totalCreated++;
+          if (empCnpj && byCompany[empCnpj]) {
+            byCompany[empCnpj].created++;
+          }
           employeeId = newEmp.id;
         }
 
         processedEmployees.push({ externalId, id: employeeId });
       } catch (error) {
-        failed++;
-        errors.push({ external_id: emp.id || emp.external_id, error: String(error) });
+        totalFailed++;
+        const empCnpj = normalizeCnpj(emp.cnpj_empresa);
+        if (empCnpj && byCompany[empCnpj]) {
+          byCompany[empCnpj].failed++;
+        }
+        errors.push({ external_id: emp.id || emp.external_id, cnpj_empresa: emp.cnpj_empresa, error: String(error) });
         console.error(`[sync-employees] Error:`, error);
       }
     }
@@ -344,22 +435,37 @@ serve(async (req) => {
 
     const endTime = new Date();
 
+    // Log estatísticas por empresa
+    for (const [cnpj, stats] of Object.entries(byCompany)) {
+      const companyName = companyNameMap.get(cnpj) || 'Unknown';
+      console.log(`[sync-employees] Company ${cnpj} (${companyName}): ${stats.created} created, ${stats.updated} updated, ${stats.failed} failed`);
+    }
+
     if (syncLog) {
       await supabase
         .from('sync_logs')
         .update({
-          records_created: created,
-          records_updated: updated,
-          records_failed: failed,
+          records_created: totalCreated,
+          records_updated: totalUpdated,
+          records_failed: totalFailed,
           errors: errors.length > 0 ? errors : null,
           completed_at: endTime.toISOString(),
-          status: failed > 0 ? 'partial' : 'success'
+          status: totalFailed > 0 ? 'partial' : 'success'
         })
         .eq('id', syncLog.id);
     }
 
+    console.log(`[sync-employees] Sync completed: ${totalCreated} created, ${totalUpdated} updated, ${totalFailed} failed`);
+
     return new Response(
-      JSON.stringify({ success: true, created, updated, failed, errors: errors.length > 0 ? errors : undefined }),
+      JSON.stringify({ 
+        success: true, 
+        created: totalCreated, 
+        updated: totalUpdated, 
+        failed: totalFailed, 
+        by_company: byCompany,
+        errors: errors.length > 0 ? errors : undefined 
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
