@@ -290,14 +290,7 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              <Route
-                path="/change-password"
-                element={
-                  <ProtectedRoute>
-                    <ChangePassword />
-                  </ProtectedRoute>
-                }
-              />
+              <Route path="/change-password" element={<ChangePassword />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
             </CompanyProvider>

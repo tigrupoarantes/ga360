@@ -1,7 +1,6 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/external-client';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,8 +24,11 @@ const passwordSchema = z.object({
 
 export default function ChangePassword() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [hasSession, setHasSession] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -35,6 +37,76 @@ export default function ChangePassword() {
     newPassword: '',
     confirmPassword: '',
   });
+
+  // Processar token da URL e estabelecer sessão
+  useEffect(() => {
+    const processTokenFromUrl = async () => {
+      setSessionLoading(true);
+      
+      // Verificar se há hash com token na URL
+      const hash = window.location.hash;
+      console.log('ChangePassword: Verificando hash na URL:', hash ? 'presente' : 'ausente');
+      
+      if (hash && (hash.includes('access_token') || hash.includes('type=recovery'))) {
+        console.log('ChangePassword: Token encontrado na URL, aguardando processamento...');
+        
+        // Aguardar o Supabase processar o hash automaticamente
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      // Verificar sessão atual
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      console.log('ChangePassword: Sessão verificada:', session ? 'ativa' : 'inativa', error ? `Erro: ${error.message}` : '');
+      
+      if (error) {
+        console.error('ChangePassword: Erro ao verificar sessão:', error);
+        toast({
+          title: 'Erro de autenticação',
+          description: 'Seu link expirou ou é inválido. Solicite um novo.',
+          variant: 'destructive',
+        });
+        navigate('/auth');
+        return;
+      }
+      
+      if (session) {
+        console.log('ChangePassword: Sessão válida para usuário:', session.user.email);
+        setHasSession(true);
+      } else {
+        // Se não há hash e não há sessão, redirecionar
+        if (!hash || (!hash.includes('access_token') && !hash.includes('type=recovery'))) {
+          toast({
+            title: 'Sessão não encontrada',
+            description: 'Por favor, faça login ou solicite um novo link.',
+            variant: 'destructive',
+          });
+          navigate('/auth');
+        } else {
+          // Token presente mas sessão não estabelecida ainda - tentar novamente
+          console.log('ChangePassword: Aguardando processamento do token...');
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          if (retrySession) {
+            console.log('ChangePassword: Sessão estabelecida após retry');
+            setHasSession(true);
+          } else {
+            toast({
+              title: 'Erro ao processar link',
+              description: 'O link expirou ou é inválido. Solicite um novo.',
+              variant: 'destructive',
+            });
+            navigate('/auth');
+          }
+        }
+      }
+      
+      setSessionLoading(false);
+    };
+
+    processTokenFromUrl();
+  }, [navigate, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,9 +133,9 @@ export default function ChangePassword() {
         confirmPassword: '',
       });
 
-      // Redirect to profile after 2 seconds
+      // Redirect to dashboard after 2 seconds
       setTimeout(() => {
-        navigate('/profile');
+        navigate('/dashboard');
       }, 2000);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -75,6 +147,7 @@ export default function ChangePassword() {
         });
         setErrors(fieldErrors);
       } else {
+        console.error('ChangePassword: Erro ao alterar senha:', error);
         toast({
           title: 'Erro ao alterar senha',
           description: 'Não foi possível alterar sua senha. Tente novamente.',
@@ -86,22 +159,30 @@ export default function ChangePassword() {
     }
   };
 
+  // Se ainda está carregando a sessão, mostrar loading
+  if (sessionLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+          <p className="text-muted-foreground">Verificando autenticação...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Se não tem sessão, não renderizar (já foi redirecionado)
+  if (!hasSession) {
+    return null;
+  }
+
   return (
-    <MainLayout>
-      <div className="max-w-2xl mx-auto space-y-6">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-6">
         {/* Header */}
-        <div className="animate-fade-in">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate(-1)}
-            className="mb-4"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar
-          </Button>
+        <div className="text-center animate-fade-in">
           <h1 className="text-3xl font-bold text-foreground">Alterar Senha</h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground mt-2">
             Defina uma nova senha para sua conta
           </p>
         </div>
@@ -183,27 +264,17 @@ export default function ChangePassword() {
               )}
             </div>
 
-            {/* Submit Buttons */}
-            <div className="flex justify-end gap-3 pt-4 border-t border-border">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate(-1)}
-                disabled={loading}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Alterando...
-                  </>
-                ) : (
-                  'Alterar senha'
-                )}
-              </Button>
-            </div>
+            {/* Submit Button */}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Alterando...
+                </>
+              ) : (
+                'Alterar senha'
+              )}
+            </Button>
           </form>
         </Card>
 
@@ -232,6 +303,6 @@ export default function ChangePassword() {
           </ul>
         </Card>
       </div>
-    </MainLayout>
+    </div>
   );
 }
