@@ -20,7 +20,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/external-client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { MeetingPlatform } from '@/lib/platformConfig';

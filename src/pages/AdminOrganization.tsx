@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BackButton } from '@/components/ui/back-button';
 import { Building2, Plus, Pencil, Trash2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/external-client';
 import { useToast } from '@/hooks/use-toast';
 import { CompanyFormDialog } from '@/components/admin/CompanyFormDialog';
 import { AreaFormDialog } from '@/components/admin/AreaFormDialog';
