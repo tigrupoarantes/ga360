@@ -1,252 +1,182 @@
 
 
-## Plano: Simplificar Tela de Funcionários Externos
+## Plano: Configurar Cliente Supabase Externo no GA360
 
-Este plano atualiza a lista de funcionários externos para mostrar apenas funcionários **ativos** e remove as referências a **condutores**, que não são relevantes para este portal.
-
----
-
-## Resumo das Mudanças
-
-| Aspecto | Antes | Depois |
-|---------|-------|--------|
-| Funcionários exibidos | Todos (ativos + inativos) | Apenas ativos |
-| Filtro de status | Dropdown (Ativos/Inativos) | Removido |
-| Filtro de condutor | Dropdown (Sim/Não) | Removido |
-| Coluna "Status" na tabela | Sim (badge Ativo/Inativo) | Removida |
-| Badge de condutor na célula Nome | Sim (ícone de carro) | Removido |
-| Estatística "Ativos" | Sim | Removida (redundante) |
-| Estatística "Inativos" | Sim | Removida |
-| Estatística "Condutores" | Sim | Removida |
-| Query padrão | Sem filtro de status | `.eq('is_active', true)` |
+Este plano replica a estrutura do projeto "Gestão de Ativos" para que o GA360 use o Supabase externo (`zveqhxaiwghexfobjaek`) de forma independente do arquivo `.env` gerenciado pelo Lovable Cloud.
 
 ---
 
-## Nova Arquitetura
+## Problema Atual
 
 ```text
-DEPOIS:
+SITUAÇÃO ATUAL:
 ┌─────────────────────────────────────────────────────────┐
-│ fetchEmployees()                                         │
-│   → SELECT * FROM external_employees WHERE is_active=true│
-│   → Retorna apenas ativos                               │
+│ .env (gerenciado pelo Lovable Cloud - sobrescrito)      │
+│   VITE_SUPABASE_URL = aqromdreppgztagafinr (Cloud)      │
 ├─────────────────────────────────────────────────────────┤
-│ Filtros: [Empresa] [Departamento] [Unidade] [Vínculo]   │
+│ src/integrations/supabase/client.ts                      │
+│   → Lê do .env                                          │
+│   → Conecta ao Lovable Cloud                            │
 ├─────────────────────────────────────────────────────────┤
-│ Tabela: CPF | Nome | Email | Dept | Cargo | Unid | ...  │
-│         (sem coluna Status, sem badge de condutor)      │
+│ 86 arquivos importam de:                                │
+│   "@/integrations/supabase/client"                      │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Novo Layout de Estatísticas (4 cards)
-
-De 6 cards para 4 cards:
+## Solução Proposta
 
 ```text
-┌──────────┬──────────┬────────────┬────────────┐
-│  Total   │ Empresas │  Unidades  │ Vinculados │
-│   800    │    6     │     12     │    180     │
-└──────────┴──────────┴────────────┴────────────┘
+NOVA ESTRUTURA:
+┌─────────────────────────────────────────────────────────┐
+│ src/config/supabase.config.ts (NOVO)                     │
+│   → Credenciais hardcoded do Supabase externo           │
+│   → URL: zveqhxaiwghexfobjaek.supabase.co               │
+├─────────────────────────────────────────────────────────┤
+│ src/integrations/supabase/external-client.ts (NOVO)      │
+│   → Cria cliente usando config externo                  │
+│   → Exporta supabase e supabaseExternal                 │
+├─────────────────────────────────────────────────────────┤
+│ 86 arquivos alterados para importar de:                 │
+│   "@/integrations/supabase/external-client"             │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Mudanças Detalhadas
+## Arquivos a Criar
 
-### 1. Query de Busca (fetchEmployees)
+### 1. Arquivo de Configuração
 
-Adicionar filtro `is_active = true` na query:
+**Caminho:** `src/config/supabase.config.ts`
 
 ```typescript
-let query = supabase
-  .from('external_employees')
-  .select(`...`)
-  .eq('is_active', true)  // NOVO: apenas ativos
-  .order('full_name', { ascending: true });
+export const EXTERNAL_SUPABASE_CONFIG = {
+  url: "https://zveqhxaiwghexfobjaek.supabase.co",
+  anonKey: "SUA_ANON_KEY_AQUI",
+  projectId: "zveqhxaiwghexfobjaek"
+};
 ```
 
-### 2. Remover Estados de Filtro
+### 2. Cliente Externo
 
-- Remover: `statusFilter`
-- Remover: `condutorFilter`
+**Caminho:** `src/integrations/supabase/external-client.ts`
 
-### 3. Remover do useEffect
+```typescript
+import { createClient } from '@supabase/supabase-js';
+import type { Database } from './types';
+import { EXTERNAL_SUPABASE_CONFIG } from '@/config/supabase.config';
 
-Remover referências a `statusFilter` e `condutorFilter` nas dependências.
+export const supabaseExternal = createClient<Database>(
+  EXTERNAL_SUPABASE_CONFIG.url,
+  EXTERNAL_SUPABASE_CONFIG.anonKey,
+  {
+    auth: {
+      storage: localStorage,
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  }
+);
 
-### 4. Remover Lógica de filterEmployees
-
-Remover blocos de filtro por status e por condutor.
-
-### 5. Remover Dropdowns de Filtro
-
-- Remover dropdown "Status" (Todos/Ativos/Inativos)
-- Remover dropdown "Condutor" (Todos/Sim/Não)
-
-### 6. Simplificar Estatísticas
-
-Remover cards:
-- "Ativos" (redundante pois todos são ativos)
-- "Inativos" (não aplicável)
-- "Condutores" (não relevante)
-
-Adicionar card:
-- "Empresas" (quantidade de empresas únicas nos dados)
-
-### 7. Remover da Tabela
-
-- Remover coluna "Status" e seu header
-- Remover badge de condutor (ícone Car) da célula Nome
-
-### 8. Atualizar Exportação CSV
-
-Remover colunas:
-- "Status"
-- "Condutor"
-
-### 9. Remover Import Não Usado
-
-Remover `Car` da importação de lucide-react.
+export const supabase = supabaseExternal;
+```
 
 ---
 
-## Arquivo a Modificar
+## Arquivos a Modificar (86 arquivos)
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/employees/ExternalEmployeesList.tsx` | Aplicar todas as mudanças |
+Todos os arquivos que importam do cliente atual precisam ter o import atualizado:
+
+```typescript
+// DE:
+import { supabase } from "@/integrations/supabase/client";
+
+// PARA:
+import { supabase } from "@/integrations/supabase/external-client";
+```
+
+### Lista Completa de Arquivos
+
+| # | Arquivo |
+|---|---------|
+| 1 | src/hooks/useStockAudit.ts |
+| 2 | src/hooks/useAvatarUpload.ts |
+| 3 | src/contexts/AuthContext.tsx |
+| 4 | src/contexts/CompanyContext.tsx |
+| 5 | src/pages/Admin.tsx |
+| 6 | src/pages/AdminAreas.tsx |
+| 7 | src/pages/AdminCompanies.tsx |
+| 8 | src/pages/AdminDatalake.tsx |
+| 9 | src/pages/AdminEmployees.tsx |
+| 10 | src/pages/AdminGovernancaEC.tsx |
+| 11 | src/pages/AdminOrganization.tsx |
+| 12 | src/pages/AdminPermissions.tsx |
+| 13 | src/pages/AdminSettings.tsx |
+| 14 | src/pages/AdminUsers.tsx |
+| 15 | src/pages/Analytics.tsx |
+| 16 | src/pages/Auth.tsx |
+| 17 | src/pages/Calendar.tsx |
+| 18 | src/pages/ChangePassword.tsx |
+| 19 | src/pages/ConfirmAttendance.tsx |
+| 20 | src/pages/Dashboard.tsx |
+| 21 | src/pages/DashboardMe.tsx |
+| 22 | src/pages/Goals.tsx |
+| 23 | src/pages/GovernancaEC.tsx |
+| 24 | src/pages/GovernancaECArea.tsx |
+| 25 | src/pages/GovernancaECCardDetail.tsx |
+| 26 | src/pages/MeetingExecution.tsx |
+| 27 | src/pages/Meetings.tsx |
+| 28 | src/pages/Profile.tsx |
+| 29 | src/pages/ResetPassword.tsx |
+| 30 | src/pages/StockAuditExecution.tsx |
+| 31 | src/pages/StockAuditStart.tsx |
+| 32 | src/pages/Tasks.tsx |
+| 33 | src/pages/Trade.tsx |
+| 34 | ... e mais 52 componentes |
+
+---
+
+## Edge Functions
+
+As Edge Functions continuarão funcionando normalmente pois usam variáveis de ambiente do Supabase (secrets), não o cliente do frontend.
+
+---
+
+## Resumo da Implementação
+
+| Ação | Quantidade |
+|------|------------|
+| Criar arquivos | 2 |
+| Modificar imports | 86 |
+| Edge Functions | Sem alteração |
 
 ---
 
 ## Seção Técnica
 
-### Estados a Remover
+### Credenciais Necessárias
 
-```typescript
-// REMOVER:
-const [statusFilter, setStatusFilter] = useState<string>("all");
-const [condutorFilter, setCondutorFilter] = useState<string>("all");
+Para criar o arquivo de configuração, preciso confirmar a **anon key** do projeto externo:
+
+- **Project ID:** `zveqhxaiwghexfobjaek`
+- **URL:** `https://zveqhxaiwghexfobjaek.supabase.co`
+- **Anon Key:** (você precisa fornecer)
+
+### Vantagens desta Abordagem
+
+1. **Independência do .env**: O Lovable Cloud pode sobrescrever o `.env` sem afetar a conexão
+2. **Padrão consistente**: Mesma estrutura do projeto "Gestão de Ativos"
+3. **Fácil manutenção**: Credenciais centralizadas em um único arquivo
+4. **Sem impacto em Edge Functions**: Continuam usando secrets do Supabase
+
+### Script de Busca/Substituição
+
+A modificação dos 86 arquivos será feita com substituição simples:
+
 ```
-
-### useEffect - Atualizar Dependências
-
-```typescript
-// DE:
-useEffect(() => {
-  filterEmployees();
-}, [employees, searchTerm, departmentFilter, unidadeFilter, statusFilter, linkFilter, condutorFilter, companyFilter]);
-
-// PARA:
-useEffect(() => {
-  filterEmployees();
-}, [employees, searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter]);
+Buscar:  from "@/integrations/supabase/client"
+Trocar:  from "@/integrations/supabase/external-client"
 ```
-
-### Query Atualizada
-
-```typescript
-let query = supabase
-  .from('external_employees')
-  .select(`
-    *,
-    profiles:linked_profile_id (...),
-    lider_direto:lider_direto_id (...),
-    companies:company_id (...)
-  `)
-  .eq('is_active', true)  // NOVO
-  .order('full_name', { ascending: true });
-```
-
-### filterEmployees - Blocos a Remover
-
-```typescript
-// REMOVER este bloco:
-if (statusFilter !== "all") {
-  filtered = filtered.filter(e => 
-    statusFilter === "active" ? e.is_active : !e.is_active
-  );
-}
-
-// REMOVER este bloco:
-if (condutorFilter !== "all") {
-  filtered = filtered.filter(e => 
-    condutorFilter === "yes" ? e.is_condutor : !e.is_condutor
-  );
-}
-```
-
-### Import - Remover Car
-
-```typescript
-// DE:
-import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, Car, MapPin, UserCircle, UserPlus } from "lucide-react";
-
-// PARA:
-import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, MapPin, UserCircle, UserPlus } from "lucide-react";
-```
-
-### Novo Layout de Estatísticas
-
-```tsx
-<div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-  <div className="bg-muted/50 rounded-lg p-3 text-center">
-    <div className="text-2xl font-bold text-foreground">{employees.length}</div>
-    <div className="text-xs text-muted-foreground">Total</div>
-  </div>
-  <div className="bg-muted/50 rounded-lg p-3 text-center">
-    <div className="text-2xl font-bold text-purple-600">
-      {new Set(employees.map(e => e.company_id).filter(Boolean)).size}
-    </div>
-    <div className="text-xs text-muted-foreground">Empresas</div>
-  </div>
-  <div className="bg-muted/50 rounded-lg p-3 text-center">
-    <div className="text-2xl font-bold text-primary">{unidades.length}</div>
-    <div className="text-xs text-muted-foreground">Unidades</div>
-  </div>
-  <div className="bg-muted/50 rounded-lg p-3 text-center">
-    <div className="text-2xl font-bold text-blue-600">{employees.filter(e => e.linked_profile_id).length}</div>
-    <div className="text-xs text-muted-foreground">Vinculados</div>
-  </div>
-</div>
-```
-
-### CSV - Atualizar Exportação
-
-```typescript
-// DE:
-const headers = ['CPF', ..., 'Status', 'Condutor', 'Cód. Vendedor', ...];
-const rows = filteredEmployees.map(e => [
-  ...,
-  e.is_active ? 'Ativo' : 'Inativo',
-  e.is_condutor ? 'Sim' : 'Não',
-  ...
-]);
-
-// PARA:
-const headers = ['CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
-const rows = filteredEmployees.map(e => [
-  e.cpf || '',
-  e.registration_number || '',
-  e.full_name,
-  e.email || '',
-  e.phone || '',
-  e.department || '',
-  e.position || '',
-  e.unidade || '',
-  e.hire_date ? format(new Date(e.hire_date), 'dd/MM/yyyy') : '',
-  e.cod_vendedor || '',
-  e.lider_direto?.full_name || '',
-  e.linked_profile_id ? 'Sim' : 'Não'
-]);
-```
-
-### Tabela - Remover Badge de Condutor
-
-Na célula do Nome, remover o bloco que exibe o badge de condutor (linhas 494-507).
-
-### Tabela - Remover Coluna Status
-
-Remover o header "Status" e a célula correspondente que exibe o badge Ativo/Inativo.
 
