@@ -1,182 +1,249 @@
 
+## Plano: Simplificar Formulário de Cards do Escritório Central
 
-## Plano: Configurar Cliente Supabase Externo no GA360
-
-Este plano replica a estrutura do projeto "Gestão de Ativos" para que o GA360 use o Supabase externo (`zveqhxaiwghexfobjaek`) de forma independente do arquivo `.env` gerenciado pelo Lovable Cloud.
+Este plano reorganiza o formulário de criação de cards para ser amigável a usuários comuns, escondendo campos técnicos avançados.
 
 ---
 
 ## Problema Atual
 
-```text
-SITUAÇÃO ATUAL:
-┌─────────────────────────────────────────────────────────┐
-│ .env (gerenciado pelo Lovable Cloud - sobrescrito)      │
-│   VITE_SUPABASE_URL = aqromdreppgztagafinr (Cloud)      │
-├─────────────────────────────────────────────────────────┤
-│ src/integrations/supabase/client.ts                      │
-│   → Lê do .env                                          │
-│   → Conecta ao Lovable Cloud                            │
-├─────────────────────────────────────────────────────────┤
-│ 86 arquivos importam de:                                │
-│   "@/integrations/supabase/client"                      │
-└─────────────────────────────────────────────────────────┘
-```
+O formulário atual exige que o usuário preencha:
+
+| Campo | Complexidade | Necessário? |
+|-------|--------------|-------------|
+| Título | Simples | Sim |
+| Descrição | Simples | Sim |
+| Periodicidade | Simples | Sim |
+| Responsável | Simples | Sim |
+| Backup | Simples | Opcional |
+| Dias para Risco | Médio | Pode ter default |
+| Campos Manuais (JSON) | Técnico | Avançado |
+| Checklist Template (JSON) | Técnico | Avançado |
+| Regras de Vencimento (JSON) | Técnico | Avançado |
+| Evidências Requeridas (JSON) | Técnico | Avançado |
+
+**Problema**: Campos JSON são confusos e intimidam usuários não-técnicos.
 
 ---
 
 ## Solução Proposta
 
+### Formulário em Duas Etapas
+
 ```text
-NOVA ESTRUTURA:
-┌─────────────────────────────────────────────────────────┐
-│ src/config/supabase.config.ts (NOVO)                     │
-│   → Credenciais hardcoded do Supabase externo           │
-│   → URL: zveqhxaiwghexfobjaek.supabase.co               │
-├─────────────────────────────────────────────────────────┤
-│ src/integrations/supabase/external-client.ts (NOVO)      │
-│   → Cria cliente usando config externo                  │
-│   → Exporta supabase e supabaseExternal                 │
-├─────────────────────────────────────────────────────────┤
-│ 86 arquivos alterados para importar de:                 │
-│   "@/integrations/supabase/external-client"             │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    FORMULÁRIO SIMPLIFICADO                      │
+│                     (Modo Padrão - 4 campos)                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Título *                                                │   │
+│  │  [Orçamento Mensal________________________]              │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Descrição                                               │   │
+│  │  [Acompanhamento do orçamento do setor_____]             │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌────────────────────────┐  ┌────────────────────────────┐    │
+│  │  Periodicidade *       │  │  Responsável               │    │
+│  │  [Mensal          ▼]   │  │  [João Silva         ▼]    │    │
+│  └────────────────────────┘  └────────────────────────────┘    │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  ▼ Configurações avançadas (opcional)                   │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│                           [Cancelar]  [Criar Card]              │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│               CONFIGURAÇÕES AVANÇADAS (Colapsado)               │
+│                    (Expandido ao clicar)                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌────────────────────────┐  ┌────────────────────────────┐    │
+│  │  Backup                │  │  Dias para Risco           │    │
+│  │  [Maria Santos    ▼]   │  │  [3                    ]   │    │
+│  └────────────────────────┘  └────────────────────────────┘    │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Itens do Checklist                                      │   │
+│  │  [+ Adicionar item]                                      │   │
+│  │  ☐ Verificar valores                          [🗑️]       │   │
+│  │  ☐ Conferir aprovações                        [🗑️]       │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Arquivos a Criar
+## Mudanças Principais
 
-### 1. Arquivo de Configuração
+### 1. Campos Essenciais (Sempre Visíveis)
 
-**Caminho:** `src/config/supabase.config.ts`
+| Campo | Comportamento |
+|-------|---------------|
+| **Título** | Input simples, obrigatório |
+| **Descrição** | Textarea, opcional |
+| **Periodicidade** | Select com opções amigáveis |
+| **Responsável** | Select de usuários |
+
+### 2. Campos Avançados (Colapsados por Padrão)
+
+| Campo | Comportamento |
+|-------|---------------|
+| **Backup** | Select de usuários |
+| **Dias para Risco** | Input numérico (default: 3) |
+| **Checklist** | UI amigável para adicionar itens |
+
+### 3. Campos Removidos do Formulário
+
+| Campo | Decisão |
+|-------|---------|
+| `manual_fields_schema_json` | Usar defaults do banco |
+| `due_rule_json` | Usar defaults do banco |
+| `required_evidences_json` | Usar defaults do banco |
+
+Estes campos continuam existindo no banco e podem ser configurados via Admin para cards específicos.
+
+---
+
+## Arquivo a Modificar
+
+### `src/components/governanca-ec/admin/ECCardForm.tsx`
+
+**Alterações:**
+1. Adicionar componente `Collapsible` para seção avançada
+2. Remover campos JSON do formulário básico
+3. Converter checklist de JSON para UI amigável
+4. Simplificar validação Zod
+5. Adicionar textos de ajuda mais claros
+
+---
+
+## Novo Schema do Formulário
 
 ```typescript
-export const EXTERNAL_SUPABASE_CONFIG = {
-  url: "https://zveqhxaiwghexfobjaek.supabase.co",
-  anonKey: "SUA_ANON_KEY_AQUI",
-  projectId: "zveqhxaiwghexfobjaek"
-};
-```
-
-### 2. Cliente Externo
-
-**Caminho:** `src/integrations/supabase/external-client.ts`
-
-```typescript
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from './types';
-import { EXTERNAL_SUPABASE_CONFIG } from '@/config/supabase.config';
-
-export const supabaseExternal = createClient<Database>(
-  EXTERNAL_SUPABASE_CONFIG.url,
-  EXTERNAL_SUPABASE_CONFIG.anonKey,
-  {
-    auth: {
-      storage: localStorage,
-      persistSession: true,
-      autoRefreshToken: true,
-    }
-  }
-);
-
-export const supabase = supabaseExternal;
+const formSchema = z.object({
+  area_id: z.string().min(1, 'Área é obrigatória'),
+  title: z.string().min(1, 'Título é obrigatório').max(100),
+  description: z.string().max(500).optional(),
+  periodicity_type: z.string().min(1, 'Periodicidade é obrigatória'),
+  responsible_id: z.string().optional(),
+  // Campos avançados (com defaults)
+  backup_id: z.string().optional(),
+  risk_days_threshold: z.coerce.number().min(1).max(30).default(3),
+  checklistItems: z.array(z.object({
+    text: z.string(),
+    required: z.boolean().default(false)
+  })).optional(),
+});
 ```
 
 ---
 
-## Arquivos a Modificar (86 arquivos)
+## Interface do Checklist Amigável
 
-Todos os arquivos que importam do cliente atual precisam ter o import atualizado:
+Em vez de JSON, o usuário verá:
 
-```typescript
-// DE:
-import { supabase } from "@/integrations/supabase/client";
-
-// PARA:
-import { supabase } from "@/integrations/supabase/external-client";
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  Itens do Checklist (opcional)                              │
+│  Defina etapas que devem ser verificadas                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  [+ Adicionar item de checklist]                            │
+│                                                             │
+│  1. [Verificar valores no sistema_______] [Obrigatório ☑️] 🗑️│
+│  2. [Conferir aprovações________________] [Obrigatório ☐] 🗑️│
+│  3. [Anexar comprovante_________________] [Obrigatório ☑️] 🗑️│
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Lista Completa de Arquivos
-
-| # | Arquivo |
-|---|---------|
-| 1 | src/hooks/useStockAudit.ts |
-| 2 | src/hooks/useAvatarUpload.ts |
-| 3 | src/contexts/AuthContext.tsx |
-| 4 | src/contexts/CompanyContext.tsx |
-| 5 | src/pages/Admin.tsx |
-| 6 | src/pages/AdminAreas.tsx |
-| 7 | src/pages/AdminCompanies.tsx |
-| 8 | src/pages/AdminDatalake.tsx |
-| 9 | src/pages/AdminEmployees.tsx |
-| 10 | src/pages/AdminGovernancaEC.tsx |
-| 11 | src/pages/AdminOrganization.tsx |
-| 12 | src/pages/AdminPermissions.tsx |
-| 13 | src/pages/AdminSettings.tsx |
-| 14 | src/pages/AdminUsers.tsx |
-| 15 | src/pages/Analytics.tsx |
-| 16 | src/pages/Auth.tsx |
-| 17 | src/pages/Calendar.tsx |
-| 18 | src/pages/ChangePassword.tsx |
-| 19 | src/pages/ConfirmAttendance.tsx |
-| 20 | src/pages/Dashboard.tsx |
-| 21 | src/pages/DashboardMe.tsx |
-| 22 | src/pages/Goals.tsx |
-| 23 | src/pages/GovernancaEC.tsx |
-| 24 | src/pages/GovernancaECArea.tsx |
-| 25 | src/pages/GovernancaECCardDetail.tsx |
-| 26 | src/pages/MeetingExecution.tsx |
-| 27 | src/pages/Meetings.tsx |
-| 28 | src/pages/Profile.tsx |
-| 29 | src/pages/ResetPassword.tsx |
-| 30 | src/pages/StockAuditExecution.tsx |
-| 31 | src/pages/StockAuditStart.tsx |
-| 32 | src/pages/Tasks.tsx |
-| 33 | src/pages/Trade.tsx |
-| 34 | ... e mais 52 componentes |
+**Conversão automática para JSON ao salvar:**
+```json
+[
+  {"id": "1", "text": "Verificar valores no sistema", "required": true},
+  {"id": "2", "text": "Conferir aprovações", "required": false},
+  {"id": "3", "text": "Anexar comprovante", "required": true}
+]
+```
 
 ---
 
-## Edge Functions
+## Periodicidade com Labels Amigáveis
 
-As Edge Functions continuarão funcionando normalmente pois usam variáveis de ambiente do Supabase (secrets), não o cliente do frontend.
+```typescript
+const periodicityOptions = [
+  { value: 'daily', label: 'Diário', description: 'Todo dia' },
+  { value: 'weekly', label: 'Semanal', description: 'Uma vez por semana' },
+  { value: 'biweekly', label: 'Quinzenal', description: 'A cada 15 dias' },
+  { value: 'monthly', label: 'Mensal', description: 'Uma vez por mês' },
+  { value: 'quarterly', label: 'Trimestral', description: 'A cada 3 meses' },
+  { value: 'semiannual', label: 'Semestral', description: 'A cada 6 meses' },
+  { value: 'annual', label: 'Anual', description: 'Uma vez por ano' },
+  { value: 'manual_trigger', label: 'Sob demanda', description: 'Quando necessário' },
+];
+```
 
 ---
 
 ## Resumo da Implementação
 
-| Ação | Quantidade |
-|------|------------|
-| Criar arquivos | 2 |
-| Modificar imports | 86 |
-| Edge Functions | Sem alteração |
+| Ação | Descrição |
+|------|-----------|
+| Simplificar formulário | Mostrar apenas 4 campos essenciais |
+| Adicionar Collapsible | Esconder campos avançados |
+| UI para checklist | Substituir JSON por interface visual |
+| Remover campos JSON | Usar defaults do banco |
+| Textos de ajuda | Adicionar descrições claras |
 
 ---
 
 ## Seção Técnica
 
-### Credenciais Necessárias
+### Componentes Utilizados
 
-Para criar o arquivo de configuração, preciso confirmar a **anon key** do projeto externo:
+- `Collapsible` do Radix UI (já instalado)
+- Estado para gerenciar itens do checklist dinamicamente
+- Conversão de array para JSON no submit
 
-- **Project ID:** `zveqhxaiwghexfobjaek`
-- **URL:** `https://zveqhxaiwghexfobjaek.supabase.co`
-- **Anon Key:** (você precisa fornecer)
+### Lógica de Submissão
 
-### Vantagens desta Abordagem
+```typescript
+const handleSubmit = async (data: FormData) => {
+  // Converter checklist items para JSON
+  const checklistJson = data.checklistItems?.map((item, index) => ({
+    id: `item-${index + 1}`,
+    text: item.text,
+    required: item.required
+  })) || [];
 
-1. **Independência do .env**: O Lovable Cloud pode sobrescrever o `.env` sem afetar a conexão
-2. **Padrão consistente**: Mesma estrutura do projeto "Gestão de Ativos"
-3. **Fácil manutenção**: Credenciais centralizadas em um único arquivo
-4. **Sem impacto em Edge Functions**: Continuam usando secrets do Supabase
-
-### Script de Busca/Substituição
-
-A modificação dos 86 arquivos será feita com substituição simples:
-
+  const payload = {
+    area_id: data.area_id,
+    title: data.title,
+    description: data.description,
+    periodicity_type: data.periodicity_type,
+    responsible_id: data.responsible_id || null,
+    backup_id: data.backup_id || null,
+    risk_days_threshold: data.risk_days_threshold,
+    checklist_template_json: checklistJson,
+    // Usar defaults do banco para os demais campos JSONB
+    manual_fields_schema_json: [],
+    due_rule_json: {},
+    required_evidences_json: [],
+  };
+  
+  // Salvar...
+};
 ```
-Buscar:  from "@/integrations/supabase/client"
-Trocar:  from "@/integrations/supabase/external-client"
-```
 
+### Compatibilidade
+
+- Cards existentes continuam funcionando
+- Edição preserva dados existentes dos campos avançados
+- Admin ainda pode editar JSONs diretamente se necessário (via painel Admin)
