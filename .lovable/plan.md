@@ -1,165 +1,114 @@
 
 
-## Plano: Modificar sync-employees para Suportar Múltiplas Empresas
+## Plano: Simplificar Tela de Funcionários Externos
 
-Este plano modifica a Edge Function `sync-employees` para aceitar funcionários de múltiplas empresas em uma única requisição, identificando a empresa através do campo `cnpj_empresa` de cada funcionário.
+Este plano atualiza a lista de funcionários externos para mostrar apenas funcionários **ativos** e remove as referências a **condutores**, que não são relevantes para este portal.
 
 ---
 
-## Problema Atual
+## Resumo das Mudanças
+
+| Aspecto | Antes | Depois |
+|---------|-------|--------|
+| Funcionários exibidos | Todos (ativos + inativos) | Apenas ativos |
+| Filtro de status | Dropdown (Ativos/Inativos) | Removido |
+| Filtro de condutor | Dropdown (Sim/Não) | Removido |
+| Coluna "Status" na tabela | Sim (badge Ativo/Inativo) | Removida |
+| Badge de condutor na célula Nome | Sim (ícone de carro) | Removido |
+| Estatística "Ativos" | Sim | Removida (redundante) |
+| Estatística "Inativos" | Sim | Removida |
+| Estatística "Condutores" | Sim | Removida |
+| Query padrão | Sem filtro de status | `.eq('is_active', true)` |
+
+---
+
+## Nova Arquitetura
 
 ```text
-ATUAL (Limitação):
+DEPOIS:
 ┌─────────────────────────────────────────────────────────┐
-│ POST /sync-employees                                     │
-│                                                          │
-│ {                                                        │
-│   "company_external_id": "12513175000181", ← obrigatório│
-│   "employees": [ ... todos vão para 1 empresa ]         │
-│ }                                                        │
+│ fetchEmployees()                                         │
+│   → SELECT * FROM external_employees WHERE is_active=true│
+│   → Retorna apenas ativos                               │
+├─────────────────────────────────────────────────────────┤
+│ Filtros: [Empresa] [Departamento] [Unidade] [Vínculo]   │
+├─────────────────────────────────────────────────────────┤
+│ Tabela: CPF | Nome | Email | Dept | Cargo | Unid | ...  │
+│         (sem coluna Status, sem badge de condutor)      │
 └─────────────────────────────────────────────────────────┘
-
-RESULTADO: Todos os 272 funcionários foram para Broker J. Arantes
-           Outras empresas: 0 funcionários
 ```
 
 ---
 
-## Solução Proposta
+## Novo Layout de Estatísticas (4 cards)
+
+De 6 cards para 4 cards:
 
 ```text
-NOVO (Flexível):
-┌─────────────────────────────────────────────────────────┐
-│ POST /sync-employees                                     │
-│                                                          │
-│ {                                                        │
-│   "employees": [                                         │
-│     { "nome": "João", "cnpj_empresa": "12513175000181" },│
-│     { "nome": "Maria", "cnpj_empresa": "09277498000160" }│
-│   ]                                                      │
-│ }                                                        │
-└─────────────────────────────────────────────────────────┘
-
-RESULTADO: João → Broker J. Arantes (CNPJ 12513175000181)
-           Maria → Chok Distribuidora (CNPJ 09277498000160)
+┌──────────┬──────────┬────────────┬────────────┐
+│  Total   │ Empresas │  Unidades  │ Vinculados │
+│   800    │    6     │     12     │    180     │
+└──────────┴──────────┴────────────┴────────────┘
 ```
 
 ---
 
-## Mapeamento Empresa → CNPJ
+## Mudanças Detalhadas
 
-O sistema vai mapear automaticamente baseado no `cnpj_empresa` de cada funcionário:
+### 1. Query de Busca (fetchEmployees)
 
-| Empresa | CNPJ (external_id) |
-|---------|-------------------|
-| Broker J. Arantes | 12513175000181 |
-| Chok Distribuidora | 09277498000160 |
-| G4 Distribuidora | 10596272000107 |
-| Chokdoce | 18780714000162 |
-| Chokagro | 13460854000100 |
-| Escritório Central | 26605418000196 |
-
----
-
-## Modificações na Edge Function
-
-### Novo Formato do Payload
-
-O endpoint vai aceitar dois formatos (retrocompatível):
-
-**Formato Antigo (ainda suportado):**
-```json
-{
-  "company_external_id": "12513175000181",
-  "employees": [...]
-}
-```
-
-**Formato Novo (recomendado):**
-```json
-{
-  "employees": [
-    {
-      "id": "uuid",
-      "nome": "Nome do Funcionário",
-      "cnpj_empresa": "12513175000181",
-      ...demais campos
-    }
-  ]
-}
-```
-
-### Lógica de Processamento
-
-```text
-PARA CADA funcionário:
-  1. Extrair cnpj_empresa (ou usar company_external_id global como fallback)
-  2. Buscar empresa pelo CNPJ no banco (com cache)
-  3. Se empresa não encontrada → registrar erro e pular
-  4. Inserir/atualizar funcionário na empresa correta
-```
-
----
-
-## Interface do EmployeeRecord Atualizada
-
-Adicionar o campo `cnpj_empresa`:
+Adicionar filtro `is_active = true` na query:
 
 ```typescript
-interface EmployeeRecord {
-  // Campos existentes...
-  id?: string;
-  nome?: string;
-  cpf?: string;
-  
-  // NOVO: Identificação da empresa
-  cnpj_empresa?: string;  // CNPJ sem formatação
-  
-  // ... demais campos
-}
+let query = supabase
+  .from('external_employees')
+  .select(`...`)
+  .eq('is_active', true)  // NOVO: apenas ativos
+  .order('full_name', { ascending: true });
 ```
 
----
+### 2. Remover Estados de Filtro
 
-## Resposta Aprimorada
+- Remover: `statusFilter`
+- Remover: `condutorFilter`
 
-A resposta incluirá estatísticas por empresa:
+### 3. Remover do useEffect
 
-```json
-{
-  "success": true,
-  "created": 500,
-  "updated": 300,
-  "failed": 5,
-  "by_company": {
-    "12513175000181": { "created": 200, "updated": 100 },
-    "09277498000160": { "created": 150, "updated": 80 },
-    "10596272000107": { "created": 80, "updated": 60 }
-  },
-  "errors": [...]
-}
-```
+Remover referências a `statusFilter` e `condutorFilter` nas dependências.
 
----
+### 4. Remover Lógica de filterEmployees
 
-## Otimização: Cache de Empresas
+Remover blocos de filtro por status e por condutor.
 
-Para evitar N+1 queries, buscar todas as empresas uma vez e usar um Map:
+### 5. Remover Dropdowns de Filtro
 
-```typescript
-// Buscar todas as empresas do grupo
-const { data: companies } = await supabase
-  .from('companies')
-  .select('id, external_id');
+- Remover dropdown "Status" (Todos/Ativos/Inativos)
+- Remover dropdown "Condutor" (Todos/Sim/Não)
 
-// Criar mapa CNPJ → ID
-const companyMap = new Map(
-  companies.map(c => [c.external_id, c.id])
-);
+### 6. Simplificar Estatísticas
 
-// Uso durante processamento
-const companyId = companyMap.get(normalizedCnpj);
-```
+Remover cards:
+- "Ativos" (redundante pois todos são ativos)
+- "Inativos" (não aplicável)
+- "Condutores" (não relevante)
+
+Adicionar card:
+- "Empresas" (quantidade de empresas únicas nos dados)
+
+### 7. Remover da Tabela
+
+- Remover coluna "Status" e seu header
+- Remover badge de condutor (ícone Car) da célula Nome
+
+### 8. Atualizar Exportação CSV
+
+Remover colunas:
+- "Status"
+- "Condutor"
+
+### 9. Remover Import Não Usado
+
+Remover `Car` da importação de lucide-react.
 
 ---
 
@@ -167,55 +116,137 @@ const companyId = companyMap.get(normalizedCnpj);
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/sync-employees/index.ts` | Adicionar lógica multi-empresa |
+| `src/components/employees/ExternalEmployeesList.tsx` | Aplicar todas as mudanças |
 
 ---
 
 ## Seção Técnica
 
-### Alterações no EmployeeRecord
+### Estados a Remover
 
 ```typescript
-interface EmployeeRecord {
-  // ... campos existentes ...
-  
-  // NOVO campo para identificação da empresa
-  cnpj_empresa?: string;  // CNPJ da empresa (sem formatação)
+// REMOVER:
+const [statusFilter, setStatusFilter] = useState<string>("all");
+const [condutorFilter, setCondutorFilter] = useState<string>("all");
+```
+
+### useEffect - Atualizar Dependências
+
+```typescript
+// DE:
+useEffect(() => {
+  filterEmployees();
+}, [employees, searchTerm, departmentFilter, unidadeFilter, statusFilter, linkFilter, condutorFilter, companyFilter]);
+
+// PARA:
+useEffect(() => {
+  filterEmployees();
+}, [employees, searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter]);
+```
+
+### Query Atualizada
+
+```typescript
+let query = supabase
+  .from('external_employees')
+  .select(`
+    *,
+    profiles:linked_profile_id (...),
+    lider_direto:lider_direto_id (...),
+    companies:company_id (...)
+  `)
+  .eq('is_active', true)  // NOVO
+  .order('full_name', { ascending: true });
+```
+
+### filterEmployees - Blocos a Remover
+
+```typescript
+// REMOVER este bloco:
+if (statusFilter !== "all") {
+  filtered = filtered.filter(e => 
+    statusFilter === "active" ? e.is_active : !e.is_active
+  );
+}
+
+// REMOVER este bloco:
+if (condutorFilter !== "all") {
+  filtered = filtered.filter(e => 
+    condutorFilter === "yes" ? e.is_condutor : !e.is_condutor
+  );
 }
 ```
 
-### Alterações no SyncRequest
+### Import - Remover Car
 
 ```typescript
-interface SyncRequest {
-  company_external_id?: string;  // Agora OPCIONAL (fallback)
-  source_system?: string;
-  employees: EmployeeRecord[];
-}
+// DE:
+import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, Car, MapPin, UserCircle, UserPlus } from "lucide-react";
+
+// PARA:
+import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, MapPin, UserCircle, UserPlus } from "lucide-react";
 ```
 
-### Nova Lógica de Processamento
+### Novo Layout de Estatísticas
 
-1. Carregar mapa de empresas (CNPJ → UUID)
-2. Para cada funcionário:
-   - Normalizar `cnpj_empresa` (remover pontuação)
-   - Buscar `company_id` no mapa
-   - Se não encontrado e `company_external_id` global existe, usar ele
-   - Se ainda não encontrado, registrar erro
-3. Agrupar estatísticas por empresa
-4. Retornar resposta detalhada
+```tsx
+<div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+  <div className="bg-muted/50 rounded-lg p-3 text-center">
+    <div className="text-2xl font-bold text-foreground">{employees.length}</div>
+    <div className="text-xs text-muted-foreground">Total</div>
+  </div>
+  <div className="bg-muted/50 rounded-lg p-3 text-center">
+    <div className="text-2xl font-bold text-purple-600">
+      {new Set(employees.map(e => e.company_id).filter(Boolean)).size}
+    </div>
+    <div className="text-xs text-muted-foreground">Empresas</div>
+  </div>
+  <div className="bg-muted/50 rounded-lg p-3 text-center">
+    <div className="text-2xl font-bold text-primary">{unidades.length}</div>
+    <div className="text-xs text-muted-foreground">Unidades</div>
+  </div>
+  <div className="bg-muted/50 rounded-lg p-3 text-center">
+    <div className="text-2xl font-bold text-blue-600">{employees.filter(e => e.linked_profile_id).length}</div>
+    <div className="text-xs text-muted-foreground">Vinculados</div>
+  </div>
+</div>
+```
 
-### Tratamento de Erros
-
-- Funcionário sem `cnpj_empresa` e sem `company_external_id` global → erro
-- CNPJ não encontrado no banco → erro (funcionário ignorado)
-- Erro de inserção → registrado mas continua processando outros
-
-### Logs Aprimorados
+### CSV - Atualizar Exportação
 
 ```typescript
-console.log(`[sync-employees] Received ${employees.length} records from ${sourceSystem}`);
-console.log(`[sync-employees] Identified ${uniqueCnpjs.size} unique companies`);
-console.log(`[sync-employees] Company ${cnpj}: ${created} created, ${updated} updated`);
+// DE:
+const headers = ['CPF', ..., 'Status', 'Condutor', 'Cód. Vendedor', ...];
+const rows = filteredEmployees.map(e => [
+  ...,
+  e.is_active ? 'Ativo' : 'Inativo',
+  e.is_condutor ? 'Sim' : 'Não',
+  ...
+]);
+
+// PARA:
+const headers = ['CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
+const rows = filteredEmployees.map(e => [
+  e.cpf || '',
+  e.registration_number || '',
+  e.full_name,
+  e.email || '',
+  e.phone || '',
+  e.department || '',
+  e.position || '',
+  e.unidade || '',
+  e.hire_date ? format(new Date(e.hire_date), 'dd/MM/yyyy') : '',
+  e.cod_vendedor || '',
+  e.lider_direto?.full_name || '',
+  e.linked_profile_id ? 'Sim' : 'Não'
+]);
 ```
+
+### Tabela - Remover Badge de Condutor
+
+Na célula do Nome, remover o bloco que exibe o badge de condutor (linhas 494-507).
+
+### Tabela - Remover Coluna Status
+
+Remover o header "Status" e a célula correspondente que exibe o badge Ativo/Inativo.
 
