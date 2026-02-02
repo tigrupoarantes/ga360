@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/external-client';
 import { Loader2, Mail, RefreshCw, Trash2, UserPlus, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { InviteFormDialog } from './InviteFormDialog';
 import { format } from 'date-fns';
