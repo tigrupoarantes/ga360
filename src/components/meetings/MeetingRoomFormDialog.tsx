@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { platformConfig, validatePlatformLink, getPlatformErrorMessage, MeetingPlatform } from "@/lib/platformConfig";
 import { Video } from "lucide-react";
 

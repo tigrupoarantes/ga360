@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompany } from "@/contexts/CompanyContext";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { DollarSign, Package, Users, TrendingUp, ArrowUp, ArrowDown, Minus, Calendar } from "lucide-react";
 import { format, subDays, startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";

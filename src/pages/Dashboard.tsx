@@ -12,7 +12,7 @@ import {
   Loader2
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { useCompany } from "@/contexts/CompanyContext";
 import { format, startOfMonth, endOfMonth, isAfter, isBefore } from "date-fns";
 import { ptBR } from "date-fns/locale";

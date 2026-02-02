@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { useCompany } from "@/contexts/CompanyContext";
 import { format, differenceInMinutes } from "date-fns";
 import { ptBR } from "date-fns/locale";

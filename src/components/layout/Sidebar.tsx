@@ -27,7 +27,7 @@ import { RoleGuard } from "@/components/auth/RoleGuard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import logoIcon from "@/assets/logo-crescer-icon.png";
 
 type NavItem = {

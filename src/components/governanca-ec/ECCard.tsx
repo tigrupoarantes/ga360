@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ECStatusBadge, ECStatus } from "./ECStatusBadge";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar, ArrowRight, ListTodo, MoreVertical, Pencil, Trash2 } from "lucide-react";

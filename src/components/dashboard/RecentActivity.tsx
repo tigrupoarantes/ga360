@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Users, ListTodo, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 

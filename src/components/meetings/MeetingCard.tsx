@@ -11,7 +11,7 @@ import { MeetingParticipants } from "./MeetingParticipants";
 import { RecurringMeetingActionDialog } from "./RecurringMeetingActionDialog";
 import { MeetingEditDialog } from "./MeetingEditDialog";
 import { MeetingPlatformButton } from "./MeetingPlatformButton";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { MeetingPlatform } from "@/lib/platformConfig";
 
 interface MeetingCardProps {

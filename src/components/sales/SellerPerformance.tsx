@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { useCompany } from "@/contexts/CompanyContext";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { format } from "date-fns";
 import { Users, TrendingUp } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";

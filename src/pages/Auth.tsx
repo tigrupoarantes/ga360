@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/external-client';
 import { z } from 'zod';
 import { Loader2, UserPlus, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';

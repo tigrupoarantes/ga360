@@ -12,7 +12,7 @@ import { AtaViewer } from '@/components/meetings/AtaViewer';
 import { MeetingDashboard } from '@/components/meetings/MeetingDashboard';
 import { ConfirmationDashboard } from '@/components/meetings/ConfirmationDashboard';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/external-client';
 
 export default function Meetings() {
   const navigate = useNavigate();

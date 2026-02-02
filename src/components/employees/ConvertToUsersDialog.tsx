@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, UserPlus, Mail, Building2, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { toast } from "sonner";
 
 interface ExternalEmployee {
