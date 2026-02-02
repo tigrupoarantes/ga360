@@ -21,7 +21,7 @@ import { MeetingRoomFormDialog } from "./MeetingRoomFormDialog";
 import { MeetingPlatformButton } from "./MeetingPlatformButton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { platformConfig, MeetingPlatform } from "@/lib/platformConfig";
 
 interface MeetingRoom {

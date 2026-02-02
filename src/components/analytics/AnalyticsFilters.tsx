@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { format, subDays, subMonths, startOfYear } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarIcon, Building2, Layers, Filter, RotateCcw } from "lucide-react";

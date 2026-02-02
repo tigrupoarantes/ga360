@@ -3,7 +3,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { BackButton } from "@/components/ui/back-button";
 import { ECCardDetail } from "@/components/governanca-ec/ECCardDetail";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function GovernancaECCardDetail() {

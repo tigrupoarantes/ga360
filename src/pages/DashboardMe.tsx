@@ -12,7 +12,7 @@ import {
   Calendar as CalendarIcon,
   Loader2
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { useAuth } from "@/contexts/AuthContext";
 import { format, isBefore, isToday, isTomorrow, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";

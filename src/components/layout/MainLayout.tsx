@@ -1,7 +1,7 @@
 import { ReactNode, useEffect } from "react";
 import { AppleNav } from "./AppleNav";
 import { useCompany } from "@/contexts/CompanyContext";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 import { Building2 } from "lucide-react";
 import {
   Select,

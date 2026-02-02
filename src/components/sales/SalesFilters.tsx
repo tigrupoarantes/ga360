@@ -8,7 +8,7 @@ import { format, subDays, startOfMonth, endOfMonth, startOfWeek, endOfWeek } fro
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useCompany } from "@/contexts/CompanyContext";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/external-client";
 
 interface DateRange {
   from: Date;
