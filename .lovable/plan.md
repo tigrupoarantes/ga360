@@ -1,148 +1,145 @@
 
 
-## Plano: Migrar GA360 para Supabase Externo
+## Plano: Remover Aba de Configuração de Sincronização
 
-Este plano atualiza todas as referências do projeto para apontar para o Supabase externo `zveqhxaiwghexfobjaek.supabase.co`.
-
----
-
-## Diagnóstico do Problema
-
-O projeto ainda está configurado para o Lovable Cloud (`aqromdreppgztagafinr`), mas deveria estar usando o Supabase externo (`zveqhxaiwghexfobjaek`).
-
-**Erro reportado pelo Gestão de Ativos:**
-```
-Erro ao verificar empresa: Could not find the table 'public.empresas' in the schema cache
-```
-
-Este erro ocorre porque:
-1. O Gestão de Ativos está tentando acessar o projeto errado
-2. Ou está usando uma service key de um projeto diferente
+Este plano remove a aba "Configuração" da seção de Funcionários Externos, mantendo a visualização da lista e a funcionalidade de converter funcionários em usuários.
 
 ---
 
-## Arquivos que Precisam ser Atualizados
+## Resumo da Mudança
 
-| Arquivo | Valor Atual | Valor Correto |
-|---------|-------------|---------------|
-| `.env` | `aqromdreppgztagafinr` | `zveqhxaiwghexfobjaek` |
-| `supabase/config.toml` | `project_id = "aqromdreppgztagafinr"` | `project_id = "zveqhxaiwghexfobjaek"` |
-| `src/components/employees/EmployeeSyncDocs.tsx` | URL hardcoded antiga | URL dinâmica ou nova |
-| `src/components/goals/SyncStatus.tsx` | URL hardcoded antiga | URL dinâmica ou nova |
+A sincronização de funcionários agora é gerenciada exclusivamente pelo app "Gestão de Ativos", portanto a documentação de configuração no GA360 não é mais necessária e pode confundir os usuários.
 
----
+**O que será removido:**
+- Aba "Configuração" com documentação de endpoint/scripts
+- Componente `EmployeeSyncDocs.tsx`
 
-## Parte 1: Atualizar Variáveis de Ambiente
-
-**Arquivo:** `.env`
-
-```env
-VITE_SUPABASE_PROJECT_ID="zveqhxaiwghexfobjaek"
-VITE_SUPABASE_PUBLISHABLE_KEY="[ANON_KEY_DO_PROJETO_EXTERNO]"
-VITE_SUPABASE_URL="https://zveqhxaiwghexfobjaek.supabase.co"
-```
-
-**Nota:** Preciso que você forneça a `anon key` do projeto externo.
+**O que será mantido:**
+- Lista de funcionários externos sincronizados
+- Botão "Criar Usuários" para conversão em massa
+- Filtros, busca, exportação CSV
+- Estatísticas de funcionários
 
 ---
 
-## Parte 2: Atualizar Config do Supabase
-
-**Arquivo:** `supabase/config.toml`
-
-```toml
-project_id = "zveqhxaiwghexfobjaek"
-```
-
----
-
-## Parte 3: Corrigir URLs Hardcoded
-
-### 3.1 EmployeeSyncDocs.tsx
-
-Atualizar para usar variável de ambiente:
-
-```typescript
-// Antes
-const apiEndpoint = `https://aqromdreppgztagafinr.supabase.co/functions/v1/sync-employees`;
-
-// Depois
-const apiEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-employees`;
-```
-
-### 3.2 SyncStatus.tsx
-
-```typescript
-// Antes
-const apiEndpoint = `https://aqromdreppgztagafinr.supabase.co/functions/v1/sync-sales`;
-
-// Depois
-const apiEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-sales`;
-```
-
----
-
-## Parte 4: Credenciais Necessárias
-
-Preciso que você confirme/forneça:
-
-| Credencial | Onde Obter |
-|------------|------------|
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Dashboard Supabase → Settings → API → anon public |
-| `SUPABASE_SERVICE_ROLE_KEY` | Dashboard Supabase → Settings → API → service_role (para secrets) |
-| `SYNC_API_KEY` | Secret customizado para autenticação das APIs de sync |
-
----
-
-## Parte 5: Deploy das Edge Functions
-
-Após atualizar as configurações, será necessário fazer o deploy de todas as 22 Edge Functions no projeto externo:
+## Arquitetura Atual vs. Nova
 
 ```text
-confirm-attendance, create-user, create-users-from-employees, 
-elevenlabs-scribe-token, generate-ata, generate-report, 
-generate-stock-audit-report, import-users, recalculate-goals, 
-send-2fa-code, send-attendance-confirmation, send-email-smtp, 
-send-invite, send-meeting-notification, send-meeting-reminders, 
-send-whatsapp-reminder, sync-companies, sync-employees, 
-sync-sales, sync-sellers, test-openai-connection, 
-test-smtp-connection, transcribe-meeting, verify-2fa-code
+ANTES (2 abas):
+┌─────────────────────────────────────────────┐
+│ Funcionários Externos                       │
+├─────────────────────────────────────────────┤
+│ [Funcionários] [Configuração]               │
+├─────────────────────────────────────────────┤
+│ • Lista de funcionários                     │
+│ • Documentação de API (será removida)       │
+└─────────────────────────────────────────────┘
+
+DEPOIS (sem abas):
+┌─────────────────────────────────────────────┐
+│ Funcionários Externos                       │
+├─────────────────────────────────────────────┤
+│ • Lista de funcionários                     │
+│ • Filtros e estatísticas                    │
+│ • Botão "Criar Usuários"                    │
+└─────────────────────────────────────────────┘
 ```
 
 ---
 
-## Configuração para Gestão de Ativos
+## Arquivos a Modificar
 
-Após a migração, o Gestão de Ativos deve usar:
-
-| Configuração | Valor |
-|--------------|-------|
-| `GA360_SUPABASE_URL` | `https://zveqhxaiwghexfobjaek.supabase.co` |
-| `GA360_SERVICE_ROLE_KEY` | Service Role Key do projeto externo |
-| `GA360_SYNC_API_KEY` | Valor do secret SYNC_API_KEY |
-
-**Endpoints de sincronização:**
-- `POST https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/sync-companies`
-- `POST https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/sync-employees`
+| Arquivo | Ação |
+|---------|------|
+| `src/pages/AdminEmployees.tsx` | Simplificar removendo Tabs |
+| `src/components/employees/EmployeeSyncDocs.tsx` | Deletar arquivo |
 
 ---
 
-## Ordem de Execução
+## Parte 1: Simplificar AdminEmployees.tsx
 
-1. Você fornece a `anon key` do projeto externo
-2. Atualizo `.env` com as novas credenciais
-3. Atualizo `supabase/config.toml` com o novo project_id
-4. Corrijo as URLs hardcoded nos componentes
-5. Deploy das Edge Functions no projeto externo
-6. Configuração dos secrets no projeto externo
-7. Teste de conectividade
+Remover a estrutura de Tabs e renderizar diretamente o componente `ExternalEmployeesList`:
+
+```tsx
+import { MainLayout } from "@/components/layout/MainLayout";
+import { BackButton } from "@/components/ui/back-button";
+import { ExternalEmployeesList } from "@/components/employees/ExternalEmployeesList";
+
+export default function AdminEmployees() {
+  return (
+    <MainLayout>
+      <div className="space-y-6">
+        <div className="flex items-center gap-4 animate-fade-in">
+          <BackButton />
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">
+              Funcionários Externos
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Funcionários sincronizados do sistema Gestão de Ativos
+            </p>
+          </div>
+        </div>
+
+        <ExternalEmployeesList />
+      </div>
+    </MainLayout>
+  );
+}
+```
+
+**Remoções:**
+- Import de `Tabs`, `TabsContent`, `TabsList`, `TabsTrigger`
+- Import de `EmployeeSyncDocs`
+- Import de ícones `Users`, `Settings`
+- Toda estrutura de Tabs
 
 ---
 
-## Próximo Passo Imediato
+## Parte 2: Deletar EmployeeSyncDocs.tsx
 
-Por favor, forneça a **anon key** (chave pública) do projeto Supabase externo `zveqhxaiwghexfobjaek`. 
+O arquivo `src/components/employees/EmployeeSyncDocs.tsx` será completamente removido, pois:
 
-Você pode encontrá-la em:
-**Dashboard Supabase → Settings → API → Project API keys → anon public**
+1. A documentação de endpoint API não é mais necessária no GA360
+2. Os scripts PowerShell e SQL são gerenciados pelo time de TI no Gestão de Ativos
+3. Remover elimina confusão sobre onde configurar a sincronização
+
+---
+
+## Funcionalidades Mantidas
+
+| Funcionalidade | Status |
+|----------------|--------|
+| Visualizar lista de funcionários | Mantida |
+| Filtrar por empresa, departamento, unidade | Mantida |
+| Buscar por nome, CPF, email, cód. vendedor | Mantida |
+| Exportar CSV | Mantida |
+| Revincular funcionários (link_all_external_employees) | Mantida |
+| Converter em usuários (create-users-from-employees) | Mantida |
+| Estatísticas (total, ativos, condutores, etc.) | Mantida |
+
+---
+
+## Edge Functions
+
+Nenhuma Edge Function será removida. As seguintes funções continuam ativas:
+
+- `sync-employees` - Recebe dados do Gestão de Ativos
+- `sync-companies` - Sincroniza empresas
+- `create-users-from-employees` - Converte funcionários em usuários
+
+---
+
+## Seção Técnica
+
+### Dependências Removidas
+- `@/components/employees/EmployeeSyncDocs` (import)
+- `lucide-react/Users` e `lucide-react/Settings` (não mais usados)
+
+### Componentes UI Removidos do AdminEmployees
+- `Tabs`, `TabsContent`, `TabsList`, `TabsTrigger` de `@radix-ui/react-tabs`
+
+### Verificações
+- Nenhuma outra parte do código importa `EmployeeSyncDocs`
+- O componente `ExternalEmployeesList` é independente
 
