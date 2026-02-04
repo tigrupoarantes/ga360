@@ -289,4 +289,3 @@ serve(async (req) => {
 ### Pré-requisitos
 
 Certifique-se que as tabelas `sales_customers`, `sales_products`, `sales_team` e `sales_items` tenham constraints UNIQUE em `(company_id, external_id)` para o upsert funcionar.
-
