@@ -9,27 +9,41 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+
+interface SalesFiltersState {
+  segment: string;
+  network: string;
+  line: string;
+  manufacturer: string;
+  supervisor: string;
+}
 
 interface SalesTableProps {
   dateRange: { from: Date; to: Date };
   selectedDistributor: string;
+  filters: SalesFiltersState;
 }
 
 interface SaleRecord {
   id: string;
-  sale_date: string;
-  product_code: string | null;
-  product_name: string | null;
-  product_category: string | null;
-  quantity: number;
-  total_value: number;
-  customers_served: number;
+  order_date: string;
+  order_number: string | null;
+  sale_value: number;
+  quantity_sale: number;
+  gross_margin_percent: number;
+  customer_name: string;
+  customer_segment: string;
+  product_name: string;
+  product_line: string;
+  manufacturer: string;
+  seller_name: string;
   distributor_name: string;
 }
 
 const PAGE_SIZE = 20;
 
-export function SalesTable({ dateRange, selectedDistributor }: SalesTableProps) {
+export function SalesTable({ dateRange, selectedDistributor, filters }: SalesTableProps) {
   const { selectedCompanyId } = useCompany();
   const [loading, setLoading] = useState(true);
   const [sales, setSales] = useState<SaleRecord[]>([]);
@@ -42,7 +56,7 @@ export function SalesTable({ dateRange, selectedDistributor }: SalesTableProps) 
       setPage(0);
       fetchSales();
     }
-  }, [selectedCompanyId, dateRange, selectedDistributor, search]);
+  }, [selectedCompanyId, dateRange, selectedDistributor, filters, search]);
 
   useEffect(() => {
     if (selectedCompanyId) {
@@ -55,47 +69,72 @@ export function SalesTable({ dateRange, selectedDistributor }: SalesTableProps) 
     setLoading(true);
 
     try {
-      let query = supabase
-        .from('sales_daily')
+      // Build query with JOINs (using any to bypass type checking for new table)
+      let query = (supabase as any)
+        .from('sales_items')
         .select(`
           id,
-          sale_date,
-          product_code,
-          product_name,
-          product_category,
-          quantity,
-          total_value,
-          customers_served,
-          distributors!inner(name)
+          order_date,
+          order_number,
+          sale_value,
+          quantity_sale,
+          gross_margin_percent,
+          sales_customers(name, segment),
+          sales_products(name, line, manufacturer),
+          sales_team(seller_name),
+          distributors(name)
         `, { count: 'exact' })
         .eq('company_id', selectedCompanyId)
-        .gte('sale_date', format(dateRange.from, 'yyyy-MM-dd'))
-        .lte('sale_date', format(dateRange.to, 'yyyy-MM-dd'))
-        .order('sale_date', { ascending: false })
+        .gte('order_date', format(dateRange.from, 'yyyy-MM-dd'))
+        .lte('order_date', format(dateRange.to, 'yyyy-MM-dd'))
+        .order('order_date', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
       if (selectedDistributor !== "all") {
         query = query.eq('distributor_id', selectedDistributor);
       }
 
-      if (search) {
-        query = query.or(`product_name.ilike.%${search}%,product_code.ilike.%${search}%,product_category.ilike.%${search}%`);
-      }
-
       const { data, error, count } = await query;
       if (error) throw error;
 
-      const salesData: SaleRecord[] = (data || []).map(sale => ({
+      // Map data to flat structure
+      let salesData: SaleRecord[] = (data || []).map((sale: any) => ({
         id: sale.id,
-        sale_date: sale.sale_date,
-        product_code: sale.product_code,
-        product_name: sale.product_name,
-        product_category: sale.product_category,
-        quantity: Number(sale.quantity),
-        total_value: Number(sale.total_value),
-        customers_served: sale.customers_served,
-        distributor_name: (sale.distributors as any)?.name || ''
+        order_date: sale.order_date,
+        order_number: sale.order_number,
+        sale_value: Number(sale.sale_value) || 0,
+        quantity_sale: Number(sale.quantity_sale) || 0,
+        gross_margin_percent: Number(sale.gross_margin_percent) || 0,
+        customer_name: sale.sales_customers?.name || '-',
+        customer_segment: sale.sales_customers?.segment || '-',
+        product_name: sale.sales_products?.name || '-',
+        product_line: sale.sales_products?.line || '-',
+        manufacturer: sale.sales_products?.manufacturer || '-',
+        seller_name: sale.sales_team?.seller_name || '-',
+        distributor_name: sale.distributors?.name || '-'
       }));
+
+      // Apply client-side filters
+      if (filters.segment !== "all") {
+        salesData = salesData.filter(s => s.customer_segment === filters.segment);
+      }
+      if (filters.line !== "all") {
+        salesData = salesData.filter(s => s.product_line === filters.line);
+      }
+      if (filters.manufacturer !== "all") {
+        salesData = salesData.filter(s => s.manufacturer === filters.manufacturer);
+      }
+
+      // Apply search filter
+      if (search) {
+        const searchLower = search.toLowerCase();
+        salesData = salesData.filter(s => 
+          s.customer_name.toLowerCase().includes(searchLower) ||
+          s.product_name.toLowerCase().includes(searchLower) ||
+          s.seller_name.toLowerCase().includes(searchLower) ||
+          (s.order_number && s.order_number.toLowerCase().includes(searchLower))
+        );
+      }
 
       setSales(salesData);
       setTotalCount(count || 0);
@@ -117,24 +156,40 @@ export function SalesTable({ dateRange, selectedDistributor }: SalesTableProps) 
     return new Intl.NumberFormat('pt-BR').format(value);
   };
 
+  const formatPercent = (value: number) => {
+    return `${(value * 100).toFixed(1)}%`;
+  };
+
+  const getMarginBadge = (margin: number) => {
+    const percent = margin * 100;
+    if (percent >= 30) return <Badge className="bg-green-600 hover:bg-green-700">{formatPercent(margin)}</Badge>;
+    if (percent >= 15) return <Badge className="bg-blue-600 hover:bg-blue-700">{formatPercent(margin)}</Badge>;
+    if (percent >= 0) return <Badge className="bg-yellow-600 hover:bg-yellow-700">{formatPercent(margin)}</Badge>;
+    return <Badge variant="destructive">{formatPercent(margin)}</Badge>;
+  };
+
   const exportCSV = () => {
-    const headers = ['Data', 'Distribuidora', 'Código', 'Produto', 'Categoria', 'Quantidade', 'Valor', 'Clientes'];
+    const headers = ['Data', 'Pedido', 'Distribuidora', 'Cliente', 'Segmento', 'Produto', 'Linha', 'Fabricante', 'Vendedor', 'Qtd', 'Valor', 'Margem %'];
     const rows = sales.map(sale => [
-      format(new Date(sale.sale_date), 'dd/MM/yyyy'),
+      format(new Date(sale.order_date), 'dd/MM/yyyy'),
+      sale.order_number || '',
       sale.distributor_name,
-      sale.product_code || '',
-      sale.product_name || '',
-      sale.product_category || '',
-      sale.quantity.toString(),
-      sale.total_value.toString(),
-      sale.customers_served.toString()
+      sale.customer_name,
+      sale.customer_segment,
+      sale.product_name,
+      sale.product_line,
+      sale.manufacturer,
+      sale.seller_name,
+      sale.quantity_sale.toString(),
+      sale.sale_value.toString(),
+      (sale.gross_margin_percent * 100).toFixed(2)
     ]);
 
     const csvContent = [headers.join(';'), ...rows.map(row => row.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `vendas_${format(new Date(), 'yyyyMMdd')}.csv`;
+    link.download = `vendas_detalhadas_${format(new Date(), 'yyyyMMdd')}.csv`;
     link.click();
   };
 
@@ -154,7 +209,7 @@ export function SalesTable({ dateRange, selectedDistributor }: SalesTableProps) 
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar produto..."
+                placeholder="Buscar..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 w-[200px]"
@@ -176,45 +231,63 @@ export function SalesTable({ dateRange, selectedDistributor }: SalesTableProps) 
           </div>
         ) : (
           <>
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Data</TableHead>
                     <TableHead>Distribuidora</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Segmento</TableHead>
                     <TableHead>Produto</TableHead>
-                    <TableHead>Categoria</TableHead>
+                    <TableHead>Linha</TableHead>
+                    <TableHead>Vendedor</TableHead>
                     <TableHead className="text-right">Qtd</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
-                    <TableHead className="text-right">Clientes</TableHead>
+                    <TableHead className="text-right">Margem</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sales.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                         Nenhum registro encontrado
                       </TableCell>
                     </TableRow>
                   ) : (
                     sales.map((sale) => (
                       <TableRow key={sale.id}>
-                        <TableCell className="font-medium">
-                          {format(new Date(sale.sale_date), 'dd/MM/yyyy', { locale: ptBR })}
+                        <TableCell className="font-medium whitespace-nowrap">
+                          {format(new Date(sale.order_date), 'dd/MM/yyyy', { locale: ptBR })}
                         </TableCell>
                         <TableCell>{sale.distributor_name}</TableCell>
                         <TableCell>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{sale.product_name || '-'}</span>
-                            {sale.product_code && (
-                              <span className="text-xs text-muted-foreground">{sale.product_code}</span>
-                            )}
+                          <div className="max-w-[150px] truncate" title={sale.customer_name}>
+                            {sale.customer_name}
                           </div>
                         </TableCell>
-                        <TableCell>{sale.product_category || '-'}</TableCell>
-                        <TableCell className="text-right">{formatNumber(sale.quantity)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(sale.total_value)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(sale.customers_served)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{sale.customer_segment}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium max-w-[150px] truncate" title={sale.product_name}>
+                              {sale.product_name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">{sale.manufacturer}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{sale.product_line}</TableCell>
+                        <TableCell>
+                          <div className="max-w-[120px] truncate" title={sale.seller_name}>
+                            {sale.seller_name}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">{formatNumber(sale.quantity_sale)}</TableCell>
+                        <TableCell className="text-right font-medium">{formatCurrency(sale.sale_value)}</TableCell>
+                        <TableCell className="text-right">
+                          {getMarginBadge(sale.gross_margin_percent)}
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
