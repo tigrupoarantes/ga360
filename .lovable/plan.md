@@ -1,85 +1,117 @@
 
+# Plano de Remoção: Portal de Metas e Performance Comercial do GA360
 
-## Correção: Adicionar Constraint UNIQUE na Tabela sales_items
+## Resumo Executivo
 
-### Diagnóstico
+Este plano remove completamente a funcionalidade de **Gestão de Metas e Performance Comercial** do GA360, preparando o aplicativo para focar exclusivamente na gestão do Grupo Arantes.
 
-O upsert está falhando porque a tabela `sales_items` no Supabase externo (`zveqhxaiwghexfobjaek`) **não possui** a constraint UNIQUE necessária em `(company_id, external_id)`.
-
-A prova está na resposta do N8N:
-- Tabelas auxiliares funcionaram (têm a constraint)
-- `sales_items` falhou completamente (não tem a constraint)
+### O que será removido:
+- 14 arquivos de componentes (9 goals + 5 sales)
+- 1 página (Goals.tsx)
+- 1 componente de analytics (GoalsAnalytics.tsx)
+- 3 Edge Functions
+- Referências no Dashboard, Analytics e Sidebar
+- 7 tabelas do banco de dados
 
 ---
 
-### Solução
+## Fase 1: Remoção das Edge Functions
 
-Execute o seguinte SQL no **Supabase externo** (não no Lovable Cloud):
+### Pastas a deletar:
+```text
+supabase/functions/recalculate-goals/
+supabase/functions/sync-sales/
+supabase/functions/sync-sellers/
+```
+
+---
+
+## Fase 2: Remoção de Componentes e Páginas
+
+### Pastas completas a deletar:
+- `src/components/goals/` (9 arquivos)
+- `src/components/sales/` (5 arquivos)
+
+### Arquivos individuais a deletar:
+- `src/pages/Goals.tsx`
+- `src/components/analytics/GoalsAnalytics.tsx`
+
+---
+
+## Fase 3: Atualização de Arquivos Existentes
+
+### 3.1 src/App.tsx
+**Remover:**
+- Import da página Goals (linha 18)
+- Rota `/metas` (linhas 125-131)
+
+### 3.2 src/components/layout/Sidebar.tsx
+**Remover:**
+- Item de navegação "Portal de Metas" (linha 52)
+- Import do ícone `Target` (linha 13)
+
+### 3.3 src/pages/Dashboard.tsx
+**Modificações:**
+- Remover estados `goalsAchieved` e `goalsTotal` do DashboardStats
+- Remover fetch da tabela `goals` (linhas 100-114)
+- Remover card "Metas Atingidas" (linhas 198-205)
+- Remover cálculo `goalCompletionRate` e referências no MCI Radar
+- Remover import do ícone `Target`
+
+### 3.4 src/pages/Analytics.tsx
+**Modificações:**
+- Remover import `GoalsAnalytics` (linha 7)
+- Remover import do ícone `Target` (linha 10)
+- Alterar grid de 5 para 4 colunas nas tabs
+- Remover aba "Metas" (linhas 63-66)
+- Remover `GoalsAnalytics` do overview (linhas 88-94)
+- Remover TabsContent de goals (linhas 120-126)
+
+---
+
+## Fase 4: Limpeza do Banco de Dados (Lovable Cloud)
+
+Executar migration SQL para remover tabelas e triggers:
 
 ```sql
--- Adicionar constraint UNIQUE na tabela sales_items
-ALTER TABLE sales_items 
-ADD CONSTRAINT sales_items_company_external_unique 
-UNIQUE (company_id, external_id);
+-- Remover triggers de gamificação
+DROP TRIGGER IF EXISTS on_goal_achieved ON public.goals;
+DROP TRIGGER IF EXISTS on_goal_entry ON public.goal_entries;
+DROP FUNCTION IF EXISTS public.trigger_points_on_goal_achieved();
+DROP FUNCTION IF EXISTS public.trigger_points_on_goal_entry();
+
+-- Remover tabelas (ordem de dependências)
+DROP TABLE IF EXISTS public.goal_entries CASCADE;
+DROP TABLE IF EXISTS public.goals CASCADE;
+DROP TABLE IF EXISTS public.goal_types CASCADE;
+DROP TABLE IF EXISTS public.distributors CASCADE;
+DROP TABLE IF EXISTS public.csv_import_templates CASCADE;
+DROP TABLE IF EXISTS public.sales_daily CASCADE;
+DROP TABLE IF EXISTS public.sales_sellers CASCADE;
+
+NOTIFY pgrst, 'reload schema';
 ```
 
 ---
 
-### Como Executar
+## Ordem de Execução
 
-1. Acesse o **Dashboard do Supabase** externo: https://supabase.com/dashboard/project/zveqhxaiwghexfobjaek
-
-2. Vá em **SQL Editor**
-
-3. Execute o comando acima
-
-4. **Teste novamente no N8N**
-
----
-
-### Verificação Prévia (Opcional)
-
-Antes de criar a constraint, verifique se não há duplicatas:
-
-```sql
--- Verificar se existem duplicatas
-SELECT company_id, external_id, COUNT(*) as count
-FROM sales_items
-GROUP BY company_id, external_id
-HAVING COUNT(*) > 1;
-```
-
-Se houver duplicatas, remova-as primeiro:
-
-```sql
--- Remover duplicatas mantendo o mais recente
-DELETE FROM sales_items a
-USING sales_items b
-WHERE a.id < b.id 
-  AND a.company_id = b.company_id 
-  AND a.external_id = b.external_id;
-```
+1. Deletar pastas das Edge Functions
+2. Deletar pastas de componentes (goals + sales)
+3. Deletar arquivos individuais (Goals.tsx, GoalsAnalytics.tsx)
+4. Atualizar App.tsx (remover rota e import)
+5. Atualizar Sidebar.tsx (remover menu e import)
+6. Atualizar Dashboard.tsx (remover stats de metas e card)
+7. Atualizar Analytics.tsx (remover aba e componente de metas)
+8. Executar migration SQL para limpar tabelas
 
 ---
 
-### Por que isso acontece?
+## Resultado Esperado
 
-O método `upsert` do Supabase com a opção `onConflict: 'company_id,external_id'` **requer** que exista uma constraint UNIQUE ou PRIMARY KEY nas colunas especificadas. Sem ela, o Supabase não consegue determinar qual registro atualizar em caso de conflito.
-
----
-
-### Após a Correção
-
-A resposta do N8N deve mostrar:
-```json
-{
-  "success": true,
-  "received": 2180,
-  "upserted": 2180,  // <-- Agora funciona!
-  "errors": 0,
-  "customers_synced": 303,
-  "products_synced": 602,
-  "sellers_synced": 63
-}
-```
-
+Após a implementação:
+- Menu lateral não terá mais "Portal de Metas"
+- Dashboard mostrará apenas KPIs de reuniões e tarefas
+- Analytics terá 4 abas: Visão Geral, Reuniões, Tarefas, Participação
+- Banco de dados estará limpo das tabelas de metas/vendas
+- GA360 focará em: Reuniões, Processos, Tarefas, Trade Marketing, Governança EC, Gamificação e Relatórios
