@@ -19,8 +19,7 @@ import {
   TrendingUp, 
   Gamepad2, 
   Crosshair,
-  Building,
-  Rocket
+  Building
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -37,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import logoIcon from "@/assets/logo-crescer-icon.png";
+
 
 type NavItem = {
   name: string;
@@ -110,18 +109,6 @@ export function AppleNav() {
       <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-border/50">
         <nav className="container-apple">
           <div className="flex h-14 items-center justify-between">
-            {/* Logo */}
-            <NavLink 
-              to="/dashboard" 
-              className="flex items-center gap-2 transition-smooth hover:opacity-70"
-            >
-              <img 
-                src={logoIcon} 
-                alt="CRESCER+" 
-                className="h-7 w-7 rounded-lg object-contain"
-              />
-              <span className="font-semibold text-lg hidden sm:block">CRESCER+</span>
-            </NavLink>
 
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center gap-1">
