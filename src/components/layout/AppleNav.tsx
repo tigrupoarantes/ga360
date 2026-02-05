@@ -9,7 +9,6 @@ import {
   ShoppingCart,
   BarChart3,
   Settings,
-  Target,
   LogOut,
   User,
   KeyRound,
@@ -17,11 +16,11 @@ import {
   Menu,
   X,
   ChevronDown,
-  ChevronRight,
   TrendingUp, 
   Gamepad2, 
   Crosshair,
-  Building
+  Building,
+  Rocket
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -38,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import logoIcon from "@/assets/logo-crescer-icon.png";
 
 type NavItem = {
   name: string;
@@ -58,7 +58,6 @@ const navigation: NavItem[] = [
   },
   { name: 'Processos', href: '/processos', icon: FileText },
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
-  { name: 'Metas', href: '/metas', icon: Target },
   { name: 'OKRs', href: '/okrs', icon: Crosshair },
   { name: 'Governança', href: '/governanca-ec', icon: Building },
   { name: 'Trade', href: '/trade', icon: ShoppingCart },
@@ -116,10 +115,12 @@ export function AppleNav() {
               to="/dashboard" 
               className="flex items-center gap-2 transition-smooth hover:opacity-70"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                <Target className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <span className="font-semibold text-lg hidden sm:block">GA 360</span>
+              <img 
+                src={logoIcon} 
+                alt="CRESCER+" 
+                className="h-8 w-8 object-contain"
+              />
+              <span className="font-semibold text-lg hidden sm:block">CRESCER+</span>
             </NavLink>
 
             {/* Desktop Navigation */}
