@@ -118,7 +118,7 @@ export function AppleNav() {
               <img 
                 src={logoIcon} 
                 alt="CRESCER+" 
-                className="h-8 w-8 object-contain"
+                className="h-7 w-7 rounded-lg object-contain"
               />
               <span className="font-semibold text-lg hidden sm:block">CRESCER+</span>
             </NavLink>
