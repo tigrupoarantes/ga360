@@ -4,10 +4,9 @@ import { AnalyticsFilters, DateRange } from "@/components/analytics/AnalyticsFil
 import { AnalyticsKPIGrid } from "@/components/analytics/AnalyticsKPIGrid";
 import { MeetingsAnalytics } from "@/components/analytics/MeetingsAnalytics";
 import { TasksAnalytics } from "@/components/analytics/TasksAnalytics";
-import { GoalsAnalytics } from "@/components/analytics/GoalsAnalytics";
 import { ParticipationAnalytics } from "@/components/analytics/ParticipationAnalytics";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart3, Target, ListTodo, Users, LayoutDashboard } from "lucide-react";
+import { BarChart3, ListTodo, Users, LayoutDashboard } from "lucide-react";
 
 export default function Analytics() {
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -47,7 +46,7 @@ export default function Analytics() {
 
         {/* Detailed Analytics Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
             <TabsTrigger value="overview" className="flex items-center gap-2">
               <LayoutDashboard className="h-4 w-4" />
               <span className="hidden sm:inline">Visão Geral</span>
@@ -59,10 +58,6 @@ export default function Analytics() {
             <TabsTrigger value="tasks" className="flex items-center gap-2">
               <ListTodo className="h-4 w-4" />
               <span className="hidden sm:inline">Tarefas</span>
-            </TabsTrigger>
-            <TabsTrigger value="goals" className="flex items-center gap-2">
-              <Target className="h-4 w-4" />
-              <span className="hidden sm:inline">Metas</span>
             </TabsTrigger>
             <TabsTrigger value="participation" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
@@ -85,20 +80,12 @@ export default function Analytics() {
                 compact
               />
             </div>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <GoalsAnalytics
-                dateRange={dateRange}
-                companyId={selectedCompanyId}
-                areaId={selectedAreaId}
-                compact
-              />
-              <ParticipationAnalytics
-                dateRange={dateRange}
-                companyId={selectedCompanyId}
-                areaId={selectedAreaId}
-                compact
-              />
-            </div>
+            <ParticipationAnalytics
+              dateRange={dateRange}
+              companyId={selectedCompanyId}
+              areaId={selectedAreaId}
+              compact
+            />
           </TabsContent>
 
           <TabsContent value="meetings">
@@ -111,14 +98,6 @@ export default function Analytics() {
 
           <TabsContent value="tasks">
             <TasksAnalytics
-              dateRange={dateRange}
-              companyId={selectedCompanyId}
-              areaId={selectedAreaId}
-            />
-          </TabsContent>
-
-          <TabsContent value="goals">
-            <GoalsAnalytics
               dateRange={dateRange}
               companyId={selectedCompanyId}
               areaId={selectedAreaId}

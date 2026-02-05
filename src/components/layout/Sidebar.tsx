@@ -8,7 +8,6 @@ import {
   ShoppingCart,
   BarChart3,
   Settings,
-  Target,
   LogOut,
   Building2,
   ChevronDown,
@@ -49,7 +48,6 @@ const navigation: NavItem[] = [
   },
   { name: 'Processos', href: '/processos', icon: FileText },
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
-  { name: 'Portal de Metas', href: '/metas', icon: Target },
   { 
     name: 'Governança EC', 
     icon: Building,
