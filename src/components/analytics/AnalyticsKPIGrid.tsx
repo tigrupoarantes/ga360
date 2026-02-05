@@ -8,7 +8,6 @@ import {
   FileText,
   ListTodo,
   Users,
-  Target,
   TrendingUp,
   TrendingDown,
   Clock,
@@ -30,10 +29,6 @@ interface KPIData {
   completedTasks: number;
   taskCompletionRate: number;
   overdueTasks: number;
-  totalGoals: number;
-  goalsOnTrack: number;
-  goalsAtRisk: number;
-  avgGoalProgress: number;
   totalParticipants: number;
   avgParticipation: number;
   atasGenerated: number;
@@ -51,10 +46,6 @@ export function AnalyticsKPIGrid({ dateRange, companyId, areaId }: AnalyticsKPIG
     completedTasks: 0,
     taskCompletionRate: 0,
     overdueTasks: 0,
-    totalGoals: 0,
-    goalsOnTrack: 0,
-    goalsAtRisk: 0,
-    avgGoalProgress: 0,
     totalParticipants: 0,
     avgParticipation: 0,
     atasGenerated: 0,
@@ -133,17 +124,6 @@ export function AnalyticsKPIGrid({ dateRange, companyId, areaId }: AnalyticsKPIG
         atasData = data || [];
       }
 
-      // Fetch goals
-      let goalsQuery = supabase
-        .from("goals")
-        .select("id, target_value, current_value, status")
-        .eq("status", "active");
-
-      if (companyId) goalsQuery = goalsQuery.eq("company_id", companyId);
-      if (areaId) goalsQuery = goalsQuery.eq("area_id", areaId);
-
-      const { data: goals } = await goalsQuery;
-
       // Calculate KPIs
       const totalMeetings = meetings?.length || 0;
       const completedMeetings = meetings?.filter((m) => m.status === "Concluída").length || 0;
@@ -157,13 +137,6 @@ export function AnalyticsKPIGrid({ dateRange, companyId, areaId }: AnalyticsKPIG
         return new Date(t.due_date) < new Date() && t.status !== "completed";
       }).length || 0;
 
-      const totalGoals = goals?.length || 0;
-      const goalsOnTrack = goals?.filter((g) => (g.current_value / g.target_value) >= 0.7).length || 0;
-      const goalsAtRisk = goals?.filter((g) => (g.current_value / g.target_value) < 0.7).length || 0;
-      const avgGoalProgress = totalGoals > 0
-        ? goals.reduce((acc, g) => acc + (g.current_value / g.target_value) * 100, 0) / totalGoals
-        : 0;
-
       const totalParticipants = participantsData.length;
       const attendedParticipants = participantsData.filter((p) => p.attended).length;
       const avgParticipation = totalParticipants > 0 ? (attendedParticipants / totalParticipants) * 100 : 0;
@@ -176,10 +149,6 @@ export function AnalyticsKPIGrid({ dateRange, companyId, areaId }: AnalyticsKPIG
         completedTasks,
         taskCompletionRate,
         overdueTasks,
-        totalGoals,
-        goalsOnTrack,
-        goalsAtRisk,
-        avgGoalProgress,
         totalParticipants,
         avgParticipation,
         atasGenerated: atasData.length,
@@ -204,7 +173,7 @@ export function AnalyticsKPIGrid({ dateRange, companyId, areaId }: AnalyticsKPIG
   if (loading) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[...Array(8)].map((_, i) => (
+        {[...Array(6)].map((_, i) => (
           <Card key={i} className="animate-pulse">
             <CardHeader className="pb-2">
               <div className="h-4 bg-muted rounded w-24" />
@@ -249,20 +218,6 @@ export function AnalyticsKPIGrid({ dateRange, companyId, areaId }: AnalyticsKPIG
       color: kpis.overdueTasks > 0 ? "text-destructive" : "text-muted-foreground",
     },
     {
-      title: "Total de Metas",
-      value: kpis.totalGoals,
-      subtitle: `${kpis.goalsOnTrack} no caminho`,
-      icon: Target,
-      color: "text-accent",
-    },
-    {
-      title: "Progresso Médio",
-      value: `${kpis.avgGoalProgress.toFixed(1)}%`,
-      subtitle: "Das metas ativas",
-      icon: TrendingUp,
-      color: kpis.avgGoalProgress >= 70 ? "text-success" : "text-warning",
-    },
-    {
       title: "Participação Média",
       value: `${kpis.avgParticipation.toFixed(1)}%`,
       subtitle: `${kpis.totalParticipants} participantes`,
@@ -279,7 +234,7 @@ export function AnalyticsKPIGrid({ dateRange, companyId, areaId }: AnalyticsKPIG
   ];
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 animate-fade-in">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 animate-fade-in">
       {kpiCards.map((kpi, index) => {
         const Icon = kpi.icon;
         return (

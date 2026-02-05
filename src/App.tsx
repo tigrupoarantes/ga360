@@ -15,7 +15,6 @@ import Processes from "./pages/Processes";
 import Tasks from "./pages/Tasks";
 import Calendar from "./pages/Calendar";
 import Trade from "./pages/Trade";
-import Goals from "./pages/Goals";
 import OKRs from "./pages/OKRs";
 import Reports from "./pages/Reports";
 import Analytics from "./pages/Analytics";
@@ -119,14 +118,6 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Trade />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/metas"
-                element={
-                  <ProtectedRoute>
-                    <Goals />
                   </ProtectedRoute>
                 }
               />

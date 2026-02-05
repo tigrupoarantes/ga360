@@ -8,13 +8,12 @@ import {
   AlertCircle, 
   TrendingUp,
   Calendar,
-  Target,
   Loader2
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/external-client";
 import { useCompany } from "@/contexts/CompanyContext";
-import { format, startOfMonth, endOfMonth, isAfter, isBefore } from "date-fns";
+import { format, startOfMonth, endOfMonth, isBefore } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 
@@ -24,8 +23,6 @@ interface DashboardStats {
   tasksCompleted: number;
   tasksTotal: number;
   tasksOverdue: number;
-  goalsAchieved: number;
-  goalsTotal: number;
 }
 
 interface UpcomingMeeting {
@@ -45,8 +42,6 @@ export default function Dashboard() {
     tasksCompleted: 0,
     tasksTotal: 0,
     tasksOverdue: 0,
-    goalsAchieved: 0,
-    goalsTotal: 0,
   });
   const [upcomingMeetings, setUpcomingMeetings] = useState<UpcomingMeeting[]>([]);
 
@@ -97,30 +92,12 @@ export default function Dashboard() {
         return isBefore(new Date(t.due_date), now);
       }).length || 0;
 
-      // Fetch goals stats
-      let goalsQuery = supabase
-        .from('goals')
-        .select('id, current_value, target_value');
-
-      if (selectedCompanyId) {
-        goalsQuery = goalsQuery.eq('company_id', selectedCompanyId);
-      }
-
-      const { data: goalsData } = await goalsQuery;
-
-      const goalsTotal = goalsData?.length || 0;
-      const goalsAchieved = goalsData?.filter(g => 
-        (g.current_value || 0) >= g.target_value
-      ).length || 0;
-
       setStats({
         meetingsThisMonth,
         meetingsCompleted,
         tasksCompleted,
         tasksTotal,
         tasksOverdue,
-        goalsAchieved,
-        goalsTotal,
       });
 
     } catch (error) {
@@ -147,10 +124,6 @@ export default function Dashboard() {
     ? Math.round((stats.tasksCompleted / stats.tasksTotal) * 100) 
     : 0;
 
-  const goalCompletionRate = stats.goalsTotal > 0
-    ? Math.round((stats.goalsAchieved / stats.goalsTotal) * 100)
-    : 0;
-
   if (loading) {
     return (
       <MainLayout>
@@ -173,7 +146,7 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           <StatsCard
             title="Reuniões do Mês"
             value={stats.meetingsThisMonth}
@@ -194,13 +167,6 @@ export default function Dashboard() {
             description={stats.tasksOverdue > 0 ? "Requer atenção" : "Tudo em dia"}
             icon={AlertCircle}
             variant="accent"
-          />
-          <StatsCard
-            title="Metas Atingidas"
-            value={`${goalCompletionRate}%`}
-            description={`${stats.goalsAchieved} de ${stats.goalsTotal} metas`}
-            icon={Target}
-            variant="primary"
           />
         </div>
 
@@ -267,14 +233,14 @@ export default function Dashboard() {
                 <div className="flex h-32 w-32 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent">
                   <div className="flex h-28 w-28 items-center justify-center rounded-full bg-card">
                     <div className="text-center">
-                      <p className="text-3xl font-bold text-primary">{goalCompletionRate}</p>
+                      <p className="text-3xl font-bold text-primary">{completionRate}</p>
                       <p className="text-xs text-muted-foreground">MCI</p>
                     </div>
                   </div>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground mt-4">
-                Meta: 85 • {goalCompletionRate >= 85 ? 'Acima da expectativa' : 'Abaixo da meta'}
+                Meta: 85 • {completionRate >= 85 ? 'Acima da expectativa' : 'Abaixo da meta'}
               </p>
             </div>
           </Card>
