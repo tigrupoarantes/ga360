@@ -19,7 +19,8 @@ import {
   TrendingUp, 
   Gamepad2, 
   Crosshair,
-  Building
+  Building,
+  Bug
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { BugReportDialog } from "@/components/feedback/BugReportDialog";
 
 
 type NavItem = {
@@ -71,6 +73,7 @@ export function AppleNav() {
   const { profile, role, signOut } = useAuth();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isBugDialogOpen, setIsBugDialogOpen] = useState(false);
   
   // Check if any child route is active
   const isChildActive = (children?: NavItem['children']) => {
@@ -189,6 +192,17 @@ export function AppleNav() {
                 onClick={() => setIsSearchOpen(!isSearchOpen)}
               >
                 <Search className="h-4 w-4" />
+              </Button>
+
+              {/* Bug Report Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full"
+                onClick={() => setIsBugDialogOpen(true)}
+                title="Reportar Bug ou Melhoria"
+              >
+                <Bug className="h-4 w-4" />
               </Button>
 
               {/* Theme Toggle */}
@@ -370,6 +384,8 @@ export function AppleNav() {
           </div>
         </div>
       )}
+      {/* Bug Report Dialog */}
+      <BugReportDialog open={isBugDialogOpen} onOpenChange={setIsBugDialogOpen} />
     </>
   );
 }
