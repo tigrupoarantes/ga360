@@ -34,6 +34,7 @@ import AdminSettings from "./pages/AdminSettings";
 import AdminEmployees from "./pages/AdminEmployees";
 import AdminGovernancaEC from "./pages/AdminGovernancaEC";
 import AdminDatalake from "./pages/AdminDatalake";
+import AdminBugReports from "./pages/AdminBugReports";
 import GovernancaEC from "./pages/GovernancaEC";
 import GovernancaECArea from "./pages/GovernancaECArea";
 import GovernancaECCardDetail from "./pages/GovernancaECCardDetail";
@@ -230,6 +231,14 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
                     <AdminDatalake />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/bugs"
+                element={
+                  <ProtectedRoute allowedRoles={['ceo', 'super_admin']}>
+                    <AdminBugReports />
                   </ProtectedRoute>
                 }
               />

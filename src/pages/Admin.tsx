@@ -1,7 +1,7 @@
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building2, Users, Settings, Shield, UserCheck, Database } from "lucide-react";
+import { Building2, Users, Settings, Shield, UserCheck, Database, Bug } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function Admin() {
@@ -47,6 +47,14 @@ export default function Admin() {
       href: '/admin/datalake',
       color: 'text-purple-600',
       bgColor: 'bg-purple-500/10',
+    },
+    {
+      title: 'Bugs e Melhorias',
+      description: 'Gerencie reports de bugs e sugestões de melhoria dos usuários',
+      icon: Bug,
+      href: '/admin/bugs',
+      color: 'text-red-600',
+      bgColor: 'bg-red-500/10',
     },
     {
       title: 'Configurações Gerais',
