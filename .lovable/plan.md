@@ -1,50 +1,44 @@
 
-# Plano: Remover Logo e Texto do Menu Principal
+# Plano: Layout Full-Width (Tela Inteira)
 
-## Objetivo
-Remover completamente a imagem do logo e o texto "CRESCER+" do menu de navegação, deixando apenas os itens de menu.
+## Problema Atual
+O conteudo esta limitado a `max-w-6xl` (1152px) centralizado pela classe `container-apple`, deixando margens laterais vazias em telas maiores.
 
----
+## Solucao
+Alterar a classe `container-apple` e ajustar os containers para que o conteudo ocupe toda a largura disponivel, mantendo apenas um padding lateral confortavel.
 
-## Mudanças no Arquivo
+## Alteracoes
 
-### src/components/layout/AppleNav.tsx
+### 1. `src/index.css` - Classe `container-apple`
+Trocar `max-w-6xl` por `max-w-full` para remover o limite de largura:
+```css
+.container-apple {
+  @apply max-w-full mx-auto px-6;
+}
+```
+Isso afeta automaticamente todos os locais que usam essa classe: AppleNav, MainLayout (barra de empresa e conteudo principal), e menu mobile.
 
-**1. Remover imports não utilizados:**
-- Linha 23: Remover `Rocket` do import de lucide-react
-- Linha 40: Remover import do `logoIcon`
-
-**2. Remover seção do Logo (linhas 113-124):**
-Remover completamente o bloco:
-```tsx
-{/* Logo */}
-<NavLink 
-  to="/dashboard" 
-  className="flex items-center gap-2 transition-smooth hover:opacity-70"
->
-  <img ... />
-  <span className="font-semibold text-lg hidden sm:block">CRESCER+</span>
-</NavLink>
+### 2. `tailwind.config.ts` - Container padrao
+Aumentar o limite do container padrao do Tailwind de `1400px` para `100%`:
+```ts
+container: {
+  center: true,
+  padding: "2rem",
+  screens: {
+    "2xl": "100%",
+  },
+},
 ```
 
----
+## Impacto
+- **AppleNav**: navegacao ocupara toda a largura
+- **Barra de empresa**: seletor se estendera ate as bordas
+- **Conteudo principal**: todas as paginas (Dashboard, Admin, Reunioes, etc.) ocuparao a tela inteira
+- **Padding lateral de 24px (px-6)** sera mantido para nao colar o conteudo nas bordas
 
-## Estrutura Final do Header
+## Arquivos Modificados
 
-O header ficará com:
-- Navegação desktop centralizada/à esquerda (itens de menu)
-- Seção direita (busca, tema, usuário, menu mobile)
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  Dashboard  Reuniões  Processos  ...      🔍 🌙 👤 ☰           │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Resultado Esperado
-
-- Menu limpo sem logo ou texto de marca
-- Visual minimalista focado na navegação
-- Mantém glassmorphism e estética Apple-inspired
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/index.css` | `max-w-6xl` para `max-w-full` na classe `container-apple` |
+| `tailwind.config.ts` | Container `2xl` de `1400px` para `100%` |
