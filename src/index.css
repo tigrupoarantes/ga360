@@ -350,7 +350,7 @@
 
   /* Container max-width like Apple */
   .container-apple {
-    @apply max-w-6xl mx-auto px-6;
+    @apply max-w-full mx-auto px-6;
   }
 }
 
