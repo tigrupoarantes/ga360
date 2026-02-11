@@ -4,10 +4,8 @@ import { Resend } from "https://esm.sh/resend@4.0.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
-
-const resend = new Resend(Deno.env.get('RESEND_API_KEY'));
 
 interface EmailConfig {
   enabled: boolean;
@@ -155,6 +153,11 @@ serve(async (req) => {
       await sendViaSmtp(email, subject, emailHtml, emailConfig);
     } else {
       console.log('Sending invite via Resend');
+      const resendApiKey = Deno.env.get('RESEND_API_KEY');
+      if (!resendApiKey) {
+        throw new Error('RESEND_API_KEY não configurada. Configure o secret no Supabase ou use SMTP.');
+      }
+      const resend = new Resend(resendApiKey);
       const { error: emailError } = await resend.emails.send({
         from: `${fromName} <onboarding@resend.dev>`,
         to: [email],

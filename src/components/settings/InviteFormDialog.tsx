@@ -101,17 +101,28 @@ export function InviteFormDialog({ open, onOpenChange, onSuccess }: InviteFormDi
 
       if (insertError) throw insertError;
 
-      // Send invite email
-      const { error: sendError } = await supabase.functions.invoke('send-invite', {
-        body: {
+      // Send invite email via direct fetch (bypass JWT issues)
+      const EXTERNAL_URL = 'https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/send-invite';
+      const EXTERNAL_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2ZXFoeGFpd2doZXhmb2JqYWVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3OTM0ODAsImV4cCI6MjA4NTM2OTQ4MH0.N2EEwDUfWlZTWlHMJAC777eELMxmpyOyrJ087kPex3Y';
+
+      const sendResponse = await fetch(EXTERNAL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': EXTERNAL_ANON_KEY,
+        },
+        body: JSON.stringify({
           inviteId: invite.id,
           email: formData.email,
           firstName: formData.firstName,
           lastName: formData.lastName,
           roles: formData.roles,
           appUrl: window.location.origin,
-        },
+        }),
       });
+
+      const sendData = await sendResponse.json();
+      const sendError = !sendResponse.ok ? new Error(sendData?.error || `HTTP ${sendResponse.status}`) : null;
 
       if (sendError) {
         console.error('Email send error:', sendError);

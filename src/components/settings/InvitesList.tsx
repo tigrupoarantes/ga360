@@ -55,18 +55,27 @@ export function InvitesList() {
   const handleResend = async (invite: Invite) => {
     setResending(invite.id);
     try {
-      const { error } = await supabase.functions.invoke('send-invite', {
-        body: {
+      const EXTERNAL_URL = 'https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/send-invite';
+      const EXTERNAL_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2ZXFoeGFpd2doZXhmb2JqYWVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3OTM0ODAsImV4cCI6MjA4NTM2OTQ4MH0.N2EEwDUfWlZTWlHMJAC777eELMxmpyOyrJ087kPex3Y';
+
+      const response = await fetch(EXTERNAL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': EXTERNAL_ANON_KEY,
+        },
+        body: JSON.stringify({
           inviteId: invite.id,
           email: invite.email,
           firstName: invite.first_name,
           lastName: invite.last_name,
           roles: invite.roles,
           appUrl: window.location.origin,
-        },
+        }),
       });
 
-      if (error) throw error;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
 
       toast({
         title: 'Convite reenviado!',
