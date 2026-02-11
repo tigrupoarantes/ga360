@@ -9,6 +9,7 @@ import { ECFilters } from "./ECFilters";
 import { ECCardForm } from "./admin/ECCardForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LayoutGrid, List, Plus, Search } from "lucide-react";
+import { useCardPermissions } from "@/hooks/useCardPermissions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +29,7 @@ interface ECAreaViewProps {
 
 export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
   const queryClient = useQueryClient();
+  const { isSuperAdmin, hasCardPermission, getVisibleCardIds } = useCardPermissions();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -83,7 +85,13 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
     enabled: !!cards && cards.length > 0,
   });
 
+  // Filter cards by permission and search/status
+  const visibleCardIds = getVisibleCardIds();
+
   const filteredCards = cards?.filter(card => {
+    // Permission check: if not super admin, only show cards user can view
+    if (visibleCardIds !== null && !visibleCardIds.includes(card.id)) return false;
+
     const matchesSearch = card.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           card.description?.toLowerCase().includes(searchQuery.toLowerCase());
     
@@ -145,10 +153,12 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
       {/* Header com botão Novo Card */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{areaName}</h2>
-        <Button onClick={() => setShowCardForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Card
-        </Button>
+        {isSuperAdmin && (
+          <Button onClick={() => setShowCardForm(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Card
+          </Button>
+        )}
       </div>
 
       {/* Filtros e controles */}

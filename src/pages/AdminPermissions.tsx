@@ -9,8 +9,9 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/external-client";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Shield, Save, Building2 } from "lucide-react";
+import { Search, Shield, Save, Building2, LayoutGrid, Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 
 interface UserProfile {
   id: string;
@@ -20,50 +21,51 @@ interface UserProfile {
   company_id: string | null;
 }
 
-interface UserPermission {
-  user_id: string;
-  module: string;
-  can_view: boolean;
-  can_create: boolean;
-  can_edit: boolean;
-  can_delete: boolean;
-}
-
 interface Company {
   id: string;
   name: string;
 }
 
-interface UserCompanyPermission {
-  company_id: string;
+interface ECCardInfo {
+  id: string;
+  title: string;
+  area_name: string;
+  area_id: string;
+}
+
+interface CardPermission {
+  card_id: string;
   can_view: boolean;
+  can_fill: boolean;
+  can_review: boolean;
+  can_manage: boolean;
 }
 
 const MODULES = [
-  { id: 'dashboard_executivo', label: 'Dashboard Executivo' },
-  { id: 'dashboard_pessoal', label: 'Dashboard Pessoal' },
   { id: 'meetings', label: 'Reuniões' },
   { id: 'calendar', label: 'Calendário' },
   { id: 'tasks', label: 'Tarefas' },
   { id: 'processes', label: 'Processos' },
   { id: 'trade', label: 'Trade Marketing' },
   { id: 'reports', label: 'Relatórios' },
-  { id: 'admin', label: 'Administração' },
+  { id: 'governanca', label: 'Governança EC' },
 ];
 
-const ACTIONS = [
+const CARD_ACTIONS = [
   { id: 'can_view', label: 'Visualizar' },
-  { id: 'can_create', label: 'Criar' },
-  { id: 'can_edit', label: 'Editar' },
-  { id: 'can_delete', label: 'Excluir' },
+  { id: 'can_fill', label: 'Preencher' },
+  { id: 'can_review', label: 'Revisar' },
+  { id: 'can_manage', label: 'Gerenciar' },
 ];
 
 export default function AdminPermissions() {
   const { toast } = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [ecCards, setEcCards] = useState<ECCardInfo[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
-  const [permissions, setPermissions] = useState<Record<string, UserPermission>>({});
+  const [moduleAccess, setModuleAccess] = useState<Record<string, boolean>>({});
+  const [cardPermissions, setCardPermissions] = useState<Record<string, CardPermission>>({});
   const [companyPermissions, setCompanyPermissions] = useState<Record<string, boolean>>({});
   const [allCompanies, setAllCompanies] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -78,12 +80,13 @@ export default function AdminPermissions() {
     if (selectedUser) {
       fetchUserPermissions(selectedUser);
       fetchUserCompanyPermissions(selectedUser);
+      fetchUserCardPermissions(selectedUser);
     }
   }, [selectedUser]);
 
   const fetchData = async () => {
     try {
-      const [usersRes, companiesRes] = await Promise.all([
+      const [usersRes, companiesRes, cardsRes] = await Promise.all([
         supabase
           .from('profiles')
           .select('id, first_name, last_name, avatar_url, company_id')
@@ -94,24 +97,34 @@ export default function AdminPermissions() {
           .select('id, name')
           .eq('is_active', true)
           .order('name'),
+        supabase
+          .from('ec_cards')
+          .select('id, title, area:ec_areas(id, name)')
+          .eq('is_active', true)
+          .order('order'),
       ]);
 
       if (usersRes.error) throw usersRes.error;
       if (companiesRes.error) throw companiesRes.error;
+      if (cardsRes.error) throw cardsRes.error;
 
       setUsers(usersRes.data || []);
       setCompanies(companiesRes.data || []);
-      
+      setEcCards(
+        (cardsRes.data || []).map((c: any) => ({
+          id: c.id,
+          title: c.title,
+          area_name: c.area?.name || '',
+          area_id: c.area?.id || '',
+        }))
+      );
+
       if (usersRes.data && usersRes.data.length > 0) {
         setSelectedUser(usersRes.data[0].id);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível carregar os dados.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Não foi possível carregar os dados.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -126,31 +139,12 @@ export default function AdminPermissions() {
 
       if (error) throw error;
 
-      const permissionsMap: Record<string, UserPermission> = {};
-      
-      MODULES.forEach(module => {
-        permissionsMap[module.id] = {
-          user_id: userId,
-          module: module.id,
-          can_view: false,
-          can_create: false,
-          can_edit: false,
-          can_delete: false,
-        };
-      });
-
-      data?.forEach(perm => {
-        permissionsMap[perm.module] = perm;
-      });
-
-      setPermissions(permissionsMap);
+      const accessMap: Record<string, boolean> = {};
+      MODULES.forEach(m => { accessMap[m.id] = false; });
+      data?.forEach(perm => { accessMap[perm.module] = perm.can_view; });
+      setModuleAccess(accessMap);
     } catch (error) {
       console.error('Error fetching permissions:', error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível carregar as permissões.",
-        variant: "destructive",
-      });
     }
   };
 
@@ -165,16 +159,10 @@ export default function AdminPermissions() {
 
       const companyPermsMap: Record<string, boolean> = {};
       let hasAllCompanies = false;
-
       data?.forEach(perm => {
-        if (perm.all_companies) {
-          hasAllCompanies = true;
-        }
-        if (perm.company_id) {
-          companyPermsMap[perm.company_id] = perm.can_view;
-        }
+        if (perm.all_companies) hasAllCompanies = true;
+        if (perm.company_id) companyPermsMap[perm.company_id] = perm.can_view;
       });
-
       setAllCompanies(hasAllCompanies);
       setCompanyPermissions(companyPermsMap);
     } catch (error) {
@@ -182,97 +170,96 @@ export default function AdminPermissions() {
     }
   };
 
-  const togglePermission = (module: string, action: keyof UserPermission) => {
-    setPermissions(prev => ({
-      ...prev,
-      [module]: {
-        ...prev[module],
-        [action]: !prev[module][action],
-      },
-    }));
+  const fetchUserCardPermissions = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('ec_card_permissions')
+        .select('card_id, can_view, can_fill, can_review, can_manage')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      const permsMap: Record<string, CardPermission> = {};
+      data?.forEach(p => {
+        permsMap[p.card_id] = p;
+      });
+      setCardPermissions(permsMap);
+    } catch (error) {
+      console.error('Error fetching card permissions:', error);
+    }
   };
 
-  const toggleCompanyPermission = (companyId: string) => {
-    setCompanyPermissions(prev => ({
-      ...prev,
-      [companyId]: !prev[companyId],
-    }));
+  const toggleModuleAccess = (moduleId: string) => {
+    setModuleAccess(prev => ({ ...prev, [moduleId]: !prev[moduleId] }));
+  };
+
+  const toggleCardPermission = (cardId: string, action: string) => {
+    setCardPermissions(prev => {
+      const existing = prev[cardId] || { card_id: cardId, can_view: false, can_fill: false, can_review: false, can_manage: false };
+      return { ...prev, [cardId]: { ...existing, [action]: !(existing as any)[action] } };
+    });
+  };
+
+  const toggleAllCardsAction = (action: string, value: boolean) => {
+    setCardPermissions(prev => {
+      const updated = { ...prev };
+      ecCards.forEach(card => {
+        const existing = updated[card.id] || { card_id: card.id, can_view: false, can_fill: false, can_review: false, can_manage: false };
+        updated[card.id] = { ...existing, [action]: value };
+      });
+      return updated;
+    });
   };
 
   const savePermissions = async () => {
     if (!selectedUser) return;
-
     setSaving(true);
     try {
-      // Save module permissions
-      const permissionsArray = Object.values(permissions);
-
-      for (const perm of permissionsArray) {
-        const { error } = await supabase
+      // Save module permissions (simplified to on/off via can_view)
+      for (const mod of MODULES) {
+        await supabase
           .from('user_permissions')
           .upsert({
-            user_id: perm.user_id,
-            module: perm.module as any,
-            can_view: perm.can_view,
-            can_create: perm.can_create,
-            can_edit: perm.can_edit,
-            can_delete: perm.can_delete,
-          }, {
-            onConflict: 'user_id,module'
-          });
-
-        if (error) throw error;
+            user_id: selectedUser,
+            module: mod.id as any,
+            can_view: moduleAccess[mod.id] || false,
+            can_create: moduleAccess[mod.id] || false,
+            can_edit: moduleAccess[mod.id] || false,
+            can_delete: moduleAccess[mod.id] || false,
+          }, { onConflict: 'user_id,module' });
       }
 
-      // Delete existing company permissions for this user
-      await supabase
-        .from('user_companies')
-        .delete()
-        .eq('user_id', selectedUser);
-
-      // Save "all companies" permission if enabled
+      // Save company permissions
+      await supabase.from('user_companies').delete().eq('user_id', selectedUser);
       if (allCompanies) {
-        const { error } = await supabase
-          .from('user_companies')
-          .insert({
-            user_id: selectedUser,
-            company_id: null,
-            all_companies: true,
-            can_view: true,
-          });
-
-        if (error) throw error;
+        await supabase.from('user_companies').insert({ user_id: selectedUser, company_id: null, all_companies: true, can_view: true });
       } else {
-        // Save individual company permissions
-        const companyPermsToSave = Object.entries(companyPermissions)
-          .filter(([_, canView]) => canView)
-          .map(([companyId]) => ({
-            user_id: selectedUser,
-            company_id: companyId,
-            all_companies: false,
-            can_view: true,
-          }));
-
-        if (companyPermsToSave.length > 0) {
-          const { error } = await supabase
-            .from('user_companies')
-            .insert(companyPermsToSave);
-
-          if (error) throw error;
-        }
+        const toSave = Object.entries(companyPermissions).filter(([_, v]) => v).map(([companyId]) => ({
+          user_id: selectedUser, company_id: companyId, all_companies: false, can_view: true,
+        }));
+        if (toSave.length > 0) await supabase.from('user_companies').insert(toSave);
       }
 
-      toast({
-        title: "Sucesso",
-        description: "Permissões atualizadas com sucesso.",
-      });
+      // Save card permissions
+      await supabase.from('ec_card_permissions').delete().eq('user_id', selectedUser);
+      const cardPermsToSave = Object.entries(cardPermissions)
+        .filter(([_, p]) => p.can_view || p.can_fill || p.can_review || p.can_manage)
+        .map(([cardId, p]) => ({
+          user_id: selectedUser,
+          card_id: cardId,
+          can_view: p.can_view,
+          can_fill: p.can_fill,
+          can_review: p.can_review,
+          can_manage: p.can_manage,
+        }));
+      if (cardPermsToSave.length > 0) {
+        await supabase.from('ec_card_permissions').insert(cardPermsToSave);
+      }
+
+      toast({ title: "Sucesso", description: "Permissões atualizadas com sucesso." });
     } catch (error) {
       console.error('Error saving permissions:', error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível salvar as permissões.",
-        variant: "destructive",
-      });
+      toast({ title: "Erro", description: "Não foi possível salvar as permissões.", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -284,15 +271,22 @@ export default function AdminPermissions() {
   });
 
   const selectedUserProfile = users.find(u => u.id === selectedUser);
-  const selectedUserCompany = selectedUserProfile?.company_id 
+  const selectedUserCompany = selectedUserProfile?.company_id
     ? companies.find(c => c.id === selectedUserProfile.company_id)
     : null;
+
+  // Group cards by area
+  const cardsByArea = ecCards.reduce((acc, card) => {
+    if (!acc[card.area_name]) acc[card.area_name] = [];
+    acc[card.area_name].push(card);
+    return acc;
+  }, {} as Record<string, ECCardInfo[]>);
 
   if (loading) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center h-96">
-          <p className="text-muted-foreground">Carregando...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </MainLayout>
     );
@@ -309,7 +303,7 @@ export default function AdminPermissions() {
               Gestão de Permissões
             </h1>
             <p className="text-muted-foreground mt-1">
-              Configure permissões granulares por usuário
+              Configure acesso a módulos, cards de governança e empresas
             </p>
           </div>
           <Button onClick={savePermissions} disabled={saving || !selectedUser} className="gap-2">
@@ -319,7 +313,7 @@ export default function AdminPermissions() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* User Selection Panel */}
+          {/* User Selection */}
           <Card className="lg:col-span-1 p-4">
             <div className="space-y-4">
               <div>
@@ -334,7 +328,6 @@ export default function AdminPermissions() {
                   />
                 </div>
               </div>
-
               <div className="space-y-2 max-h-[600px] overflow-y-auto">
                 {filteredUsers.map(user => (
                   <button
@@ -355,7 +348,7 @@ export default function AdminPermissions() {
             </div>
           </Card>
 
-          {/* Permissions Configuration Panel */}
+          {/* Permissions Panel */}
           <Card className="lg:col-span-3 p-6">
             {selectedUser && selectedUserProfile ? (
               <div className="space-y-6">
@@ -370,91 +363,143 @@ export default function AdminPermissions() {
                       {selectedUserProfile.first_name} {selectedUserProfile.last_name}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      {selectedUserCompany 
-                        ? `Empresa principal: ${selectedUserCompany.name}`
-                        : 'Configurando permissões de acesso'
-                      }
+                      {selectedUserCompany ? `Empresa: ${selectedUserCompany.name}` : 'Configurando permissões'}
                     </p>
                   </div>
                 </div>
 
-                <Tabs defaultValue="dashboard" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="dashboard">Dashboards</TabsTrigger>
+                <Tabs defaultValue="modules" className="w-full">
+                  <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="modules">Módulos</TabsTrigger>
-                    <TabsTrigger value="admin">Administração</TabsTrigger>
+                    <TabsTrigger value="governanca" className="gap-1">
+                      <LayoutGrid className="h-4 w-4" />
+                      Governança EC
+                    </TabsTrigger>
                     <TabsTrigger value="companies" className="gap-1">
                       <Building2 className="h-4 w-4" />
                       Empresas
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="dashboard" className="space-y-4 mt-6">
-                    {MODULES.filter(m => m.id.startsWith('dashboard')).map(module => (
-                      <Card key={module.id} className="p-4">
-                        <h3 className="font-semibold mb-4">{module.label}</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {ACTIONS.map(action => (
-                            <div key={action.id} className="flex items-center justify-between">
-                              <Label htmlFor={`${module.id}-${action.id}`} className="text-sm">
-                                {action.label}
-                              </Label>
-                              <Switch
-                                id={`${module.id}-${action.id}`}
-                                checked={permissions[module.id]?.[action.id as keyof UserPermission] as boolean}
-                                onCheckedChange={() => togglePermission(module.id, action.id as keyof UserPermission)}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </Card>
-                    ))}
-                  </TabsContent>
-
+                  {/* Módulos - Acesso simples */}
                   <TabsContent value="modules" className="space-y-4 mt-6">
-                    {MODULES.filter(m => !m.id.startsWith('dashboard') && m.id !== 'admin').map(module => (
-                      <Card key={module.id} className="p-4">
-                        <h3 className="font-semibold mb-4">{module.label}</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {ACTIONS.map(action => (
-                            <div key={action.id} className="flex items-center justify-between">
-                              <Label htmlFor={`${module.id}-${action.id}`} className="text-sm">
-                                {action.label}
-                              </Label>
-                              <Switch
-                                id={`${module.id}-${action.id}`}
-                                checked={permissions[module.id]?.[action.id as keyof UserPermission] as boolean}
-                                onCheckedChange={() => togglePermission(module.id, action.id as keyof UserPermission)}
-                              />
+                    <Card className="p-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="font-semibold">Acesso aos Módulos</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Ative ou desative o acesso completo a cada módulo. Dashboards são livres para todos.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {/* Info sobre dashboards */}
+                        <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 mb-4">
+                          <p className="text-sm text-green-700 dark:text-green-400">
+                            ✓ <strong>Dashboards</strong> (Executivo e Pessoal) são acessíveis a todos os usuários ativos
+                          </p>
+                        </div>
+
+                        {MODULES.map(mod => (
+                          <div key={mod.id} className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/30 transition-colors">
+                            <div>
+                              <Label className="font-medium cursor-pointer">{mod.label}</Label>
                             </div>
-                          ))}
+                            <Switch
+                              checked={moduleAccess[mod.id] || false}
+                              onCheckedChange={() => toggleModuleAccess(mod.id)}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  </TabsContent>
+
+                  {/* Governança EC - Card-level */}
+                  <TabsContent value="governanca" className="space-y-4 mt-6">
+                    {!moduleAccess['governanca'] && (
+                      <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                        <p className="text-sm text-yellow-700 dark:text-yellow-400">
+                          ⚠ O módulo Governança EC está <strong>desativado</strong> para este usuário. Ative-o na aba "Módulos" primeiro.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Batch actions */}
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-3">Ações em lote</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {CARD_ACTIONS.map(action => (
+                          <div key={action.id} className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => toggleAllCardsAction(action.id, true)}
+                            >
+                              {action.label} todos
+                            </Button>
+                          </div>
+                        ))}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => {
+                            CARD_ACTIONS.forEach(a => toggleAllCardsAction(a.id, false));
+                          }}
+                        >
+                          Limpar todos
+                        </Button>
+                      </div>
+                    </Card>
+
+                    {Object.entries(cardsByArea).map(([areaName, cards]) => (
+                      <Card key={areaName} className="p-4">
+                        <h3 className="font-semibold mb-4 flex items-center gap-2">
+                          <Shield className="h-4 w-4 text-primary" />
+                          {areaName}
+                          <Badge variant="secondary" className="ml-auto">{cards.length} cards</Badge>
+                        </h3>
+                        <div className="space-y-2">
+                          {/* Header */}
+                          <div className="grid grid-cols-5 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground uppercase">
+                            <span className="col-span-1">Card</span>
+                            {CARD_ACTIONS.map(a => (
+                              <span key={a.id} className="text-center">{a.label}</span>
+                            ))}
+                          </div>
+                          {cards.map(card => {
+                            const perm = cardPermissions[card.id] || { can_view: false, can_fill: false, can_review: false, can_manage: false };
+                            return (
+                              <div key={card.id} className="grid grid-cols-5 gap-2 items-center px-3 py-2 rounded-lg border border-border hover:bg-muted/30 transition-colors">
+                                <span className="text-sm font-medium truncate col-span-1" title={card.title}>
+                                  {card.title}
+                                </span>
+                                {CARD_ACTIONS.map(action => (
+                                  <div key={action.id} className="flex justify-center">
+                                    <Checkbox
+                                      checked={(perm as any)[action.id] || false}
+                                      onCheckedChange={() => toggleCardPermission(card.id, action.id)}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
                         </div>
                       </Card>
                     ))}
-                  </TabsContent>
 
-                  <TabsContent value="admin" className="space-y-4 mt-6">
-                    {MODULES.filter(m => m.id === 'admin').map(module => (
-                      <Card key={module.id} className="p-4">
-                        <h3 className="font-semibold mb-4">{module.label}</h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {ACTIONS.map(action => (
-                            <div key={action.id} className="flex items-center justify-between">
-                              <Label htmlFor={`${module.id}-${action.id}`} className="text-sm">
-                                {action.label}
-                              </Label>
-                              <Switch
-                                id={`${module.id}-${action.id}`}
-                                checked={permissions[module.id]?.[action.id as keyof UserPermission] as boolean}
-                                onCheckedChange={() => togglePermission(module.id, action.id as keyof UserPermission)}
-                              />
-                            </div>
-                          ))}
-                        </div>
+                    {ecCards.length === 0 && (
+                      <Card className="p-8 text-center">
+                        <LayoutGrid className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                        <p className="text-muted-foreground">Nenhum card de Governança configurado.</p>
                       </Card>
-                    ))}
+                    )}
                   </TabsContent>
 
+                  {/* Empresas */}
                   <TabsContent value="companies" className="space-y-4 mt-6">
                     <Card className="p-4">
                       <div className="flex items-center justify-between mb-4">
@@ -467,7 +512,6 @@ export default function AdminPermissions() {
                       </div>
 
                       <div className="space-y-4">
-                        {/* All companies toggle */}
                         <div className="flex items-center space-x-3 p-4 rounded-lg border border-primary/20 bg-primary/5">
                           <Checkbox
                             id="all-companies"
@@ -476,53 +520,33 @@ export default function AdminPermissions() {
                           />
                           <div className="flex-1">
                             <Label htmlFor="all-companies" className="font-medium cursor-pointer">
-                              Acesso a todas as empresas
+                              Todas as empresas
                             </Label>
                             <p className="text-sm text-muted-foreground">
-                              Habilita visualização de dados de todas as empresas do sistema
+                              Concede acesso a dados de todas as empresas do grupo
                             </p>
                           </div>
                         </div>
 
-                        {/* Individual company permissions */}
                         {!allCompanies && (
-                          <div className="space-y-2">
-                            <Label className="text-sm text-muted-foreground">
-                              Ou selecione empresas específicas:
-                            </Label>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {companies.map(company => {
-                                const isMainCompany = selectedUserProfile?.company_id === company.id;
-                                return (
-                                  <div
-                                    key={company.id}
-                                    className={`flex items-center space-x-3 p-3 rounded-lg border ${
-                                      isMainCompany 
-                                        ? 'border-primary bg-primary/10' 
-                                        : 'border-border'
-                                    }`}
-                                  >
-                                    <Checkbox
-                                      id={`company-${company.id}`}
-                                      checked={isMainCompany || companyPermissions[company.id] === true}
-                                      disabled={isMainCompany}
-                                      onCheckedChange={() => toggleCompanyPermission(company.id)}
-                                    />
-                                    <div className="flex-1">
-                                      <Label 
-                                        htmlFor={`company-${company.id}`} 
-                                        className={`cursor-pointer ${isMainCompany ? 'font-medium' : ''}`}
-                                      >
-                                        {company.name}
-                                      </Label>
-                                      {isMainCompany && (
-                                        <p className="text-xs text-primary">Empresa principal</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
+                          <div className="space-y-3 pl-2">
+                            {companies.map(company => (
+                              <div key={company.id} className="flex items-center space-x-3">
+                                <Checkbox
+                                  id={`company-${company.id}`}
+                                  checked={companyPermissions[company.id] || false}
+                                  onCheckedChange={() => {
+                                    setCompanyPermissions(prev => ({
+                                      ...prev,
+                                      [company.id]: !prev[company.id],
+                                    }));
+                                  }}
+                                />
+                                <Label htmlFor={`company-${company.id}`} className="cursor-pointer">
+                                  {company.name}
+                                </Label>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -531,7 +555,7 @@ export default function AdminPermissions() {
                 </Tabs>
               </div>
             ) : (
-              <div className="flex items-center justify-center h-96">
+              <div className="flex items-center justify-center h-64">
                 <p className="text-muted-foreground">Selecione um usuário para configurar permissões</p>
               </div>
             )}

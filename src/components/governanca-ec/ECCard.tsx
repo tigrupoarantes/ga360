@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCardPermissions } from "@/hooks/useCardPermissions";
 
 interface ECCardProps {
   card: {
@@ -54,6 +55,8 @@ const periodicityLabels: Record<string, string> = {
 export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps) {
   const navigate = useNavigate();
   const { areaSlug } = useParams();
+  const { hasCardPermission } = useCardPermissions();
+  const canManage = hasCardPermission(card.id, 'manage');
 
   // Buscar contagem de tarefas pendentes
   const { data: pendingTasksCount } = useQuery({
@@ -106,25 +109,28 @@ export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps
     onDelete?.(card);
   };
 
-  const ActionsMenu = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <Button variant="ghost" size="icon" className="h-7 w-7">
-          <MoreVertical className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={handleEdit}>
-          <Pencil className="h-4 w-4 mr-2" />
-          Editar
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">
-          <Trash2 className="h-4 w-4 mr-2" />
-          Excluir
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const ActionsMenu = () => {
+    if (!canManage) return null;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+          <Button variant="ghost" size="icon" className="h-7 w-7">
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={handleEdit}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Editar
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleDelete} className="text-destructive focus:text-destructive">
+            <Trash2 className="h-4 w-4 mr-2" />
+            Excluir
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
   if (viewMode === 'list') {
     return (

@@ -225,7 +225,7 @@ export function Sidebar() {
             )
           ))}
 
-          <RoleGuard roles={['ceo', 'super_admin']}>
+          <RoleGuard roles={['super_admin']}>
             <div className="my-4 border-t border-sidebar-border" />
             {ceoNavigation.map((item) => (
               <NavLink

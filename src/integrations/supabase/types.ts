@@ -445,6 +445,50 @@ export type Database = {
         }
         Relationships: []
       }
+      ec_card_permissions: {
+        Row: {
+          can_fill: boolean
+          can_manage: boolean
+          can_review: boolean
+          can_view: boolean
+          card_id: string
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          can_fill?: boolean
+          can_manage?: boolean
+          can_review?: boolean
+          can_view?: boolean
+          card_id: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          can_fill?: boolean
+          can_manage?: boolean
+          can_review?: boolean
+          can_view?: boolean
+          card_id?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ec_card_permissions_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "ec_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ec_card_records: {
         Row: {
           card_id: string
@@ -2550,6 +2594,10 @@ export type Database = {
         Args: { p_company_id?: string }
         Returns: number
       }
+      has_card_permission: {
+        Args: { _card_id: string; _permission: string; _user_id: string }
+        Returns: boolean
+      }
       has_company_access: {
         Args: { _company_id: string; _user_id: string }
         Returns: boolean
@@ -2583,6 +2631,7 @@ export type Database = {
         | "trade"
         | "reports"
         | "admin"
+        | "governanca"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2721,6 +2770,7 @@ export const Constants = {
         "trade",
         "reports",
         "admin",
+        "governanca",
       ],
     },
   },
