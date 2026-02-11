@@ -117,7 +117,7 @@ export function InviteFormDialog({ open, onOpenChange, onSuccess }: InviteFormDi
           firstName: formData.firstName,
           lastName: formData.lastName,
           roles: formData.roles,
-          appUrl: window.location.origin,
+          appUrl: 'https://ga360.lovable.app',
         }),
       });
 

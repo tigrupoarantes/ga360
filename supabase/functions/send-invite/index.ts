@@ -178,7 +178,8 @@ serve(async (req) => {
 
     const emailConfig = emailConfigData?.value as unknown as EmailConfig | null;
     const fromName = emailConfig?.from_name || 'GA 360';
-    const registrationUrl = `${appUrl}/auth?invite=${invite.token}`;
+    const APP_URL = 'https://ga360.lovable.app';
+    const registrationUrl = `${APP_URL}/auth?invite=${invite.token}`;
 
     if (!emailConfig?.smtp?.host) {
       throw new Error('Configuração SMTP não encontrada.');
@@ -189,40 +190,80 @@ serve(async (req) => {
       throw new Error('SMTP_PASSWORD secret não configurado.');
     }
 
-    const emailHtml = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-          <h1 style="color: white; margin: 0; font-size: 24px;">${fromName}</h1>
-        </div>
-        <div style="background: #ffffff; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          <h2 style="color: #0B3D91; margin-top: 0;">Olá${firstName ? `, ${firstName}` : ''}!</h2>
-          <p style="color: #333; line-height: 1.6;">
-            Você foi convidado para participar do sistema <strong>${fromName}</strong>.
-          </p>
-          <div style="background: #f6f7f9; padding: 20px; border-radius: 6px; margin: 20px 0;">
-            <p style="color: #666; margin: 0;">
-              <strong>📧 Email:</strong> ${email}<br/>
-              ${roles ? `<strong>👤 Perfil:</strong> ${roles.join(', ')}` : ''}
-            </p>
-          </div>
-          <p style="color: #333; line-height: 1.6;">Para ativar sua conta, clique no botão abaixo:</p>
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${registrationUrl}" 
-               style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-              Ativar Minha Conta
-            </a>
-          </div>
-          <p style="color: #666; font-size: 14px; line-height: 1.6;">
-            Se o botão não funcionar, copie e cole este link no seu navegador:<br/>
-            <a href="${registrationUrl}" style="color: #0B3D91; word-break: break-all;">${registrationUrl}</a>
-          </p>
-          <p style="color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
-            Este convite expira em 7 dias.<br/>
-            Se você não solicitou este convite, ignore este email.
-          </p>
-        </div>
-      </div>
-    `;
+    const emailHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f0f0f5;font-family:Arial,Helvetica,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f5;padding:30px 0;">
+<tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+
+<!-- Header -->
+<tr><td style="background:linear-gradient(135deg,#8B5CF6 0%,#06B6D4 100%);padding:32px 40px;text-align:center;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+<td style="text-align:center;">
+<h1 style="color:#ffffff;margin:0;font-size:28px;font-weight:700;letter-spacing:-0.5px;">${fromName}</h1>
+<p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:14px;">Plataforma de Gestão Estratégica</p>
+</td>
+</tr></table>
+</td></tr>
+
+<!-- Body -->
+<tr><td style="padding:36px 40px;">
+<h2 style="color:#1a1a2e;margin:0 0 8px;font-size:22px;font-weight:600;">Olá${firstName ? `, ${firstName}` : ''}! 👋</h2>
+<p style="color:#4a4a68;margin:0 0 24px;font-size:16px;line-height:1.6;">
+Você foi convidado para participar do <strong style="color:#8B5CF6;">${fromName}</strong>.
+</p>
+
+<!-- Info Card -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f7ff;border-radius:8px;border-left:4px solid #8B5CF6;margin:0 0 28px;">
+<tr><td style="padding:16px 20px;">
+<p style="color:#4a4a68;margin:0;font-size:14px;line-height:1.8;">
+<strong>📧 Email:</strong> ${email}<br/>
+${roles ? `<strong>👤 Perfil:</strong> ${roles.join(', ')}` : ''}
+</p>
+</td></tr>
+</table>
+
+<p style="color:#4a4a68;margin:0 0 24px;font-size:16px;line-height:1.6;">
+Para ativar sua conta e começar a usar a plataforma, clique no botão abaixo:
+</p>
+
+<!-- CTA Button -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+<tr><td align="center" style="padding:8px 0 28px;">
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${registrationUrl}" style="height:50px;v-text-anchor:middle;width:280px;" arcsize="12%" fillcolor="#8B5CF6">
+<w:anchorlock/><center style="color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">Ativar Minha Conta</center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-->
+<a href="${registrationUrl}" target="_blank" style="display:inline-block;background:linear-gradient(135deg,#8B5CF6 0%,#06B6D4 100%);color:#ffffff;padding:14px 40px;text-decoration:none;border-radius:8px;font-weight:700;font-size:16px;letter-spacing:0.3px;box-shadow:0 4px 14px rgba(139,92,246,0.35);">
+Ativar Minha Conta
+</a>
+<!--<![endif]-->
+</td></tr>
+</table>
+
+<p style="color:#6b6b8a;font-size:13px;line-height:1.6;margin:0 0 8px;">
+Se o botão não funcionar, copie e cole este link no seu navegador:
+</p>
+<p style="margin:0 0 0;"><a href="${registrationUrl}" style="color:#8B5CF6;font-size:13px;word-break:break-all;text-decoration:underline;">${registrationUrl}</a></p>
+</td></tr>
+
+<!-- Footer -->
+<tr><td style="padding:20px 40px 28px;border-top:1px solid #e8e8f0;">
+<p style="color:#9999b3;font-size:12px;margin:0;line-height:1.6;text-align:center;">
+Este convite expira em 7 dias.<br/>
+Se você não solicitou este convite, ignore este email.
+</p>
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
 
     const subject = `Convite para ${fromName}`;
     const host = emailConfig.smtp.host;
