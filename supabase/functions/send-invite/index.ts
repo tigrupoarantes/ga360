@@ -33,7 +33,7 @@ async function sendViaSmtp(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${supabaseKey}`,
+      'apikey': supabaseKey,
     },
     body: JSON.stringify({
       to,
@@ -47,8 +47,15 @@ async function sendViaSmtp(
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to send email via SMTP');
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to send email via SMTP');
+    } else {
+      const text = await response.text();
+      console.error('send-email-smtp returned non-JSON:', text.substring(0, 200));
+      throw new Error(`send-email-smtp returned HTTP ${response.status}. Verifique se o JWT verification está desabilitado para essa função.`);
+    }
   }
 }
 
