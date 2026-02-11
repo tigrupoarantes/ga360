@@ -37,7 +37,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.test-smtp-connection]
-verify_jwt = false
+verify_jwt = true
 
 [functions.send-2fa-code]
 verify_jwt = false
