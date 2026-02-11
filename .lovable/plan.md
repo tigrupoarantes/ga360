@@ -1,44 +1,49 @@
 
-# Plano: Layout Full-Width (Tela Inteira)
 
-## Problema Atual
-O conteudo esta limitado a `max-w-6xl` (1152px) centralizado pela classe `container-apple`, deixando margens laterais vazias em telas maiores.
+## Plano: Reescrever send-invite com SMTP nativo (sem bibliotecas externas)
 
-## Solucao
-Alterar a classe `container-apple` e ajustar os containers para que o conteudo ocupe toda a largura disponivel, mantendo apenas um padding lateral confortavel.
+### Problema
+As bibliotecas `denomailer` e `nodemailer` são incompatíveis com o Supabase Edge Runtime, causando erros (`NaN`, crashes, connection closed). Enquanto isso, a funcao `test-smtp-connection` funciona perfeitamente porque usa conexoes TCP/TLS nativas do Deno.
 
-## Alteracoes
+### Solucao
+Reescrever a funcao `send-invite` para usar a mesma abordagem da `test-smtp-connection` -- conexao TCP/TLS nativa do Deno com comandos SMTP manuais. Sem dependencias externas.
 
-### 1. `src/index.css` - Classe `container-apple`
-Trocar `max-w-6xl` por `max-w-full` para remover o limite de largura:
-```css
-.container-apple {
-  @apply max-w-full mx-auto px-6;
-}
+### O que muda
+
+**Arquivo:** `supabase/functions/send-invite/index.ts`
+
+- Remover import do `nodemailer`
+- Implementar envio SMTP usando `Deno.connectTls` (SSL/465) ou `Deno.connect` (TLS/587)
+- Conversa SMTP completa: EHLO -> AUTH LOGIN -> MAIL FROM -> RCPT TO -> DATA -> QUIT
+- Manter `EdgeRuntime.waitUntil()` para processamento em background
+- Logs detalhados de cada etapa SMTP para facilitar debug
+
+### Fluxo SMTP implementado
+
+```text
++-------------------+     +-------------------+
+| Edge Function     |     | SMTP Server       |
+|                   |     | (mail.grupo...)   |
+| 1. Conecta SSL    |---->| 220 OK            |
+| 2. EHLO localhost |---->| 250 OK            |
+| 3. AUTH LOGIN     |---->| 334 Username       |
+| 4. Base64(user)   |---->| 334 Password       |
+| 5. Base64(pass)   |---->| 235 Auth OK        |
+| 6. MAIL FROM:<>   |---->| 250 OK            |
+| 7. RCPT TO:<>     |---->| 250 OK            |
+| 8. DATA           |---->| 354 Start          |
+| 9. Headers+Body   |---->| 250 OK (queued)   |
+| 10. QUIT          |---->| 221 Bye            |
++-------------------+     +-------------------+
 ```
-Isso afeta automaticamente todos os locais que usam essa classe: AppleNav, MainLayout (barra de empresa e conteudo principal), e menu mobile.
 
-### 2. `tailwind.config.ts` - Container padrao
-Aumentar o limite do container padrao do Tailwind de `1400px` para `100%`:
-```ts
-container: {
-  center: true,
-  padding: "2rem",
-  screens: {
-    "2xl": "100%",
-  },
-},
-```
+### Detalhes tecnicos
 
-## Impacto
-- **AppleNav**: navegacao ocupara toda a largura
-- **Barra de empresa**: seletor se estendera ate as bordas
-- **Conteudo principal**: todas as paginas (Dashboard, Admin, Reunioes, etc.) ocuparao a tela inteira
-- **Padding lateral de 24px (px-6)** sera mantido para nao colar o conteudo nas bordas
+A funcao construira manualmente os headers do email (From, To, Subject, MIME-Version, Content-Type) e enviara o corpo HTML via o comando DATA do protocolo SMTP. A autenticacao sera feita via AUTH LOGIN com credenciais codificadas em Base64.
 
-## Arquivos Modificados
+Esta abordagem elimina todas as dependencias externas e usa apenas APIs nativas do Deno que ja foram testadas e comprovadas com o servidor `mail.grupoarantes.emp.br` pela funcao `test-smtp-connection`.
 
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/index.css` | `max-w-6xl` para `max-w-full` na classe `container-apple` |
-| `tailwind.config.ts` | Container `2xl` de `1400px` para `100%` |
+### Apos o deploy
+
+Voce precisara copiar o novo codigo e fazer deploy manualmente no Supabase externo (zveqhxaiwghexfobjaek), da mesma forma que fez anteriormente.
+
