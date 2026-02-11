@@ -15,10 +15,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Search, Edit, Loader2, UserCheck, UserX, UserPlus, FileUp } from 'lucide-react';
+import { ArrowLeft, Search, Edit, Loader2, UserCheck, UserX } from 'lucide-react';
 import { UserEditDialog } from '@/components/admin/UserEditDialog';
-import { UserCreateDialog } from '@/components/admin/UserCreateDialog';
-import { UserImportDialog } from '@/components/admin/UserImportDialog';
 
 interface Area {
   id: string;
@@ -78,8 +76,6 @@ export default function AdminUsers() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editingUser, setEditingUser] = useState<UserWithDetails | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -159,57 +155,6 @@ export default function AdminUsers() {
   const handleEdit = (user: UserWithDetails) => {
     setEditingUser(user);
     setDialogOpen(true);
-  };
-
-  const handleCreate = async (data: {
-    email: string;
-    first_name: string;
-    last_name: string;
-    area_id: string | null;
-    company_id: string;
-    role: string;
-    phone?: string;
-  }) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('Sessão não encontrada');
-      }
-
-      // Chamar Edge Function diretamente no Supabase externo
-      const EXTERNAL_SUPABASE_URL = 'https://zveqhxaiwghexfobjaek.supabase.co';
-      
-      const response = await fetch(`${EXTERNAL_SUPABASE_URL}/functions/v1/create-user`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao criar usuário');
-      }
-
-      toast({
-        title: 'Usuário criado!',
-        description: 'Um email de boas-vindas foi enviado ao novo usuário.',
-      });
-
-      fetchData();
-    } catch (error: any) {
-      console.error('Error creating user:', error);
-      toast({
-        title: 'Erro ao criar usuário',
-        description: error.message,
-        variant: 'destructive',
-      });
-      throw error;
-    }
   };
 
   const handleSave = async (data: {
@@ -363,16 +308,6 @@ export default function AdminUsers() {
               <p className="text-muted-foreground mt-1">
                 Administre usuários, permissões e acessos
               </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-                <FileUp className="h-4 w-4 mr-2" />
-                Importar CSV
-              </Button>
-              <Button onClick={() => setCreateDialogOpen(true)}>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Criar Usuário
-              </Button>
             </div>
           </div>
         </div>
@@ -560,6 +495,12 @@ export default function AdminUsers() {
             <li className="flex items-start gap-2">
               <span className="text-primary mt-0.5">•</span>
               <span>
+                Para adicionar novos usuários, use <strong>Convites</strong> (Configurações) ou <strong>Funcionários Externos</strong>
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-primary mt-0.5">•</span>
+              <span>
                 Cada usuário possui uma única role no sistema
               </span>
             </li>
@@ -567,12 +508,6 @@ export default function AdminUsers() {
               <span className="text-primary mt-0.5">•</span>
               <span>
                 Usuários inativos são bloqueados automaticamente do sistema
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-primary mt-0.5">•</span>
-              <span>
-                Associe usuários a áreas para organizar a estrutura
               </span>
             </li>
           </ul>
@@ -591,19 +526,6 @@ export default function AdminUsers() {
         onSave={handleSave}
       />
 
-      <UserCreateDialog
-        open={createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
-        areas={areas}
-        companies={companies}
-        onSave={handleCreate}
-      />
-
-      <UserImportDialog
-        open={importDialogOpen}
-        onOpenChange={setImportDialogOpen}
-        onComplete={fetchData}
-      />
     </MainLayout>
   );
 }
