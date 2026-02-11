@@ -24,16 +24,32 @@ declare const EdgeRuntime: { waitUntil: (promise: Promise<any>) => void };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const SMTP_TIMEOUT_MS = 10000; // 10 seconds per operation
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout: ${label} after ${ms}ms`)), ms)
+    ),
+  ]);
+}
 
 async function readResponse(conn: Deno.Conn): Promise<string> {
   const buffer = new Uint8Array(4096);
-  const n = await conn.read(buffer);
-  if (n === null) throw new Error('No response from SMTP server');
-  return decoder.decode(buffer.subarray(0, n));
+  const n = await withTimeout(
+    conn.read(buffer).then(n => {
+      if (n === null) throw new Error('No response from SMTP server');
+      return n;
+    }),
+    SMTP_TIMEOUT_MS,
+    'SMTP read'
+  );
+  return decoder.decode(buffer.subarray(0, n as number));
 }
 
 async function sendCommand(conn: Deno.Conn, cmd: string, expectedCode: string, label: string): Promise<string> {
-  await conn.write(encoder.encode(cmd + '\r\n'));
+  await withTimeout(conn.write(encoder.encode(cmd + '\r\n')), SMTP_TIMEOUT_MS, `SMTP write ${label}`);
   const response = await readResponse(conn);
   console.log(`[SMTP] ${label}: ${response.trim()}`);
   if (!response.startsWith(expectedCode)) {
@@ -53,35 +69,24 @@ async function sendEmail(opts: {
 
   let conn: Deno.Conn;
   if (encryption === 'ssl') {
-    conn = await Deno.connectTls({ hostname: host, port });
+    conn = await withTimeout(Deno.connectTls({ hostname: host, port }), SMTP_TIMEOUT_MS, 'TLS connect');
   } else {
-    conn = await Deno.connect({ hostname: host, port });
+    conn = await withTimeout(Deno.connect({ hostname: host, port }), SMTP_TIMEOUT_MS, 'TCP connect');
   }
 
   try {
-    // Read greeting
     const greeting = await readResponse(conn);
     console.log(`[SMTP] Greeting: ${greeting.trim()}`);
     if (!greeting.startsWith('220')) throw new Error(`Bad greeting: ${greeting.trim()}`);
 
-    // EHLO
     await sendCommand(conn, 'EHLO localhost', '250', 'EHLO');
-
-    // AUTH LOGIN
     await sendCommand(conn, 'AUTH LOGIN', '334', 'AUTH LOGIN');
     await sendCommand(conn, btoa(user), '334', 'USERNAME');
     await sendCommand(conn, btoa(password), '235', 'PASSWORD');
-
-    // MAIL FROM
     await sendCommand(conn, `MAIL FROM:<${fromAddress}>`, '250', 'MAIL FROM');
-
-    // RCPT TO
     await sendCommand(conn, `RCPT TO:<${toEmail}>`, '250', 'RCPT TO');
-
-    // DATA
     await sendCommand(conn, 'DATA', '354', 'DATA');
 
-    // Build message with headers
     const boundary = `boundary_${Date.now()}`;
     const message = [
       `From: "${fromName}" <${fromAddress}>`,
@@ -109,14 +114,13 @@ async function sendEmail(opts: {
       '.',
     ].filter(Boolean).join('\r\n');
 
-    await conn.write(encoder.encode(message + '\r\n'));
+    await withTimeout(conn.write(encoder.encode(message + '\r\n')), SMTP_TIMEOUT_MS, 'DATA body write');
     const dataResponse = await readResponse(conn);
     console.log(`[SMTP] DATA response: ${dataResponse.trim()}`);
     if (!dataResponse.startsWith('250')) {
       throw new Error(`DATA send failed: ${dataResponse.trim()}`);
     }
 
-    // QUIT
     await conn.write(encoder.encode('QUIT\r\n'));
     console.log(`✅ [SMTP] Email sent successfully to ${toEmail}`);
   } finally {
@@ -213,6 +217,7 @@ serve(async (req) => {
     const fromAddress = emailConfig.from_email || user;
     const replyTo = emailConfig.reply_to || '';
 
+    // Send email in background with full error handling
     const sendEmailTask = (async () => {
       try {
         await sendEmail({
