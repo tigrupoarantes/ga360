@@ -1,49 +1,40 @@
 
 
-## Plano: Reescrever send-invite com SMTP nativo (sem bibliotecas externas)
+## Corrigir email chegando em branco
 
-### Problema
-As bibliotecas `denomailer` e `nodemailer` são incompatíveis com o Supabase Edge Runtime, causando erros (`NaN`, crashes, connection closed). Enquanto isso, a funcao `test-smtp-connection` funciona perfeitamente porque usa conexoes TCP/TLS nativas do Deno.
+### Problema identificado
+
+O email chega vazio porque o codigo atual tem dois bugs na construcao da mensagem MIME:
+
+1. **`.filter(Boolean)` remove linhas vazias (`''`) que sao obrigatorias no protocolo MIME.** As linhas em branco separam headers de conteudo. Sem elas, o cliente de email nao consegue interpretar o corpo da mensagem.
+
+2. **O conteudo Base64 e enviado em uma unica linha gigante.** O padrao RFC 2045 exige que linhas Base64 tenham no maximo 76 caracteres. Muitos servidores e clientes de email descartam ou corrompem linhas maiores que isso.
 
 ### Solucao
-Reescrever a funcao `send-invite` para usar a mesma abordagem da `test-smtp-connection` -- conexao TCP/TLS nativa do Deno com comandos SMTP manuais. Sem dependencias externas.
-
-### O que muda
 
 **Arquivo:** `supabase/functions/send-invite/index.ts`
 
-- Remover import do `nodemailer`
-- Implementar envio SMTP usando `Deno.connectTls` (SSL/465) ou `Deno.connect` (TLS/587)
-- Conversa SMTP completa: EHLO -> AUTH LOGIN -> MAIL FROM -> RCPT TO -> DATA -> QUIT
-- Manter `EdgeRuntime.waitUntil()` para processamento em background
-- Logs detalhados de cada etapa SMTP para facilitar debug
+Duas alteracoes:
 
-### Fluxo SMTP implementado
+1. **Remover `.filter(Boolean)`** da construcao da mensagem para preservar as linhas vazias obrigatorias do MIME.
+
+2. **Adicionar funcao para quebrar Base64 em linhas de 76 caracteres:**
 
 ```text
-+-------------------+     +-------------------+
-| Edge Function     |     | SMTP Server       |
-|                   |     | (mail.grupo...)   |
-| 1. Conecta SSL    |---->| 220 OK            |
-| 2. EHLO localhost |---->| 250 OK            |
-| 3. AUTH LOGIN     |---->| 334 Username       |
-| 4. Base64(user)   |---->| 334 Password       |
-| 5. Base64(pass)   |---->| 235 Auth OK        |
-| 6. MAIL FROM:<>   |---->| 250 OK            |
-| 7. RCPT TO:<>     |---->| 250 OK            |
-| 8. DATA           |---->| 354 Start          |
-| 9. Headers+Body   |---->| 250 OK (queued)   |
-| 10. QUIT          |---->| 221 Bye            |
-+-------------------+     +-------------------+
+// Antes (linha unica gigante):
+"SGVsbG8gV29ybGQhIFRoaXMgaXMgYSB2ZXJ5IGxvbmcgc3RyaW5nLi4u..."
+
+// Depois (quebrado a cada 76 chars):
+"SGVsbG8gV29ybGQhIFRoaXMg\r\n"
+"aXMgYSB2ZXJ5IGxvbmcgc3Ry\r\n"
+"aW5nLi4u..."
 ```
 
 ### Detalhes tecnicos
 
-A funcao construira manualmente os headers do email (From, To, Subject, MIME-Version, Content-Type) e enviara o corpo HTML via o comando DATA do protocolo SMTP. A autenticacao sera feita via AUTH LOGIN com credenciais codificadas em Base64.
+- Criar helper `chunkBase64(str, size=76)` que quebra a string base64 em linhas
+- Substituir `.filter(Boolean).join('\r\n')` por `.join('\r\n')` para manter separadores MIME
+- Remover a linha `replyTo ? ... : ''` condicional e tratar separadamente para nao introduzir linhas vazias indevidas nos headers
 
-Esta abordagem elimina todas as dependencias externas e usa apenas APIs nativas do Deno que ja foram testadas e comprovadas com o servidor `mail.grupoarantes.emp.br` pela funcao `test-smtp-connection`.
-
-### Apos o deploy
-
-Voce precisara copiar o novo codigo e fazer deploy manualmente no Supabase externo (zveqhxaiwghexfobjaek), da mesma forma que fez anteriormente.
+Apos a alteracao, voce precisara copiar o novo codigo e fazer deploy no Supabase externo novamente.
 
