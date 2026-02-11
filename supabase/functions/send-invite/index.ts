@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { Resend } from "https://esm.sh/resend@4.0.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -147,29 +146,13 @@ serve(async (req) => {
 
     const subject = `Convite para ${fromName}`;
 
-    // Send email based on provider
-    if (provider === 'smtp' && emailConfig?.smtp?.host) {
-      console.log('Sending invite via SMTP');
-      await sendViaSmtp(email, subject, emailHtml, emailConfig);
-    } else {
-      console.log('Sending invite via Resend');
-      const resendApiKey = Deno.env.get('RESEND_API_KEY');
-      if (!resendApiKey) {
-        throw new Error('RESEND_API_KEY não configurada. Configure o secret no Supabase ou use SMTP.');
-      }
-      const resend = new Resend(resendApiKey);
-      const { error: emailError } = await resend.emails.send({
-        from: `${fromName} <onboarding@resend.dev>`,
-        to: [email],
-        subject,
-        html: emailHtml,
-      });
-
-      if (emailError) {
-        console.error('Resend error:', emailError);
-        throw new Error('Failed to send email');
-      }
+    // Send email via SMTP
+    if (!emailConfig?.smtp?.host) {
+      throw new Error('Configuração SMTP não encontrada. Configure o servidor SMTP nas configurações do sistema.');
     }
+    
+    console.log('Sending invite via SMTP');
+    await sendViaSmtp(email, subject, emailHtml, emailConfig);
 
     console.log(`Invite email sent successfully to ${email} via ${provider}`);
 
