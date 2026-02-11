@@ -24,7 +24,15 @@ declare const EdgeRuntime: { waitUntil: (promise: Promise<any>) => void };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const SMTP_TIMEOUT_MS = 10000; // 10 seconds per operation
+const SMTP_TIMEOUT_MS = 10000;
+
+function chunkBase64(str: string, size = 76): string {
+  const chunks: string[] = [];
+  for (let i = 0; i < str.length; i += size) {
+    chunks.push(str.slice(i, i + size));
+  }
+  return chunks.join('\r\n');
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -88,31 +96,38 @@ async function sendEmail(opts: {
     await sendCommand(conn, 'DATA', '354', 'DATA');
 
     const boundary = `boundary_${Date.now()}`;
-    const message = [
+    const plainB64 = chunkBase64(btoa(unescape(encodeURIComponent('Você foi convidado. Acesse o link no email HTML.'))));
+    const htmlB64 = chunkBase64(btoa(unescape(encodeURIComponent(html))));
+
+    const headers = [
       `From: "${fromName}" <${fromAddress}>`,
       `To: ${toEmail}`,
       `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
       `MIME-Version: 1.0`,
       `Content-Type: multipart/alternative; boundary="${boundary}"`,
-      replyTo ? `Reply-To: ${replyTo}` : '',
-      `Date: ${new Date().toUTCString()}`,
+    ];
+    if (replyTo) headers.push(`Reply-To: ${replyTo}`);
+    headers.push(`Date: ${new Date().toUTCString()}`);
+
+    const message = [
+      ...headers,
       '',
       `--${boundary}`,
       `Content-Type: text/plain; charset=UTF-8`,
       `Content-Transfer-Encoding: base64`,
       '',
-      btoa(unescape(encodeURIComponent(`Você foi convidado. Acesse o link no email HTML.`))),
+      plainB64,
       '',
       `--${boundary}`,
       `Content-Type: text/html; charset=UTF-8`,
       `Content-Transfer-Encoding: base64`,
       '',
-      btoa(unescape(encodeURIComponent(html))),
+      htmlB64,
       '',
       `--${boundary}--`,
       '',
       '.',
-    ].filter(Boolean).join('\r\n');
+    ].join('\r\n');
 
     await withTimeout(conn.write(encoder.encode(message + '\r\n')), SMTP_TIMEOUT_MS, 'DATA body write');
     const dataResponse = await readResponse(conn);
