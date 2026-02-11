@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import nodemailer from "npm:nodemailer@6.9.10";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,7 +21,6 @@ interface EmailConfig {
   };
 }
 
-// Declare EdgeRuntime for background tasks
 declare const EdgeRuntime: { waitUntil: (promise: Promise<any>) => void };
 
 serve(async (req) => {
@@ -41,7 +40,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Get invite token
     const { data: invite, error: inviteError } = await supabase
       .from('user_invites')
       .select('token')
@@ -52,7 +50,6 @@ serve(async (req) => {
       throw new Error('Invite not found');
     }
 
-    // Get email config
     const { data: emailConfigData } = await supabase
       .from('system_settings')
       .select('value')
@@ -113,65 +110,55 @@ serve(async (req) => {
     const user = emailConfig.smtp.user;
     const encryption = emailConfig.smtp.encryption || 'ssl';
     const fromAddress = emailConfig.from_email || user;
-    const fromDisplay = `${fromName} <${fromAddress}>`;
     const replyTo = emailConfig.reply_to;
 
-    // Send email in background using EdgeRuntime.waitUntil
-    // This allows us to return the response immediately while the SMTP send continues
     const sendEmailTask = (async () => {
       try {
-        console.log(`[SMTP] Connecting to ${host}:${port} (${encryption})`);
-        console.log(`[SMTP] User: ${user}`);
-        console.log(`[SMTP] From: ${fromDisplay}`);
-        console.log(`[SMTP] To: ${email}`);
+        console.log(`[SMTP] Creating nodemailer transport: ${host}:${port} (${encryption})`);
 
-        const clientConfig: any = {
-          connection: {
-            hostname: host,
-            port: port,
-            auth: {
-              username: user,
-              password: password,
-            },
-          },
-          debug: {
-            log: true,
+        const transportConfig: any = {
+          host: host,
+          port: port,
+          auth: {
+            user: user,
+            pass: password,
           },
         };
 
+        // Configure TLS/SSL based on encryption type
         if (encryption === 'ssl') {
-          clientConfig.connection.tls = true;
+          transportConfig.secure = true; // use SSL on port 465
         } else if (encryption === 'tls') {
-          clientConfig.connection.tls = false;
+          transportConfig.secure = false; // upgrade to TLS via STARTTLS
+          transportConfig.tls = { rejectUnauthorized: false };
+        } else {
+          transportConfig.secure = false;
+          transportConfig.tls = { rejectUnauthorized: false };
         }
 
-        const client = new SMTPClient(clientConfig);
+        const transporter = nodemailer.createTransport(transportConfig);
 
-        console.log(`[SMTP] Client created, sending...`);
+        console.log(`[SMTP] Sending from "${fromName}" <${fromAddress}> to ${email}`);
 
-        const sendResult = await client.send({
-          from: fromDisplay,
-          to: [email],
+        const info = await transporter.sendMail({
+          from: `"${fromName}" <${fromAddress}>`,
+          to: email,
           subject: subject,
-          content: `Você foi convidado para o ${fromName}. Acesse: ${registrationUrl}`,
+          text: `Você foi convidado para o ${fromName}. Acesse: ${registrationUrl}`,
           html: emailHtml,
-          headers: replyTo ? { 'Reply-To': replyTo } : undefined,
+          replyTo: replyTo || undefined,
         });
 
-        console.log(`[SMTP] Send result:`, JSON.stringify(sendResult));
-
-        await client.close();
-        console.log(`✅ [SMTP] Email sent and connection closed for ${email}`);
+        console.log(`✅ [SMTP] Email sent! MessageId: ${info.messageId}`);
+        console.log(`✅ [SMTP] Response: ${info.response}`);
       } catch (err: any) {
         console.error(`❌ [SMTP] Failed for ${email}:`, err.message);
-        console.error(`❌ [SMTP] Stack:`, err.stack);
+        console.error(`❌ [SMTP] Code: ${err.code}, Command: ${err.command}`);
       }
     })();
 
-    // Keep the function alive in the background to complete the SMTP send
     EdgeRuntime.waitUntil(sendEmailTask);
 
-    // Return response immediately without waiting for SMTP
     return new Response(
       JSON.stringify({ success: true, message: 'Convite sendo enviado' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
