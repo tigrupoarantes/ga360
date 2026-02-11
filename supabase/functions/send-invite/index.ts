@@ -120,7 +120,10 @@ serve(async (req) => {
     // This allows us to return the response immediately while the SMTP send continues
     const sendEmailTask = (async () => {
       try {
-        console.log(`Connecting to SMTP: ${host}:${port} (${encryption})`);
+        console.log(`[SMTP] Connecting to ${host}:${port} (${encryption})`);
+        console.log(`[SMTP] User: ${user}`);
+        console.log(`[SMTP] From: ${fromDisplay}`);
+        console.log(`[SMTP] To: ${email}`);
 
         const clientConfig: any = {
           connection: {
@@ -130,6 +133,9 @@ serve(async (req) => {
               username: user,
               password: password,
             },
+          },
+          debug: {
+            log: true,
           },
         };
 
@@ -141,21 +147,24 @@ serve(async (req) => {
 
         const client = new SMTPClient(clientConfig);
 
-        console.log(`Sending email from ${fromDisplay} to ${email}`);
+        console.log(`[SMTP] Client created, sending...`);
 
-        await client.send({
+        const sendResult = await client.send({
           from: fromDisplay,
           to: [email],
           subject: subject,
-          content: emailHtml,
+          content: `Você foi convidado para o ${fromName}. Acesse: ${registrationUrl}`,
           html: emailHtml,
           headers: replyTo ? { 'Reply-To': replyTo } : undefined,
         });
 
+        console.log(`[SMTP] Send result:`, JSON.stringify(sendResult));
+
         await client.close();
-        console.log(`✅ Invite email sent successfully to ${email}`);
+        console.log(`✅ [SMTP] Email sent and connection closed for ${email}`);
       } catch (err: any) {
-        console.error(`❌ Failed to send invite email to ${email}:`, err.message);
+        console.error(`❌ [SMTP] Failed for ${email}:`, err.message);
+        console.error(`❌ [SMTP] Stack:`, err.stack);
       }
     })();
 
