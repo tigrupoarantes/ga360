@@ -165,7 +165,7 @@ export function AppleNav() {
                 )
               ))}
               
-              <RoleGuard roles={['ceo', 'super_admin']}>
+              <RoleGuard roles={['super_admin']}>
                 <NavLink
                   to="/admin"
                   className={({ isActive }) =>
@@ -361,7 +361,7 @@ export function AppleNav() {
                   )
                 ))}
                 
-                <RoleGuard roles={['ceo', 'super_admin']}>
+                <RoleGuard roles={['super_admin']}>
                   <div className="border-t border-border my-4" />
                   <NavLink
                     to="/admin"
