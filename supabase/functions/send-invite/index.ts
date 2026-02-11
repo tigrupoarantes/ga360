@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import nodemailer from "npm:nodemailer@6.9.10";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,6 +21,108 @@ interface EmailConfig {
 }
 
 declare const EdgeRuntime: { waitUntil: (promise: Promise<any>) => void };
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+async function readResponse(conn: Deno.Conn): Promise<string> {
+  const buffer = new Uint8Array(4096);
+  const n = await conn.read(buffer);
+  if (n === null) throw new Error('No response from SMTP server');
+  return decoder.decode(buffer.subarray(0, n));
+}
+
+async function sendCommand(conn: Deno.Conn, cmd: string, expectedCode: string, label: string): Promise<string> {
+  await conn.write(encoder.encode(cmd + '\r\n'));
+  const response = await readResponse(conn);
+  console.log(`[SMTP] ${label}: ${response.trim()}`);
+  if (!response.startsWith(expectedCode)) {
+    throw new Error(`SMTP ${label} failed: expected ${expectedCode}, got: ${response.trim()}`);
+  }
+  return response;
+}
+
+async function sendEmail(opts: {
+  host: string; port: number; user: string; password: string;
+  encryption: string; fromName: string; fromAddress: string;
+  replyTo: string; toEmail: string; subject: string; html: string;
+}) {
+  const { host, port, user, password, encryption, fromName, fromAddress, replyTo, toEmail, subject, html } = opts;
+
+  console.log(`[SMTP] Connecting to ${host}:${port} (${encryption})...`);
+
+  let conn: Deno.Conn;
+  if (encryption === 'ssl') {
+    conn = await Deno.connectTls({ hostname: host, port });
+  } else {
+    conn = await Deno.connect({ hostname: host, port });
+  }
+
+  try {
+    // Read greeting
+    const greeting = await readResponse(conn);
+    console.log(`[SMTP] Greeting: ${greeting.trim()}`);
+    if (!greeting.startsWith('220')) throw new Error(`Bad greeting: ${greeting.trim()}`);
+
+    // EHLO
+    await sendCommand(conn, 'EHLO localhost', '250', 'EHLO');
+
+    // AUTH LOGIN
+    await sendCommand(conn, 'AUTH LOGIN', '334', 'AUTH LOGIN');
+    await sendCommand(conn, btoa(user), '334', 'USERNAME');
+    await sendCommand(conn, btoa(password), '235', 'PASSWORD');
+
+    // MAIL FROM
+    await sendCommand(conn, `MAIL FROM:<${fromAddress}>`, '250', 'MAIL FROM');
+
+    // RCPT TO
+    await sendCommand(conn, `RCPT TO:<${toEmail}>`, '250', 'RCPT TO');
+
+    // DATA
+    await sendCommand(conn, 'DATA', '354', 'DATA');
+
+    // Build message with headers
+    const boundary = `boundary_${Date.now()}`;
+    const message = [
+      `From: "${fromName}" <${fromAddress}>`,
+      `To: ${toEmail}`,
+      `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      replyTo ? `Reply-To: ${replyTo}` : '',
+      `Date: ${new Date().toUTCString()}`,
+      '',
+      `--${boundary}`,
+      `Content-Type: text/plain; charset=UTF-8`,
+      `Content-Transfer-Encoding: base64`,
+      '',
+      btoa(unescape(encodeURIComponent(`Você foi convidado. Acesse o link no email HTML.`))),
+      '',
+      `--${boundary}`,
+      `Content-Type: text/html; charset=UTF-8`,
+      `Content-Transfer-Encoding: base64`,
+      '',
+      btoa(unescape(encodeURIComponent(html))),
+      '',
+      `--${boundary}--`,
+      '',
+      '.',
+    ].filter(Boolean).join('\r\n');
+
+    await conn.write(encoder.encode(message + '\r\n'));
+    const dataResponse = await readResponse(conn);
+    console.log(`[SMTP] DATA response: ${dataResponse.trim()}`);
+    if (!dataResponse.startsWith('250')) {
+      throw new Error(`DATA send failed: ${dataResponse.trim()}`);
+    }
+
+    // QUIT
+    await conn.write(encoder.encode('QUIT\r\n'));
+    console.log(`✅ [SMTP] Email sent successfully to ${toEmail}`);
+  } finally {
+    try { conn.close(); } catch (_) { /* ignore */ }
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -110,50 +211,17 @@ serve(async (req) => {
     const user = emailConfig.smtp.user;
     const encryption = emailConfig.smtp.encryption || 'ssl';
     const fromAddress = emailConfig.from_email || user;
-    const replyTo = emailConfig.reply_to;
+    const replyTo = emailConfig.reply_to || '';
 
     const sendEmailTask = (async () => {
       try {
-        console.log(`[SMTP] Creating nodemailer transport: ${host}:${port} (${encryption})`);
-
-        const transportConfig: any = {
-          host: host,
-          port: port,
-          auth: {
-            user: user,
-            pass: password,
-          },
-        };
-
-        // Configure TLS/SSL based on encryption type
-        if (encryption === 'ssl') {
-          transportConfig.secure = true; // use SSL on port 465
-        } else if (encryption === 'tls') {
-          transportConfig.secure = false; // upgrade to TLS via STARTTLS
-          transportConfig.tls = { rejectUnauthorized: false };
-        } else {
-          transportConfig.secure = false;
-          transportConfig.tls = { rejectUnauthorized: false };
-        }
-
-        const transporter = nodemailer.createTransport(transportConfig);
-
-        console.log(`[SMTP] Sending from "${fromName}" <${fromAddress}> to ${email}`);
-
-        const info = await transporter.sendMail({
-          from: `"${fromName}" <${fromAddress}>`,
-          to: email,
-          subject: subject,
-          text: `Você foi convidado para o ${fromName}. Acesse: ${registrationUrl}`,
-          html: emailHtml,
-          replyTo: replyTo || undefined,
+        await sendEmail({
+          host, port, user, password, encryption,
+          fromName, fromAddress, replyTo, toEmail: email,
+          subject, html: emailHtml,
         });
-
-        console.log(`✅ [SMTP] Email sent! MessageId: ${info.messageId}`);
-        console.log(`✅ [SMTP] Response: ${info.response}`);
       } catch (err: any) {
-        console.error(`❌ [SMTP] Failed for ${email}:`, err.message);
-        console.error(`❌ [SMTP] Code: ${err.code}, Command: ${err.command}`);
+        console.error(`❌ Failed to send invite email to ${email}:`, err.message);
       }
     })();
 
