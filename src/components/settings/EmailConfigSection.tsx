@@ -149,20 +149,32 @@ export function EmailConfigSection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke('test-smtp-connection', {
-        body: {
+      const EXTERNAL_URL = 'https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/test-smtp-connection';
+      const EXTERNAL_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2ZXFoeGFpd2doZXhmb2JqYWVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3OTM0ODAsImV4cCI6MjA4NTM2OTQ4MH0.N2EEwDUfWlZTWlHMJAC777eELMxmpyOyrJ087kPex3Y';
+
+      const response = await fetch(EXTERNAL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': EXTERNAL_ANON_KEY,
+        },
+        body: JSON.stringify({
           ...config.smtp,
           password: smtpPassword || undefined,
-        },
+        }),
       });
 
-      if (error) throw error;
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error || `HTTP ${response.status}`);
+      }
 
       if (data?.success) {
         setTestResult('success');
         toast({
           title: 'Conexão bem-sucedida!',
-          description: 'O servidor SMTP está configurado corretamente.',
+          description: data.message || 'O servidor SMTP está configurado corretamente.',
         });
       } else {
         setTestResult('error');
