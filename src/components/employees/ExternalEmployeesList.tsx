@@ -75,6 +75,7 @@ export function ExternalEmployeesList() {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertibleCount, setConvertibleCount] = useState(0);
+  const [convertingSingle, setConvertingSingle] = useState<string | null>(null);
 
   // Verificar se o usuário pode ver todas as empresas
   const canViewAllCompanies = role === 'super_admin' || role === 'ceo';
@@ -218,6 +219,36 @@ export function ExternalEmployeesList() {
       toast.error('Erro ao vincular funcionários');
     } finally {
       setRelinkingAll(false);
+    }
+  };
+
+  const handleConvertSingle = async (employee: ExternalEmployee) => {
+    if (!employee.email) {
+      toast.error('Funcionário não possui email cadastrado');
+      return;
+    }
+    setConvertingSingle(employee.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-users-from-employees', {
+        body: { employeeIds: [employee.id] },
+      });
+
+      if (error) throw error;
+
+      if (data.success > 0) {
+        toast.success(`${employee.full_name} foi habilitado como usuário!`);
+        fetchEmployees();
+        fetchConvertibleCount();
+      } else if (data.skipped > 0) {
+        toast.info(`${employee.full_name} já possui conta no sistema`);
+      } else if (data.errors?.length > 0) {
+        toast.error(`Erro: ${data.errors[0].error}`);
+      }
+    } catch (error) {
+      console.error('Error converting single employee:', error);
+      toast.error('Erro ao converter funcionário');
+    } finally {
+      setConvertingSingle(null);
     }
   };
 
@@ -421,8 +452,9 @@ export function ExternalEmployeesList() {
                   <TableHead>Departamento</TableHead>
                   <TableHead>Cargo</TableHead>
                   <TableHead>Unidade</TableHead>
-                  <TableHead>Líder</TableHead>
-                  <TableHead className="text-center">Vínculo</TableHead>
+                   <TableHead>Líder</TableHead>
+                    <TableHead className="text-center">Vínculo</TableHead>
+                    {canViewAllCompanies && <TableHead className="text-center">Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -514,6 +546,33 @@ export function ExternalEmployeesList() {
                         </Tooltip>
                       </TooltipProvider>
                     </TableCell>
+                    {canViewAllCompanies && (
+                      <TableCell className="text-center">
+                        {!employee.linked_profile_id && employee.email ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleConvertSingle(employee)}
+                                  disabled={convertingSingle === employee.id}
+                                >
+                                  {convertingSingle === employee.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <UserPlus className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Habilitar como usuário do sistema</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : null}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
