@@ -21,6 +21,9 @@ interface EmailConfig {
   };
 }
 
+// Declare EdgeRuntime for background tasks
+declare const EdgeRuntime: { waitUntil: (promise: Promise<any>) => void };
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -60,9 +63,13 @@ serve(async (req) => {
     const fromName = emailConfig?.from_name || 'GA 360';
     const registrationUrl = `${appUrl}/auth?invite=${invite.token}`;
 
-    // Validate SMTP config
     if (!emailConfig?.smtp?.host) {
-      throw new Error('Configuração SMTP não encontrada. Configure o servidor SMTP nas configurações do sistema.');
+      throw new Error('Configuração SMTP não encontrada.');
+    }
+
+    const password = Deno.env.get('SMTP_PASSWORD');
+    if (!password) {
+      throw new Error('SMTP_PASSWORD secret não configurado.');
     }
 
     const emailHtml = `
@@ -101,59 +108,63 @@ serve(async (req) => {
     `;
 
     const subject = `Convite para ${fromName}`;
-
-    // Send directly via SMTP (no intermediate function call)
     const host = emailConfig.smtp.host;
     const port = parseInt(emailConfig.smtp.port || '465');
     const user = emailConfig.smtp.user;
-    const password = Deno.env.get('SMTP_PASSWORD');
     const encryption = emailConfig.smtp.encryption || 'ssl';
-
-    if (!password) {
-      throw new Error('SMTP_PASSWORD secret não configurado.');
-    }
-
-    console.log(`Connecting to SMTP: ${host}:${port} (${encryption})`);
-
-    const clientConfig: any = {
-      connection: {
-        hostname: host,
-        port: port,
-        auth: {
-          username: user,
-          password: password,
-        },
-      },
-    };
-
-    if (encryption === 'ssl') {
-      clientConfig.connection.tls = true;
-    } else if (encryption === 'tls') {
-      clientConfig.connection.tls = false;
-    }
-
-    const client = new SMTPClient(clientConfig);
-
     const fromAddress = emailConfig.from_email || user;
     const fromDisplay = `${fromName} <${fromAddress}>`;
+    const replyTo = emailConfig.reply_to;
 
-    console.log(`Sending email from ${fromDisplay} to ${email}`);
+    // Send email in background using EdgeRuntime.waitUntil
+    // This allows us to return the response immediately while the SMTP send continues
+    const sendEmailTask = (async () => {
+      try {
+        console.log(`Connecting to SMTP: ${host}:${port} (${encryption})`);
 
-    await client.send({
-      from: fromDisplay,
-      to: [email],
-      subject: subject,
-      content: emailHtml,
-      html: emailHtml,
-      headers: emailConfig.reply_to ? { 'Reply-To': emailConfig.reply_to } : undefined,
-    });
+        const clientConfig: any = {
+          connection: {
+            hostname: host,
+            port: port,
+            auth: {
+              username: user,
+              password: password,
+            },
+          },
+        };
 
-    await client.close();
+        if (encryption === 'ssl') {
+          clientConfig.connection.tls = true;
+        } else if (encryption === 'tls') {
+          clientConfig.connection.tls = false;
+        }
 
-    console.log(`Invite email sent successfully to ${email}`);
+        const client = new SMTPClient(clientConfig);
 
+        console.log(`Sending email from ${fromDisplay} to ${email}`);
+
+        await client.send({
+          from: fromDisplay,
+          to: [email],
+          subject: subject,
+          content: emailHtml,
+          html: emailHtml,
+          headers: replyTo ? { 'Reply-To': replyTo } : undefined,
+        });
+
+        await client.close();
+        console.log(`✅ Invite email sent successfully to ${email}`);
+      } catch (err: any) {
+        console.error(`❌ Failed to send invite email to ${email}:`, err.message);
+      }
+    })();
+
+    // Keep the function alive in the background to complete the SMTP send
+    EdgeRuntime.waitUntil(sendEmailTask);
+
+    // Return response immediately without waiting for SMTP
     return new Response(
-      JSON.stringify({ success: true, message: 'Convite enviado com sucesso' }),
+      JSON.stringify({ success: true, message: 'Convite sendo enviado' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
