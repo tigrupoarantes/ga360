@@ -26,12 +26,37 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const SMTP_TIMEOUT_MS = 10000;
 
-function chunkBase64(str: string, size = 76): string {
-  const chunks: string[] = [];
-  for (let i = 0; i < str.length; i += size) {
-    chunks.push(str.slice(i, i + size));
+function encodeQuotedPrintable(str: string): string {
+  const utf8 = unescape(encodeURIComponent(str));
+  let result = '';
+  let lineLen = 0;
+  for (let i = 0; i < utf8.length; i++) {
+    const code = utf8.charCodeAt(i);
+    let encoded: string;
+    if (code === 13 && utf8.charCodeAt(i + 1) === 10) {
+      encoded = '\r\n';
+      i++;
+      lineLen = 0;
+      result += encoded;
+      continue;
+    } else if (code === 10) {
+      encoded = '\r\n';
+      lineLen = 0;
+      result += encoded;
+      continue;
+    } else if (code === 9 || (code >= 32 && code <= 126 && code !== 61)) {
+      encoded = String.fromCharCode(code);
+    } else {
+      encoded = '=' + code.toString(16).toUpperCase().padStart(2, '0');
+    }
+    if (lineLen + encoded.length > 75) {
+      result += '=\r\n';
+      lineLen = 0;
+    }
+    result += encoded;
+    lineLen += encoded.length;
   }
-  return chunks.join('\r\n');
+  return result;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -95,36 +120,23 @@ async function sendEmail(opts: {
     await sendCommand(conn, `RCPT TO:<${toEmail}>`, '250', 'RCPT TO');
     await sendCommand(conn, 'DATA', '354', 'DATA');
 
-    const boundary = `boundary_${Date.now()}`;
-    const plainB64 = chunkBase64(btoa(unescape(encodeURIComponent('Você foi convidado. Acesse o link no email HTML.'))));
-    const htmlB64 = chunkBase64(btoa(unescape(encodeURIComponent(html))));
-
     const headers = [
       `From: "${fromName}" <${fromAddress}>`,
       `To: ${toEmail}`,
       `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
       `MIME-Version: 1.0`,
-      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      `Content-Type: text/html; charset=UTF-8`,
+      `Content-Transfer-Encoding: quoted-printable`,
     ];
     if (replyTo) headers.push(`Reply-To: ${replyTo}`);
     headers.push(`Date: ${new Date().toUTCString()}`);
 
+    const qpBody = encodeQuotedPrintable(html);
+
     const message = [
       ...headers,
       '',
-      `--${boundary}`,
-      `Content-Type: text/plain; charset=UTF-8`,
-      `Content-Transfer-Encoding: base64`,
-      '',
-      plainB64,
-      '',
-      `--${boundary}`,
-      `Content-Type: text/html; charset=UTF-8`,
-      `Content-Transfer-Encoding: base64`,
-      '',
-      htmlB64,
-      '',
-      `--${boundary}--`,
+      qpBody,
       '',
       '.',
     ].join('\r\n');
@@ -210,7 +222,7 @@ serve(async (req) => {
 
 <!-- Body -->
 <tr><td style="padding:36px 40px;">
-<h2 style="color:#1a1a2e;margin:0 0 8px;font-size:22px;font-weight:600;">Olá${firstName ? `, ${firstName}` : ''}! 👋</h2>
+<h2 style="color:#1a1a2e;margin:0 0 8px;font-size:22px;font-weight:600;">Ol&#225;${firstName ? `, ${firstName}` : ''}!</h2>
 <p style="color:#4a4a68;margin:0 0 24px;font-size:16px;line-height:1.6;">
 Você foi convidado para participar do <strong style="color:#8B5CF6;">${fromName}</strong>.
 </p>
@@ -219,8 +231,8 @@ Você foi convidado para participar do <strong style="color:#8B5CF6;">${fromName
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f7ff;border-radius:8px;border-left:4px solid #8B5CF6;margin:0 0 28px;">
 <tr><td style="padding:16px 20px;">
 <p style="color:#4a4a68;margin:0;font-size:14px;line-height:1.8;">
-<strong>📧 Email:</strong> ${email}<br/>
-${roles ? `<strong>👤 Perfil:</strong> ${roles.join(', ')}` : ''}
+<strong>Email:</strong> ${email}<br/>
+${roles ? `<strong>Perfil:</strong> ${roles.join(', ')}` : ''}
 </p>
 </td></tr>
 </table>
