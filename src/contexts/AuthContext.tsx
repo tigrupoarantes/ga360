@@ -82,6 +82,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const markPendingInviteAsAccepted = async (email: string | undefined) => {
+    if (!email) return;
+    try {
+      const { error } = await supabase
+        .from('user_invites')
+        .update({ status: 'accepted' })
+        .eq('email', email)
+        .eq('status', 'pending');
+      if (error) console.error('Error updating invite status:', error);
+    } catch (e) {
+      console.error('Error marking invite as accepted:', e);
+    }
+  };
+
   const fetchRole = async (userId: string) => {
     try {
       console.log('🔍 Buscando roles para userId:', userId);
@@ -139,6 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setTimeout(() => {
               fetchProfile(session.user.id);
               fetchRole(session.user.id);
+              markPendingInviteAsAccepted(session.user.email);
             }, 0);
           } else {
             setProfile(null);
