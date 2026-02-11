@@ -158,11 +158,9 @@ export default function Auth() {
       );
 
       if (!error && inviteData) {
-        // Mark invite as accepted
-        await supabase
-          .from('user_invites')
-          .update({ status: 'accepted' })
-          .eq('id', inviteData.id);
+        // Invite status is now automatically updated in AuthContext
+        // when the user authenticates (markPendingInviteAsAccepted)
+        console.log('Signup with invite completed, status will be updated on auth');
       }
 
       if (!error) {
