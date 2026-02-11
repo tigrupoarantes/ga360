@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,45 +19,6 @@ interface EmailConfig {
     user: string;
     encryption: 'tls' | 'ssl' | 'none';
   };
-}
-
-async function sendViaSmtp(
-  to: string,
-  subject: string,
-  html: string,
-  config: EmailConfig
-): Promise<void> {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  
-  const response = await fetch(`${supabaseUrl}/functions/v1/send-email-smtp`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': supabaseKey,
-    },
-    body: JSON.stringify({
-      to,
-      subject,
-      html,
-      from_name: config.from_name,
-      from_email: config.from_email || config.smtp.user,
-      reply_to: config.reply_to,
-      smtp_config: config.smtp,
-    }),
-  });
-
-  if (!response.ok) {
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to send email via SMTP');
-    } else {
-      const text = await response.text();
-      console.error('send-email-smtp returned non-JSON:', text.substring(0, 200));
-      throw new Error(`send-email-smtp returned HTTP ${response.status}. Verifique se o JWT verification está desabilitado para essa função.`);
-    }
-  }
 }
 
 serve(async (req) => {
@@ -96,53 +58,40 @@ serve(async (req) => {
 
     const emailConfig = emailConfigData?.value as unknown as EmailConfig | null;
     const fromName = emailConfig?.from_name || 'GA 360';
-    const provider = emailConfig?.provider || 'resend';
     const registrationUrl = `${appUrl}/auth?invite=${invite.token}`;
+
+    // Validate SMTP config
+    if (!emailConfig?.smtp?.host) {
+      throw new Error('Configuração SMTP não encontrada. Configure o servidor SMTP nas configurações do sistema.');
+    }
 
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
           <h1 style="color: white; margin: 0; font-size: 24px;">${fromName}</h1>
         </div>
-        
         <div style="background: #ffffff; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
           <h2 style="color: #0B3D91; margin-top: 0;">Olá${firstName ? `, ${firstName}` : ''}!</h2>
-          
           <p style="color: #333; line-height: 1.6;">
             Você foi convidado para participar do sistema <strong>${fromName}</strong>.
           </p>
-          
           <div style="background: #f6f7f9; padding: 20px; border-radius: 6px; margin: 20px 0;">
             <p style="color: #666; margin: 0;">
               <strong>📧 Email:</strong> ${email}<br/>
               ${roles ? `<strong>👤 Perfil:</strong> ${roles.join(', ')}` : ''}
             </p>
           </div>
-          
-          <p style="color: #333; line-height: 1.6;">
-            Para ativar sua conta, clique no botão abaixo:
-          </p>
-          
+          <p style="color: #333; line-height: 1.6;">Para ativar sua conta, clique no botão abaixo:</p>
           <div style="text-align: center; margin: 30px 0;">
             <a href="${registrationUrl}" 
-               style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); 
-                      color: white; 
-                      padding: 14px 28px; 
-                      text-decoration: none; 
-                      border-radius: 6px; 
-                      font-weight: bold;
-                      display: inline-block;">
+               style="background: linear-gradient(135deg, #0B3D91 0%, #007A7A 100%); color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
               Ativar Minha Conta
             </a>
           </div>
-          
           <p style="color: #666; font-size: 14px; line-height: 1.6;">
             Se o botão não funcionar, copie e cole este link no seu navegador:<br/>
-            <a href="${registrationUrl}" style="color: #0B3D91; word-break: break-all;">
-              ${registrationUrl}
-            </a>
+            <a href="${registrationUrl}" style="color: #0B3D91; word-break: break-all;">${registrationUrl}</a>
           </p>
-          
           <p style="color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
             Este convite expira em 7 dias.<br/>
             Se você não solicitou este convite, ignore este email.
@@ -153,21 +102,58 @@ serve(async (req) => {
 
     const subject = `Convite para ${fromName}`;
 
-    // Send email via SMTP
-    if (!emailConfig?.smtp?.host) {
-      throw new Error('Configuração SMTP não encontrada. Configure o servidor SMTP nas configurações do sistema.');
-    }
-    
-    console.log('Sending invite via SMTP');
-    await sendViaSmtp(email, subject, emailHtml, emailConfig);
+    // Send directly via SMTP (no intermediate function call)
+    const host = emailConfig.smtp.host;
+    const port = parseInt(emailConfig.smtp.port || '465');
+    const user = emailConfig.smtp.user;
+    const password = Deno.env.get('SMTP_PASSWORD');
+    const encryption = emailConfig.smtp.encryption || 'ssl';
 
-    console.log(`Invite email sent successfully to ${email} via ${provider}`);
+    if (!password) {
+      throw new Error('SMTP_PASSWORD secret não configurado.');
+    }
+
+    console.log(`Connecting to SMTP: ${host}:${port} (${encryption})`);
+
+    const clientConfig: any = {
+      connection: {
+        hostname: host,
+        port: port,
+        auth: {
+          username: user,
+          password: password,
+        },
+      },
+    };
+
+    if (encryption === 'ssl') {
+      clientConfig.connection.tls = true;
+    } else if (encryption === 'tls') {
+      clientConfig.connection.tls = false;
+    }
+
+    const client = new SMTPClient(clientConfig);
+
+    const fromAddress = emailConfig.from_email || user;
+    const fromDisplay = `${fromName} <${fromAddress}>`;
+
+    console.log(`Sending email from ${fromDisplay} to ${email}`);
+
+    await client.send({
+      from: fromDisplay,
+      to: [email],
+      subject: subject,
+      content: emailHtml,
+      html: emailHtml,
+      headers: emailConfig.reply_to ? { 'Reply-To': emailConfig.reply_to } : undefined,
+    });
+
+    await client.close();
+
+    console.log(`Invite email sent successfully to ${email}`);
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: 'Convite enviado com sucesso' 
-      }),
+      JSON.stringify({ success: true, message: 'Convite enviado com sucesso' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
