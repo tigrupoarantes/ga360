@@ -297,7 +297,7 @@ export function ExternalEmployeesList() {
     }
   };
 
-
+  const exportToCsv = () => {
     const headers = ['CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
     const rows = filteredEmployees.map(e => [
       e.cpf || '',
