@@ -1,40 +1,64 @@
 
 
-## Corrigir email chegando em branco
+# Inativacao automatica de funcionarios ausentes na sincronizacao
 
-### Problema identificado
+## Problema
+O Gestao de Ativos possui 865 registros, mas o GA360 tem 892. Os 27 funcionarios extras no GA360 provavelmente foram desligados ou removidos do sistema de origem, mas continuam marcados como ativos porque a sync atual so insere e atualiza -- nunca inativa.
 
-O email chega vazio porque o codigo atual tem dois bugs na construcao da mensagem MIME:
+## Solucao
 
-1. **`.filter(Boolean)` remove linhas vazias (`''`) que sao obrigatorias no protocolo MIME.** As linhas em branco separam headers de conteudo. Sem elas, o cliente de email nao consegue interpretar o corpo da mensagem.
+Adicionar uma **terceira etapa** na Edge Function `sync-employees` que, apos processar todos os registros recebidos, identifica e inativa os funcionarios que existem no GA360 mas nao vieram no payload da sincronizacao.
 
-2. **O conteudo Base64 e enviado em uma unica linha gigante.** O padrao RFC 2045 exige que linhas Base64 tenham no maximo 76 caracteres. Muitos servidores e clientes de email descartam ou corrompem linhas maiores que isso.
-
-### Solucao
-
-**Arquivo:** `supabase/functions/send-invite/index.ts`
-
-Duas alteracoes:
-
-1. **Remover `.filter(Boolean)`** da construcao da mensagem para preservar as linhas vazias obrigatorias do MIME.
-
-2. **Adicionar funcao para quebrar Base64 em linhas de 76 caracteres:**
+## Fluxo atualizado
 
 ```text
-// Antes (linha unica gigante):
-"SGVsbG8gV29ybGQhIFRoaXMgaXMgYSB2ZXJ5IGxvbmcgc3RyaW5nLi4u..."
-
-// Depois (quebrado a cada 76 chars):
-"SGVsbG8gV29ybGQhIFRoaXMg\r\n"
-"aXMgYSB2ZXJ5IGxvbmcgc3Ry\r\n"
-"aW5nLi4u..."
+Etapa 1: Inserir/Atualizar funcionarios recebidos (ja existe)
+         |
+Etapa 2: Resolver lider_direto_id (ja existe)
+         |
+Etapa 3: [NOVO] Inativar funcionarios ausentes
+         - Buscar todos os ativos no GA360 para as empresas do payload
+         - Comparar com os external_ids processados
+         - Marcar como is_active = false os que nao vieram
 ```
 
-### Detalhes tecnicos
+## Logica de inativacao
 
-- Criar helper `chunkBase64(str, size=76)` que quebra a string base64 em linhas
-- Substituir `.filter(Boolean).join('\r\n')` por `.join('\r\n')` para manter separadores MIME
-- Remover a linha `replyTo ? ... : ''` condicional e tratar separadamente para nao introduzir linhas vazias indevidas nos headers
+A inativacao sera feita **por empresa** para evitar desativar funcionarios de empresas que nao participaram da sync atual. Exemplo:
 
-Apos a alteracao, voce precisara copiar o novo codigo e fazer deploy no Supabase externo novamente.
+- Se o payload trouxe funcionarios apenas da Chok Distribuidora e Broker, so compara contra essas duas empresas
+- Funcionarios da G4 que nao vieram no payload nao sao afetados
+
+Isso permite sincronizacoes parciais (uma empresa por vez) sem efeitos colaterais.
+
+## Detalhes tecnicos
+
+### Arquivo modificado
+- `supabase/functions/sync-employees/index.ts`
+
+### Alteracoes na Edge Function
+
+Apos a segunda etapa (resolucao de lideres), adicionar:
+
+1. Coletar os `company_id`s unicos que foram processados com sucesso
+2. Para cada empresa, buscar todos os `external_employees` ativos com `source_system` igual ao da sync
+3. Comparar os `external_id`s ativos no banco contra os que vieram no payload
+4. Fazer UPDATE em lote: `is_active = false` para os que nao vieram
+5. Registrar a quantidade de inativados nas estatisticas e no sync_log
+
+### Campos adicionais na resposta
+
+A resposta JSON passara a incluir:
+- `deactivated`: numero total de funcionarios inativados
+- `by_company[cnpj].deactivated`: inativados por empresa
+
+### Protecao contra sync vazio
+
+Se o payload vier com 0 funcionarios para uma empresa, a funcao **nao** inativara ninguem dessa empresa (protecao contra erros de integracao que enviam payload vazio acidentalmente).
+
+## Resultado esperado
+
+- Apos a proxima sincronizacao com os 865 registros do Gestao de Ativos, os 27 funcionarios extras serao automaticamente marcados como `is_active = false`
+- A interface de funcionarios (que ja filtra por `is_active`) deixara de exibi-los por padrao
+- O sync_log registrara quantos foram inativados para auditoria
 
