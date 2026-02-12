@@ -11,11 +11,22 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/external-client";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, MapPin, UserCircle, UserPlus } from "lucide-react";
+import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, MapPin, UserCircle, UserPlus, Pencil, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { ConvertToUsersDialog } from "./ConvertToUsersDialog";
 import { ImportEmployeesDialog } from "./ImportEmployeesDialog";
+import { EditEmployeeDialog } from "./EditEmployeeDialog";
 
 interface LinkedProfile {
   id: string;
@@ -77,7 +88,11 @@ export function ExternalEmployeesList() {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertibleCount, setConvertibleCount] = useState(0);
   const [convertingSingle, setConvertingSingle] = useState<string | null>(null);
-
+  const [editingEmployee, setEditingEmployee] = useState<ExternalEmployee | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingEmployee, setDeletingEmployee] = useState<ExternalEmployee | null>(null);
+  const [deleting, setDeleting] = useState(false);
   // Verificar se o usuário pode ver todas as empresas
   const canViewAllCompanies = role === 'super_admin' || role === 'ceo';
 
@@ -253,7 +268,36 @@ export function ExternalEmployeesList() {
     }
   };
 
-  const exportToCsv = () => {
+  const handleEdit = (employee: ExternalEmployee) => {
+    setEditingEmployee(employee);
+    setEditDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingEmployee) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("external_employees")
+        .delete()
+        .eq("id", deletingEmployee.id);
+
+      if (error) throw error;
+
+      toast.success(`${deletingEmployee.full_name} foi excluído`);
+      fetchEmployees();
+      if (canViewAllCompanies) fetchConvertibleCount();
+    } catch (error) {
+      console.error("Error deleting employee:", error);
+      toast.error("Erro ao excluir funcionário");
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      setDeletingEmployee(null);
+    }
+  };
+
+
     const headers = ['CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
     const rows = filteredEmployees.map(e => [
       e.cpf || '',
@@ -458,7 +502,7 @@ export function ExternalEmployeesList() {
                   <TableHead>Unidade</TableHead>
                    <TableHead>Líder</TableHead>
                     <TableHead className="text-center">Vínculo</TableHead>
-                    {canViewAllCompanies && <TableHead className="text-center">Ações</TableHead>}
+                    <TableHead className="text-center">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -550,9 +594,29 @@ export function ExternalEmployeesList() {
                         </Tooltip>
                       </TooltipProvider>
                     </TableCell>
-                    {canViewAllCompanies && (
-                      <TableCell className="text-center">
-                        {!employee.linked_profile_id && employee.email ? (
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Editar</p></TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="sm" onClick={() => { setDeletingEmployee(employee); setDeleteDialogOpen(true); }}>
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Excluir</p></TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        {canViewAllCompanies && !employee.linked_profile_id && employee.email && (
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -569,14 +633,12 @@ export function ExternalEmployeesList() {
                                   )}
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Habilitar como usuário do sistema</p>
-                              </TooltipContent>
+                              <TooltipContent><p>Habilitar como usuário</p></TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
-                        ) : null}
-                      </TableCell>
-                    )}
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -590,6 +652,31 @@ export function ExternalEmployeesList() {
           </div>
         )}
       </CardContent>
+
+      <EditEmployeeDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        employee={editingEmployee}
+        onSuccess={fetchEmployees}
+      />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Funcionário</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir <strong>{deletingEmployee?.full_name}</strong>? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
