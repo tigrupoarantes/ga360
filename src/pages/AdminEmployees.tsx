@@ -7,7 +7,7 @@ export default function AdminEmployees() {
     <MainLayout>
       <div className="space-y-6">
         <div className="flex items-center gap-4 animate-fade-in">
-          <BackButton />
+          <BackButton to="/admin" />
           <div>
             <h1 className="text-3xl font-bold text-foreground">
               Funcionários Externos
