@@ -81,13 +81,22 @@ export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps
     : '?';
 
   const handleClick = () => {
-    // Special handling for "Auditoria de Estoque" card - redirect to stock audit module
+    // Special handling for "Auditoria de Estoque" card
     const isStockAuditCard = card.title.toLowerCase().includes('auditoria de estoque') || 
                               card.title.toLowerCase().includes('estoque') && 
                               card.title.toLowerCase().includes('auditoria');
-    
     if (isStockAuditCard) {
       navigate('/governanca-ec/auditoria/estoque');
+      return;
+    }
+
+    // Special handling for QLP card
+    const titleLower = card.title.toLowerCase();
+    const isQLPCard = titleLower.includes('qlp') || 
+                      titleLower.includes('quadro de lotação') || 
+                      titleLower.includes('quadro de lotacao');
+    if (isQLPCard) {
+      navigate('/governanca-ec/pessoas-cultura/qlp');
       return;
     }
     

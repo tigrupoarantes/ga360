@@ -40,6 +40,7 @@ import GovernancaECArea from "./pages/GovernancaECArea";
 import GovernancaECCardDetail from "./pages/GovernancaECCardDetail";
 import StockAuditStart from "./pages/StockAuditStart";
 import StockAuditExecution from "./pages/StockAuditExecution";
+import QLPPage from "./pages/QLPPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -263,6 +264,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <GovernancaECCardDetail />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/governanca-ec/pessoas-cultura/qlp"
+                element={
+                  <ProtectedRoute>
+                    <QLPPage />
                   </ProtectedRoute>
                 }
               />
