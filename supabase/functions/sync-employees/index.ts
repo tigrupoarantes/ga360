@@ -433,12 +433,84 @@ serve(async (req) => {
       }
     }
 
+    // === Etapa 3: Inativar funcionários ausentes ===
+    let totalDeactivated = 0;
+    const deactivatedByCompany: Record<string, number> = {};
+
+    // Coletar company_ids únicos que foram processados com sucesso
+    const processedCompanyIds = new Set<string>();
+    const companyExternalIdsByCompany = new Map<string, Set<string>>();
+
+    for (const emp of body.employees) {
+      const externalId = emp.id || emp.external_id;
+      const empCnpj = normalizeCnpj(emp.cnpj_empresa);
+      let companyId: string | null = null;
+
+      if (empCnpj) {
+        companyId = companyMap.get(empCnpj) || null;
+      }
+      if (!companyId && fallbackCompanyId) {
+        companyId = fallbackCompanyId;
+      }
+
+      if (companyId && externalId) {
+        processedCompanyIds.add(companyId);
+        if (!companyExternalIdsByCompany.has(companyId)) {
+          companyExternalIdsByCompany.set(companyId, new Set());
+        }
+        companyExternalIdsByCompany.get(companyId)!.add(externalId);
+      }
+    }
+
+    for (const companyId of processedCompanyIds) {
+      const payloadExternalIds = companyExternalIdsByCompany.get(companyId);
+      if (!payloadExternalIds || payloadExternalIds.size === 0) {
+        console.log(`[sync-employees] Skipping deactivation for company ${companyId}: empty payload (safety)`);
+        continue;
+      }
+
+      // Buscar todos os ativos dessa empresa/source_system
+      const { data: activeInDb, error: fetchError } = await supabase
+        .from('external_employees')
+        .select('id, external_id')
+        .eq('company_id', companyId)
+        .eq('source_system', sourceSystem)
+        .eq('is_active', true);
+
+      if (fetchError) {
+        console.error(`[sync-employees] Error fetching active employees for company ${companyId}:`, fetchError);
+        continue;
+      }
+
+      // Identificar os que não vieram no payload
+      const toDeactivate = (activeInDb || []).filter(e => !payloadExternalIds.has(e.external_id));
+
+      if (toDeactivate.length > 0) {
+        const idsToDeactivate = toDeactivate.map(e => e.id);
+        const { error: deactivateError } = await supabase
+          .from('external_employees')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .in('id', idsToDeactivate);
+
+        if (deactivateError) {
+          console.error(`[sync-employees] Error deactivating employees for company ${companyId}:`, deactivateError);
+        } else {
+          totalDeactivated += toDeactivate.length;
+          // Registrar por CNPJ para a resposta
+          const cnpjForCompany = [...companyMap.entries()].find(([_, id]) => id === companyId)?.[0] || companyId;
+          deactivatedByCompany[cnpjForCompany] = toDeactivate.length;
+          console.log(`[sync-employees] Deactivated ${toDeactivate.length} employees for company ${companyId}`);
+        }
+      }
+    }
+
     const endTime = new Date();
 
     // Log estatísticas por empresa
     for (const [cnpj, stats] of Object.entries(byCompany)) {
       const companyName = companyNameMap.get(cnpj) || 'Unknown';
-      console.log(`[sync-employees] Company ${cnpj} (${companyName}): ${stats.created} created, ${stats.updated} updated, ${stats.failed} failed`);
+      const deactivated = deactivatedByCompany[cnpj] || 0;
+      console.log(`[sync-employees] Company ${cnpj} (${companyName}): ${stats.created} created, ${stats.updated} updated, ${stats.failed} failed, ${deactivated} deactivated`);
     }
 
     if (syncLog) {
@@ -455,15 +527,22 @@ serve(async (req) => {
         .eq('id', syncLog.id);
     }
 
-    console.log(`[sync-employees] Sync completed: ${totalCreated} created, ${totalUpdated} updated, ${totalFailed} failed`);
+    console.log(`[sync-employees] Sync completed: ${totalCreated} created, ${totalUpdated} updated, ${totalFailed} failed, ${totalDeactivated} deactivated`);
+
+    // Adicionar deactivated nas stats por empresa
+    const byCompanyWithDeactivated: Record<string, any> = {};
+    for (const [cnpj, stats] of Object.entries(byCompany)) {
+      byCompanyWithDeactivated[cnpj] = { ...stats, deactivated: deactivatedByCompany[cnpj] || 0 };
+    }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
         created: totalCreated, 
         updated: totalUpdated, 
-        failed: totalFailed, 
-        by_company: byCompany,
+        failed: totalFailed,
+        deactivated: totalDeactivated,
+        by_company: byCompanyWithDeactivated,
         errors: errors.length > 0 ? errors : undefined 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
