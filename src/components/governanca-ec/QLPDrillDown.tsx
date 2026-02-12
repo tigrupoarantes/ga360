@@ -55,9 +55,8 @@ export function QLPDrillDown() {
     if (!employees) return [];
     const map = new Map<string, { id: string; name: string; count: number }>();
     employees.forEach((e) => {
-      const key = e.company_id || "sem-empresa";
-      const name = e.companies?.name || "Sem Empresa";
-      const entry = map.get(key) || { id: key, name, count: 0 };
+      const key = e.unidade || "Sem Unidade";
+      const entry = map.get(key) || { id: key, name: key, count: 0 };
       entry.count++;
       map.set(key, entry);
     });
@@ -66,7 +65,7 @@ export function QLPDrillDown() {
 
   const departmentGroups = useMemo(() => {
     if (!employees || !selectedCompany) return [];
-    const filtered = employees.filter((e) => (e.company_id || "sem-empresa") === selectedCompany.id);
+    const filtered = employees.filter((e) => (e.unidade || "Sem Unidade") === selectedCompany.id);
     const map = new Map<string, number>();
     filtered.forEach((e) => {
       const dept = e.department || "Sem Departamento";
@@ -81,7 +80,7 @@ export function QLPDrillDown() {
     if (!employees || !selectedCompany || !selectedDepartment) return [];
     return employees.filter(
       (e) =>
-        (e.company_id || "sem-empresa") === selectedCompany.id &&
+        (e.unidade || "Sem Unidade") === selectedCompany.id &&
         (e.department || "Sem Departamento") === selectedDepartment
     );
   }, [employees, selectedCompany, selectedDepartment]);
@@ -91,14 +90,14 @@ export function QLPDrillDown() {
   const uniqueDepartments = useMemo(() => {
     if (!employees) return 0;
     const source = drillLevel >= 1 && selectedCompany
-      ? employees.filter((e) => (e.company_id || "sem-empresa") === selectedCompany.id)
+      ? employees.filter((e) => (e.unidade || "Sem Unidade") === selectedCompany.id)
       : employees;
     return new Set(source.map((e) => e.department || "Sem Departamento")).size;
   }, [employees, drillLevel, selectedCompany]);
   const uniquePositions = useMemo(() => {
     if (!employees) return 0;
     const source = drillLevel >= 1 && selectedCompany
-      ? employees.filter((e) => (e.company_id || "sem-empresa") === selectedCompany.id)
+      ? employees.filter((e) => (e.unidade || "Sem Unidade") === selectedCompany.id)
       : employees;
     return new Set(source.filter((e) => e.position).map((e) => e.position)).size;
   }, [employees, drillLevel, selectedCompany]);
@@ -106,7 +105,7 @@ export function QLPDrillDown() {
   const currentTotal = useMemo(() => {
     if (drillLevel === 0) return totalEmployees;
     if (drillLevel === 1 && selectedCompany) {
-      return employees?.filter((e) => (e.company_id || "sem-empresa") === selectedCompany.id).length || 0;
+      return employees?.filter((e) => (e.unidade || "Sem Unidade") === selectedCompany.id).length || 0;
     }
     return filteredEmployees.length;
   }, [drillLevel, totalEmployees, selectedCompany, employees, filteredEmployees]);
