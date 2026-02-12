@@ -15,6 +15,7 @@ import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2O
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { ConvertToUsersDialog } from "./ConvertToUsersDialog";
+import { ImportEmployeesDialog } from "./ImportEmployeesDialog";
 
 interface LinkedProfile {
   id: string;
@@ -298,19 +299,22 @@ export function ExternalEmployeesList() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {canViewAllCompanies && (
-              <Button 
-                size="sm" 
-                onClick={() => setConvertDialogOpen(true)}
-                disabled={convertibleCount === 0}
-              >
-                <UserPlus className="h-4 w-4 mr-2" />
-                Criar Usuários
-                {convertibleCount > 0 && (
-                  <Badge variant="secondary" className="ml-2">
-                    {convertibleCount}
-                  </Badge>
-                )}
-              </Button>
+              <>
+                <Button 
+                  size="sm" 
+                  onClick={() => setConvertDialogOpen(true)}
+                  disabled={convertibleCount === 0}
+                >
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Criar Usuários
+                  {convertibleCount > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {convertibleCount}
+                    </Badge>
+                  )}
+                </Button>
+                <ImportEmployeesDialog onComplete={() => { fetchEmployees(); fetchConvertibleCount(); }} />
+              </>
             )}
             <Button variant="outline" size="sm" onClick={relinkAllEmployees} disabled={relinkingAll}>
               {relinkingAll ? (
