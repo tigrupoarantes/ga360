@@ -153,6 +153,27 @@ interface ImportResult {
 
 type ImportMode = 'update-only' | 'full-sync';
 
+// Translate technical error messages to user-friendly Portuguese
+const translateError = (message: string, context: string): string => {
+  if (!message) return 'Erro desconhecido';
+  if (message.includes('row-level security') || message.includes('row level security'))
+    return 'Sem permissão para gravar este registro. Verifique se você tem papel de administrador.';
+  if (message.includes('duplicate key') || message.includes('unique constraint'))
+    return 'Registro duplicado — já existe um funcionário com este identificador.';
+  if (message.includes('violates foreign key'))
+    return 'Empresa ou referência informada não foi encontrada no sistema.';
+  if (message.includes('null value in column') || message.includes('not-null constraint')) {
+    const match = message.match(/column "([^"]+)"/);
+    const col = match ? match[1] : 'obrigatório';
+    return `Campo "${col}" é obrigatório e está vazio.`;
+  }
+  if (message.includes('invalid input syntax'))
+    return 'Formato de dado inválido (verifique datas, números ou campos especiais).';
+  if (message.includes('FetchError') || message.includes('Failed to fetch'))
+    return 'Falha de conexão com o servidor. Tente novamente.';
+  return message;
+};
+
 const fieldLabels: Record<string, string> = {
   full_name: 'Nome', email: 'Email', phone: 'Telefone',
   position: 'Cargo', department: 'Departamento', company_id: 'Empresa',
@@ -393,7 +414,7 @@ export function ImportEmployeesDialog({ onComplete }: ImportEmployeesDialogProps
       const row = previewData[i];
       const cpf = normalizeCpf(row.cpf);
       if (!cpf || cpf.length !== 11) {
-        result.errors.push(`Linha ${i + 2}: CPF inválido "${row.cpf}"`);
+        result.errors.push(`Linha ${i + 2}: CPF "${row.cpf}" é inválido (deve ter 11 dígitos)`);
         result.skipped++;
         setProgress(((i + 1) / previewData.length) * 100);
         continue;
@@ -459,7 +480,8 @@ export function ImportEmployeesDialog({ onComplete }: ImportEmployeesDialogProps
           result.created++;
         }
       } catch (error: any) {
-        result.errors.push(`Linha ${i + 2}: ${error.message}`);
+        const friendlyMsg = translateError(error.message, row.nome || cpf);
+        result.errors.push(`${row.nome?.toUpperCase() || cpf}: ${friendlyMsg}`);
         result.skipped++;
       }
       setProgress(((i + 1) / previewData.length) * 100);
@@ -488,7 +510,7 @@ export function ImportEmployeesDialog({ onComplete }: ImportEmployeesDialogProps
             await supabase.from('external_employees').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', emp.id);
             result.deactivated++;
           } catch (error: any) {
-            result.errors.push(`Erro ao desativar ${emp.full_name}: ${error.message}`);
+            result.errors.push(`${emp.full_name}: ${translateError(error.message, emp.full_name)}`);
           }
         }
       }
