@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { 
-  LayoutDashboard, 
-  Users, 
-  ListTodo, 
-  Calendar, 
+import {
+  LayoutDashboard,
+  Users,
+  ListTodo,
+  Calendar,
   FileText,
   ShoppingCart,
   BarChart3,
@@ -16,8 +16,8 @@ import {
   Menu,
   X,
   ChevronDown,
-  TrendingUp, 
-  Gamepad2, 
+  TrendingUp,
+  Gamepad2,
   Crosshair,
   Building,
   Bug
@@ -49,8 +49,8 @@ type NavItem = {
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { 
-    name: 'Reuniões', 
+  {
+    name: 'Reuniões',
     icon: Users,
     children: [
       { name: 'Reuniões', href: '/reunioes', icon: Users },
@@ -74,13 +74,13 @@ export function AppleNav() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isBugDialogOpen, setIsBugDialogOpen] = useState(false);
-  
+
   // Check if any child route is active
   const isChildActive = (children?: NavItem['children']) => {
     if (!children) return false;
     return children.some(child => location.pathname === child.href);
   };
-  
+
   // Initialize open state based on active routes
   const [openMobileMenus, setOpenMobileMenus] = useState<Record<string, boolean>>(() => {
     const initialState: Record<string, boolean> = {};
@@ -102,9 +102,9 @@ export function AppleNav() {
 
   const roleDisplay = role === 'super_admin' ? 'Super Admin'
     : role === 'ceo' ? 'CEO'
-    : role === 'diretor' ? 'Diretor'
-    : role === 'gerente' ? 'Gerente'
-    : 'Colaborador';
+      : role === 'diretor' ? 'Diretor'
+        : role === 'gerente' ? 'Gerente'
+          : 'Colaborador';
 
   return (
     <>
@@ -164,8 +164,8 @@ export function AppleNav() {
                   </NavLink>
                 )
               ))}
-              
-              <RoleGuard roles={['super_admin']}>
+
+              <RoleGuard permission={{ module: 'admin' }}>
                 <NavLink
                   to="/admin"
                   className={({ isActive }) =>
@@ -185,9 +185,9 @@ export function AppleNav() {
             {/* Right Section */}
             <div className="flex items-center gap-2">
               {/* Search Button */}
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 className="h-8 w-8 rounded-full"
                 onClick={() => setIsSearchOpen(!isSearchOpen)}
               >
@@ -254,9 +254,9 @@ export function AppleNav() {
               </DropdownMenu>
 
               {/* Mobile Menu Button */}
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 className="h-8 w-8 rounded-full lg:hidden"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               >
@@ -312,11 +312,11 @@ export function AppleNav() {
                             <item.icon className="h-5 w-5" />
                             {item.name}
                           </div>
-                          <ChevronDown 
+                          <ChevronDown
                             className={cn(
                               "h-4 w-4 transition-transform duration-200",
                               (openMobileMenus[item.name] || isChildActive(item.children)) && "rotate-180"
-                            )} 
+                            )}
                           />
                         </div>
                       </CollapsibleTrigger>
@@ -360,8 +360,8 @@ export function AppleNav() {
                     </NavLink>
                   )
                 ))}
-                
-                <RoleGuard roles={['super_admin']}>
+
+                <RoleGuard permission={{ module: 'admin' }}>
                   <div className="border-t border-border my-4" />
                   <NavLink
                     to="/admin"

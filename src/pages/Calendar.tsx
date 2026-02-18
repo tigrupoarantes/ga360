@@ -37,7 +37,7 @@ interface Meeting {
 const getDaysInMonth = (year: number, month: number) => {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  
+
   const days = [];
   for (let i = 0; i < firstDay; i++) {
     days.push(null);
@@ -70,14 +70,10 @@ const getStatusBadgeVariant = (status: string): "default" | "secondary" | "destr
 
 export default function Calendar() {
   const { toast } = useToast();
-  const { role } = useAuth();
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const { role, checkPermission } = useAuth();
+  // ... other state ...
 
-  const canClickMeetings = role === 'ceo' || role === 'super_admin';
+  const canClickMeetings = checkPermission('calendar', 'view');
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -140,16 +136,16 @@ export default function Calendar() {
     return meetings.filter(meeting => {
       const meetingDate = new Date(meeting.scheduled_at);
       return meetingDate.getDate() === day &&
-             meetingDate.getMonth() === month &&
-             meetingDate.getFullYear() === year;
+        meetingDate.getMonth() === month &&
+        meetingDate.getFullYear() === year;
     });
   };
 
   const today = new Date();
   const isToday = (day: number) => {
     return day === today.getDate() &&
-           month === today.getMonth() &&
-           year === today.getFullYear();
+      month === today.getMonth() &&
+      year === today.getFullYear();
   };
 
   const handleMeetingClick = (meeting: Meeting, e: React.MouseEvent) => {
@@ -217,17 +213,15 @@ export default function Calendar() {
                 return (
                   <div
                     key={index}
-                    className={`min-h-[100px] p-2 rounded-lg border transition-fast ${
-                      day
+                    className={`min-h-[100px] p-2 rounded-lg border transition-fast ${day
                         ? 'border-border hover:border-primary/50 bg-card'
                         : 'border-transparent'
-                    } ${isTodayDay ? 'border-primary bg-primary/5' : ''}`}
+                      } ${isTodayDay ? 'border-primary bg-primary/5' : ''}`}
                   >
                     {day && (
                       <>
-                        <div className={`text-sm font-medium mb-2 ${
-                          isTodayDay ? 'text-primary' : 'text-foreground'
-                        }`}>
+                        <div className={`text-sm font-medium mb-2 ${isTodayDay ? 'text-primary' : 'text-foreground'
+                          }`}>
                           {day}
                         </div>
                         <div className="space-y-1">
@@ -235,11 +229,10 @@ export default function Calendar() {
                             <div
                               key={meeting.id}
                               onClick={(e) => handleMeetingClick(meeting, e)}
-                              className={`text-xs px-2 py-1 rounded ${getMeetingColor(meeting.type)} text-white truncate flex items-center gap-1 ${
-                                canClickMeetings 
-                                  ? 'cursor-pointer hover:opacity-80 hover:ring-2 hover:ring-white/50 transition-all' 
+                              className={`text-xs px-2 py-1 rounded ${getMeetingColor(meeting.type)} text-white truncate flex items-center gap-1 ${canClickMeetings
+                                  ? 'cursor-pointer hover:opacity-80 hover:ring-2 hover:ring-white/50 transition-all'
                                   : ''
-                              }`}
+                                }`}
                               title={`${meeting.title} - ${meeting.meeting_rooms?.name || ''}`}
                             >
                               {meeting.recurrence_type !== 'none' && (
@@ -294,7 +287,7 @@ export default function Calendar() {
               {selectedMeeting?.title}
             </DialogTitle>
           </DialogHeader>
-          
+
           {selectedMeeting && (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
@@ -317,7 +310,7 @@ export default function Calendar() {
                     {format(new Date(selectedMeeting.scheduled_at), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                   </span>
                 </div>
-                
+
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Clock className="h-4 w-4" />
                   <span>

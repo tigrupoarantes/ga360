@@ -72,9 +72,10 @@ interface ExternalEmployee {
 
 export function ExternalEmployeesList() {
   const { selectedCompanyId, companies } = useCompany();
-  const { role } = useAuth();
+  const { role, hasAllCompaniesAccess } = useAuth();
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState<ExternalEmployee[]>([]);
+  // ... (keep state variables same) ...
   const [filteredEmployees, setFilteredEmployees] = useState<ExternalEmployee[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
@@ -94,7 +95,7 @@ export function ExternalEmployeesList() {
   const [deletingEmployee, setDeletingEmployee] = useState<ExternalEmployee | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Verificar se o usuário pode ver todas as empresas
-  const canViewAllCompanies = role === 'super_admin' || role === 'ceo';
+  const canViewAllCompanies = role === 'super_admin' || hasAllCompaniesAccess;
 
   useEffect(() => {
     fetchEmployees();
@@ -153,7 +154,7 @@ export function ExternalEmployeesList() {
 
       // Get last sync time
       if (data && data.length > 0) {
-        const latestSync = data.reduce((latest, emp) => 
+        const latestSync = data.reduce((latest, emp) =>
           new Date(emp.synced_at) > new Date(latest.synced_at) ? emp : latest
         );
         setLastSync(latestSync.synced_at);
@@ -189,7 +190,7 @@ export function ExternalEmployeesList() {
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(e => 
+      filtered = filtered.filter(e =>
         e.full_name.toLowerCase().includes(term) ||
         e.email?.toLowerCase().includes(term) ||
         e.registration_number?.toLowerCase().includes(term) ||
@@ -213,7 +214,7 @@ export function ExternalEmployeesList() {
     }
 
     if (linkFilter !== "all") {
-      filtered = filtered.filter(e => 
+      filtered = filtered.filter(e =>
         linkFilter === "linked" ? e.linked_profile_id !== null : e.linked_profile_id === null
       );
     }
@@ -225,9 +226,9 @@ export function ExternalEmployeesList() {
     setRelinkingAll(true);
     try {
       const { data, error } = await supabase.rpc('link_all_external_employees');
-      
+
       if (error) throw error;
-      
+
       toast.success(`${data || 0} funcionário(s) vinculado(s) com sucesso`);
       fetchEmployees();
     } catch (error) {
@@ -335,7 +336,7 @@ export function ExternalEmployeesList() {
               Funcionários Externos
             </CardTitle>
             <CardDescription>
-              {lastSync 
+              {lastSync
                 ? `Última sincronização: ${formatDistanceToNow(new Date(lastSync), { addSuffix: true, locale: ptBR })}`
                 : 'Aguardando sincronização'
               }
@@ -344,8 +345,8 @@ export function ExternalEmployeesList() {
           <div className="flex items-center gap-2 flex-wrap">
             {canViewAllCompanies && (
               <>
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   onClick={() => setConvertDialogOpen(true)}
                   disabled={convertibleCount === 0}
                 >
@@ -381,8 +382,8 @@ export function ExternalEmployeesList() {
       </CardHeader>
 
       {/* Convert to Users Dialog */}
-      <ConvertToUsersDialog 
-        open={convertDialogOpen} 
+      <ConvertToUsersDialog
+        open={convertDialogOpen}
         onOpenChange={setConvertDialogOpen}
         companyId={companyFilter !== "all" ? companyFilter : null}
         onSuccess={() => {
@@ -500,9 +501,9 @@ export function ExternalEmployeesList() {
                   <TableHead>Departamento</TableHead>
                   <TableHead>Cargo</TableHead>
                   <TableHead>Unidade</TableHead>
-                   <TableHead>Líder</TableHead>
-                    <TableHead className="text-center">Vínculo</TableHead>
-                    <TableHead className="text-center">Ações</TableHead>
+                  <TableHead>Líder</TableHead>
+                  <TableHead className="text-center">Vínculo</TableHead>
+                  <TableHead className="text-center">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

@@ -34,6 +34,7 @@ interface AuthContextType {
   cancel2FA: () => void;
   checkPermission: (module: string, action?: string) => boolean;
   permissions: UserPermission[];
+  hasAllCompaniesAccess: boolean;
 }
 
 interface UserPermission {
@@ -65,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
+  const [hasAllCompaniesAccess, setHasAllCompaniesAccess] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // 2FA state
@@ -134,9 +136,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const fetchCompanyPermissions = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_companies')
+        .select('all_companies')
+        .eq('user_id', userId)
+        .eq('all_companies', true)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 is "The result contains 0 rows" which is fine
+        console.error('Error fetching company permissions:', error);
+      }
+
+      setHasAllCompaniesAccess(data?.all_companies || false);
+    } catch (error) {
+      console.error('Error fetching company permissions:', error);
+      setHasAllCompaniesAccess(false);
+    }
+  };
+
   const checkPermission = (module: string, action: string = 'view'): boolean => {
-    // Super Admin and CEO have full access
-    if (role === 'super_admin' || role === 'ceo') return true;
+    // Super Admin has full access
+    if (role === 'super_admin') return true;
+    // CEO has full company access implicitly (for backward compatibility if needed, but we rely on DB now)
+    // if (role === 'ceo') return true; 
+
+    // Check granular permissions
+    // Super Admin has full access
+    if (role === 'super_admin') return true;
 
     // Check granular permissions
     const permission = permissions.find(p => p.module === module);
@@ -209,6 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               fetchProfile(session.user.id);
               fetchRole(session.user.id);
               fetchPermissions(session.user.id);
+              fetchCompanyPermissions(session.user.id);
               markPendingInviteAsAccepted(session.user.email);
             }, 0);
           } else {
@@ -230,6 +259,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           fetchProfile(session.user.id);
           fetchRole(session.user.id);
           fetchPermissions(session.user.id);
+          fetchCompanyPermissions(session.user.id);
         }
       }
       setLoading(false);
@@ -484,6 +514,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         verify2FACode,
         cancel2FA,
         checkPermission,
+        hasAllCompaniesAccess,
       }}
     >
       {children}

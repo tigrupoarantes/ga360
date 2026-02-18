@@ -44,17 +44,12 @@ interface MeetingRoom {
 
 export function MeetingRoomsList() {
   const { toast } = useToast();
-  const { role } = useAuth();
-  const [rooms, setRooms] = useState<MeetingRoom[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedRoom, setSelectedRoom] = useState<MeetingRoom | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [roomToDelete, setRoomToDelete] = useState<MeetingRoom | null>(null);
-  
+  const { role, checkPermission } = useAuth();
+  // ...
+
   // Verificar se pode deletar
-  const canDelete = role === 'ceo' || role === 'super_admin';
-  
+  const canDelete = checkPermission('meetings', 'delete');
+
   // Filtros
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCompany, setFilterCompany] = useState<string>("all");
@@ -126,38 +121,38 @@ export function MeetingRoomsList() {
 
   const handleDeleteRoom = async () => {
     if (!roomToDelete) return;
-    
+
     try {
       // 1. Buscar reuniões desta sala
       const { data: roomMeetings } = await supabase
         .from("meetings")
         .select("id")
         .eq("meeting_room_id", roomToDelete.id);
-      
+
       let deletedCount = 0;
       let preservedCount = 0;
-      
+
       if (roomMeetings && roomMeetings.length > 0) {
         const meetingIds = roomMeetings.map(m => m.id);
-        
+
         // 2. Identificar reuniões COM ATAs ou transcrições (preservar)
         const { data: meetingsWithAtas } = await supabase
           .from("meeting_atas")
           .select("meeting_id")
           .in("meeting_id", meetingIds);
-        
+
         const { data: meetingsWithTranscriptions } = await supabase
           .from("meeting_transcriptions")
           .select("meeting_id")
           .in("meeting_id", meetingIds);
-        
+
         const meetingsToPreserve = new Set([
           ...(meetingsWithAtas || []).map(a => a.meeting_id),
           ...(meetingsWithTranscriptions || []).map(t => t.meeting_id)
         ]);
-        
+
         preservedCount = meetingsToPreserve.size;
-        
+
         // 3. Desvincular reuniões com histórico da sala
         if (meetingsToPreserve.size > 0) {
           await supabase
@@ -165,23 +160,23 @@ export function MeetingRoomsList() {
             .update({ meeting_room_id: null })
             .in("id", Array.from(meetingsToPreserve));
         }
-        
+
         // 4. Identificar reuniões SEM histórico (excluir)
         const meetingsToDelete = meetingIds.filter(id => !meetingsToPreserve.has(id));
         deletedCount = meetingsToDelete.length;
-        
+
         if (meetingsToDelete.length > 0) {
           // Excluir dados relacionados na ordem correta
           await supabase.from("meeting_reminders").delete().in("meeting_id", meetingsToDelete);
           await supabase.from("meeting_tasks").delete().in("meeting_id", meetingsToDelete);
           await supabase.from("meeting_agendas").delete().in("meeting_id", meetingsToDelete);
           await supabase.from("meeting_participants").delete().in("meeting_id", meetingsToDelete);
-          
+
           // Excluir reuniões
           await supabase.from("meetings").delete().in("id", meetingsToDelete);
         }
       }
-      
+
       // 5. Excluir a sala
       const { error } = await supabase
         .from("meeting_rooms")
@@ -193,10 +188,10 @@ export function MeetingRoomsList() {
       const messages = [];
       if (deletedCount > 0) messages.push(`${deletedCount} reunião(ões) excluída(s)`);
       if (preservedCount > 0) messages.push(`${preservedCount} reunião(ões) com histórico preservada(s)`);
-      
+
       toast({
         title: "Sala excluída",
-        description: messages.length > 0 
+        description: messages.length > 0
           ? `Sala excluída. ${messages.join(", ")}.`
           : "Sala de reunião excluída com sucesso.",
       });
@@ -231,12 +226,12 @@ export function MeetingRoomsList() {
       const matchesSearch = room.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCompany = filterCompany === "all" || room.companies?.name === filterCompany;
       const matchesArea = filterArea === "all" || room.areas?.name === filterArea;
-      const matchesStatus = filterStatus === "all" || 
+      const matchesStatus = filterStatus === "all" ||
         (filterStatus === "active" && room.is_active) ||
         (filterStatus === "inactive" && !room.is_active);
-      const matchesPlatform = filterPlatform === "all" || 
+      const matchesPlatform = filterPlatform === "all" ||
         (room.platform || "teams") === filterPlatform;
-      
+
       return matchesSearch && matchesCompany && matchesArea && matchesStatus && matchesPlatform;
     });
   }, [rooms, searchTerm, filterCompany, filterArea, filterStatus, filterPlatform]);
@@ -343,7 +338,7 @@ export function MeetingRoomsList() {
         {filteredRooms.map((room) => {
           const platform = (room.platform || "teams") as MeetingPlatform;
           const platformInfo = platformConfig[platform];
-          
+
           return (
             <Card key={room.id}>
               <CardHeader>
@@ -365,9 +360,9 @@ export function MeetingRoomsList() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
-                    <Badge 
+                    <Badge
                       variant="outline"
-                      style={{ 
+                      style={{
                         borderColor: platformInfo.color,
                         color: platformInfo.color,
                       }}

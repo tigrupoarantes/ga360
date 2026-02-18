@@ -105,9 +105,15 @@ export default function AdminOrganization() {
 
       fetchData();
     } catch (error: any) {
+      let errorMessage = error.message;
+
+      if (error.message?.includes('profiles_company_id_fkey')) {
+        errorMessage = 'Não é possível excluir esta empresa pois existem usuários vinculados a ela. Remova ou transfira os usuários antes de excluir.';
+      }
+
       toast({
         title: 'Erro ao excluir empresa',
-        description: error.message,
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
