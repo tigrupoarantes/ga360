@@ -190,7 +190,7 @@ serve(async (req) => {
 
     const emailConfig = emailConfigData?.value as unknown as EmailConfig | null;
     const fromName = emailConfig?.from_name || 'GA 360';
-    const APP_URL = 'https://ga360.lovable.app';
+    const APP_URL = appUrl || Deno.env.get('PUBLIC_SITE_URL') || 'http://localhost:3000';
     const registrationUrl = `${APP_URL}/auth?invite=${invite.token}`;
 
     if (!emailConfig?.smtp?.host) {

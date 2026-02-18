@@ -1,9 +1,9 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { 
-  LayoutDashboard, 
-  Users, 
-  ListTodo, 
-  Calendar, 
+import {
+  LayoutDashboard,
+  Users,
+  ListTodo,
+  Calendar,
   FileText,
   ShoppingCart,
   BarChart3,
@@ -38,8 +38,8 @@ type NavItem = {
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { 
-    name: 'Reuniões', 
+  {
+    name: 'Reuniões',
     icon: Users,
     children: [
       { name: 'Reuniões', href: '/reunioes', icon: Users },
@@ -48,8 +48,8 @@ const navigation: NavItem[] = [
   },
   { name: 'Processos', href: '/processos', icon: FileText },
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
-  { 
-    name: 'Governança EC', 
+  {
+    name: 'Governança EC',
     icon: Building,
     children: [
       { name: 'Home', href: '/governanca-ec', icon: LayoutDashboard },
@@ -72,13 +72,13 @@ export function Sidebar() {
   const location = useLocation();
   const { profile, role, signOut } = useAuth();
   const { selectedCompanyId, setSelectedCompanyId, companies, setCompanies } = useCompany();
-  
+
   // Check if any child route is active
   const isChildActive = (children?: NavItem['children']) => {
     if (!children) return false;
     return children.some(child => location.pathname === child.href);
   };
-  
+
   // Initialize open state based on active routes
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>(() => {
     const initialState: Record<string, boolean> = {};
@@ -97,12 +97,12 @@ export function Sidebar() {
         .select("*")
         .eq("is_active", true)
         .order("name");
-      
+
       if (data) {
         setCompanies(data);
       }
     };
-    
+
     fetchCompanies();
   }, [setCompanies]);
 
@@ -116,18 +116,18 @@ export function Sidebar() {
 
   const roleDisplay = role === 'super_admin' ? 'Super Admin'
     : role === 'ceo' ? 'CEO'
-    : role === 'diretor' ? 'Diretor'
-    : role === 'gerente' ? 'Gerente'
-    : 'Colaborador';
+      : role === 'diretor' ? 'Diretor'
+        : role === 'gerente' ? 'Gerente'
+          : 'Colaborador';
 
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 bg-sidebar border-r border-sidebar-border animate-fade-in">
       <div className="flex h-full flex-col">
         {/* Logo */}
         <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
-          <img 
-            src={logoIcon} 
-            alt="CRESCER+" 
+          <img
+            src={logoIcon}
+            alt="CRESCER+"
             className="h-10 w-10 object-contain"
           />
           <div>
@@ -178,11 +178,11 @@ export function Sidebar() {
                       <item.icon className="h-5 w-5 flex-shrink-0" />
                       <span>{item.name}</span>
                     </div>
-                    <ChevronDown 
+                    <ChevronDown
                       className={cn(
                         "h-4 w-4 transition-transform duration-200",
                         (openMenus[item.name] || isChildActive(item.children)) && "rotate-180"
-                      )} 
+                      )}
                     />
                   </div>
                 </CollapsibleTrigger>
@@ -225,7 +225,7 @@ export function Sidebar() {
             )
           ))}
 
-          <RoleGuard roles={['super_admin']}>
+          <RoleGuard permission={{ module: 'admin', action: 'view' }}>
             <div className="my-4 border-t border-sidebar-border" />
             {ceoNavigation.map((item) => (
               <NavLink

@@ -32,6 +32,16 @@ interface AuthContextType {
   send2FACode: (method: 'email' | 'whatsapp') => Promise<{ error?: string; destination?: string; expiresAt?: string }>;
   verify2FACode: (code: string) => Promise<{ error?: string }>;
   cancel2FA: () => void;
+  checkPermission: (module: string, action?: string) => boolean;
+  permissions: UserPermission[];
+}
+
+interface UserPermission {
+  module: string;
+  can_view: boolean;
+  can_create: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -54,15 +64,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<UserPermission[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // 2FA state
   const [requires2FA, setRequires2FA] = useState(false);
   const [pending2FAUserId, setPending2FAUserId] = useState<string | null>(null);
   const [pending2FAEmail, setPending2FAEmail] = useState<string | null>(null);
   const [pending2FAHasPhone, setPending2FAHasPhone] = useState(false);
   const [pendingSession, setPendingSession] = useState<Session | null>(null);
-  
+
   const { toast } = useToast();
 
   const fetchProfile = async (userId: string) => {
@@ -96,10 +107,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const fetchPermissions = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_permissions')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error fetching permissions:', error);
+        return;
+      }
+
+      if (data) {
+        setPermissions(data.map(p => ({
+          module: p.module,
+          can_view: p.can_view,
+          can_create: p.can_create,
+          can_edit: p.can_edit,
+          can_delete: p.can_delete
+        })));
+      }
+    } catch (error) {
+      console.error('Error fetching permissions:', error);
+      setPermissions([]);
+    }
+  };
+
+  const checkPermission = (module: string, action: string = 'view'): boolean => {
+    // Super Admin and CEO have full access
+    if (role === 'super_admin' || role === 'ceo') return true;
+
+    // Check granular permissions
+    const permission = permissions.find(p => p.module === module);
+    if (!permission) return false;
+
+    switch (action) {
+      case 'view': return permission.can_view;
+      case 'create': return permission.can_create;
+      case 'edit': return permission.can_edit;
+      case 'delete': return permission.can_delete;
+      default: return false;
+    }
+  };
+
   const fetchRole = async (userId: string) => {
     try {
       console.log('🔍 Buscando roles para userId:', userId);
-      
+
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
@@ -109,14 +164,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error('❌ Erro ao buscar roles:', error);
         throw error;
       }
-      
+
       console.log('✅ Roles encontradas no banco:', data);
-      
+
       if (data && data.length > 0) {
         // Extrair roles
         const roles = data.map(r => r.role as string);
         console.log('📋 Roles extraídas:', roles);
-        
+
         // Ordenar por prioridade
         const sortedRoles = roles.sort((a, b) => {
           const priorityA = ROLE_PRIORITY[a] ?? 99;
@@ -124,10 +179,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log(`⚖️ Comparando: ${a}(prioridade ${priorityA}) vs ${b}(prioridade ${priorityB})`);
           return priorityA - priorityB;
         });
-        
+
         console.log('🎯 Roles ordenadas:', sortedRoles);
         console.log('✨ Role selecionada (maior prioridade):', sortedRoles[0]);
-        
+
         setRole(sortedRoles[0]);
       } else {
         console.log('⚠️ Nenhuma role encontrada para o usuário');
@@ -153,11 +208,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setTimeout(() => {
               fetchProfile(session.user.id);
               fetchRole(session.user.id);
+              fetchPermissions(session.user.id);
               markPendingInviteAsAccepted(session.user.email);
             }, 0);
           } else {
             setProfile(null);
             setRole(null);
+            setPermissions([]);
           }
         }
       }
@@ -168,10 +225,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!requires2FA) {
         setSession(session);
         setUser(session?.user ?? null);
-        
+
         if (session?.user) {
           fetchProfile(session.user.id);
           fetchRole(session.user.id);
+          fetchPermissions(session.user.id);
         }
       }
       setLoading(false);
@@ -209,23 +267,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           return { error: null };
         }
-        
+
         console.log('🔐 Login bem-sucedido, iniciando 2FA...');
-        
+
         // Buscar perfil para verificar se tem telefone
         const profileData = await fetchProfile(data.user.id);
         const hasPhone = !!profileData?.phone;
-        
+
         // Fazer signOut silencioso para não liberar acesso ainda
         await supabase.auth.signOut();
-        
+
         // Configurar estado 2FA
         setPending2FAUserId(data.user.id);
         setPending2FAEmail(data.user.email || email);
         setPending2FAHasPhone(hasPhone);
         setPendingSession(data.session);
         setRequires2FA(true);
-        
+
         return { error: null };
       }
 
@@ -254,7 +312,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: data.error };
       }
 
-      return { 
+      return {
         destination: data.destination,
         expiresAt: data.expiresAt,
       };
@@ -285,14 +343,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Código verificado com sucesso - restaurar sessão
       console.log('✅ Código 2FA verificado, restaurando sessão...');
-      
+
       // Limpar estado 2FA
       setRequires2FA(false);
       setPending2FAUserId(null);
       setPending2FAEmail(null);
       setPending2FAHasPhone(false);
       setPendingSession(null);
-      
+
       // Forçar nova verificação de sessão (o usuário precisará fazer login novamente)
       // Isso é uma limitação - idealmente manteríamos a sessão, mas por segurança
       // fazemos o usuário relogar após 2FA verificado
@@ -304,7 +362,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Refazer login automaticamente usando credenciais armazenadas temporariamente
       // Como não temos a senha, pedimos para o usuário clicar em entrar novamente
       // Alternativamente, podemos armazenar um token de sessão
-      
+
       return {};
     } catch (error: any) {
       console.error('Erro ao verificar código 2FA:', error);
@@ -370,7 +428,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       setRole(null);
       cancel2FA();
-      
+
       toast({
         title: 'Logout realizado',
         description: 'Você foi desconectado com sucesso.',
@@ -412,6 +470,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         profile,
         role,
+        permissions,
         loading,
         requires2FA,
         pending2FAUserId,
@@ -424,6 +483,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         send2FACode,
         verify2FACode,
         cancel2FA,
+        checkPermission,
       }}
     >
       {children}

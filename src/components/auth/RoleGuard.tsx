@@ -3,13 +3,25 @@ import { useAuth } from '@/contexts/AuthContext';
 
 interface RoleGuardProps {
   children: ReactNode;
-  roles: string[];
+  roles?: string[];
+  permission?: {
+    module: string;
+    action?: string;
+  };
 }
 
-export function RoleGuard({ children, roles }: RoleGuardProps) {
-  const { role } = useAuth();
+export function RoleGuard({ children, roles, permission }: RoleGuardProps) {
+  const { role, checkPermission } = useAuth();
 
-  if (!role || !roles.includes(role)) {
+  const hasRoleAccess = roles ? (role && roles.includes(role)) : false;
+  const hasPermissionAccess = permission ? checkPermission(permission.module, permission.action) : false;
+
+  // If neither prop provided, deny (or maybe allow? safer to deny)
+  if (!roles && !permission) return null;
+
+  // If either requirement is met, allow access
+  // Note: checkPermission already returns true for Super Admin/CEO
+  if (!hasRoleAccess && !hasPermissionAccess) {
     return null;
   }
 

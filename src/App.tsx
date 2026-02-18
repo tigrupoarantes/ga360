@@ -55,253 +55,253 @@ const App = () => (
           <AuthProvider>
             <CompanyProvider>
               <Routes>
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/confirm-attendance" element={<ConfirmAttendance />} />
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/dashboard/me"
-                element={
-                  <ProtectedRoute>
-                    <DashboardMe />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/reunioes"
-                element={
-                  <ProtectedRoute>
-                    <Meetings />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/reunioes/:id/executar"
-                element={
-                  <ProtectedRoute>
-                    <MeetingExecution />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/processos"
-                element={
-                  <ProtectedRoute>
-                    <Processes />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/tarefas"
-                element={
-                  <ProtectedRoute>
-                    <Tasks />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/calendario"
-                element={
-                  <ProtectedRoute>
-                    <Calendar />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/trade"
-                element={
-                  <ProtectedRoute>
-                    <Trade />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/okrs"
-                element={
-                  <ProtectedRoute>
-                    <OKRs />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/analytics"
-                element={
-                  <ProtectedRoute>
-                    <Analytics />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/gamificacao"
-                element={
-                  <ProtectedRoute>
-                    <Gamification />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/relatorios"
-                element={
-                  <ProtectedRoute>
-                    <Reports />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <Admin />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/estrutura"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminOrganization />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/areas"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminAreas />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/users"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminUsers />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/empresas"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminCompanies />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/permissions"
-                element={
-                  <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminPermissions />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/settings"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminSettings />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/employees"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminEmployees />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/governanca-ec"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminGovernancaEC />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/datalake"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminDatalake />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/bugs"
-                element={
-              <ProtectedRoute allowedRoles={['super_admin']}>
-                    <AdminBugReports />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/governanca-ec"
-                element={
-                  <ProtectedRoute>
-                    <GovernancaEC />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/governanca-ec/:areaSlug"
-                element={
-                  <ProtectedRoute>
-                    <GovernancaECArea />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/governanca-ec/:areaSlug/:cardId"
-                element={
-                  <ProtectedRoute>
-                    <GovernancaECCardDetail />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/governanca-ec/pessoas-cultura/qlp"
-                element={
-                  <ProtectedRoute>
-                    <QLPPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/governanca-ec/auditoria/estoque"
-                element={
-                  <ProtectedRoute>
-                    <StockAuditStart />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/governanca-ec/auditoria/estoque/:auditId"
-                element={
-                  <ProtectedRoute>
-                    <StockAuditExecution />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/profile"
-                element={
-                  <ProtectedRoute>
-                    <Profile />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/change-password" element={<ChangePassword />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/confirm-attendance" element={<ConfirmAttendance />} />
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dashboard/me"
+                  element={
+                    <ProtectedRoute>
+                      <DashboardMe />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reunioes"
+                  element={
+                    <ProtectedRoute>
+                      <Meetings />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reunioes/:id/executar"
+                  element={
+                    <ProtectedRoute>
+                      <MeetingExecution />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/processos"
+                  element={
+                    <ProtectedRoute>
+                      <Processes />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/tarefas"
+                  element={
+                    <ProtectedRoute>
+                      <Tasks />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/calendario"
+                  element={
+                    <ProtectedRoute>
+                      <Calendar />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/trade"
+                  element={
+                    <ProtectedRoute>
+                      <Trade />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/okrs"
+                  element={
+                    <ProtectedRoute>
+                      <OKRs />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/analytics"
+                  element={
+                    <ProtectedRoute>
+                      <Analytics />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/gamificacao"
+                  element={
+                    <ProtectedRoute>
+                      <Gamification />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/relatorios"
+                  element={
+                    <ProtectedRoute>
+                      <Reports />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <Admin />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/estrutura"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminOrganization />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/areas"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminAreas />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/users"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminUsers />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/empresas"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminCompanies />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/permissions"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminPermissions />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/settings"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminSettings />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/employees"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminEmployees />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/governanca-ec"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminGovernancaEC />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/datalake"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminDatalake />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/bugs"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                      <AdminBugReports />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec"
+                  element={
+                    <ProtectedRoute>
+                      <GovernancaEC />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/:areaSlug"
+                  element={
+                    <ProtectedRoute>
+                      <GovernancaECArea />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/:areaSlug/:cardId"
+                  element={
+                    <ProtectedRoute>
+                      <GovernancaECCardDetail />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/pessoas-cultura/qlp"
+                  element={
+                    <ProtectedRoute>
+                      <QLPPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/auditoria/estoque"
+                  element={
+                    <ProtectedRoute>
+                      <StockAuditStart />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/auditoria/estoque/:auditId"
+                  element={
+                    <ProtectedRoute>
+                      <StockAuditExecution />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/profile"
+                  element={
+                    <ProtectedRoute>
+                      <Profile />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/change-password" element={<ChangePassword />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
             </CompanyProvider>
           </AuthProvider>
         </BrowserRouter>
