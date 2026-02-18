@@ -12,10 +12,10 @@ import { ECComments } from "./ECComments";
 import { ECCardTasks } from "./ECCardTasks";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { 
-  FileText, 
-  Database, 
-  MessageSquare, 
+import {
+  FileText,
+  Database,
+  MessageSquare,
   ClipboardList,
   Calendar,
   User,
@@ -27,6 +27,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCardPermissions } from "@/hooks/useCardPermissions";
 
 interface ECCardDetailProps {
   card: any;
@@ -35,6 +36,7 @@ interface ECCardDetailProps {
 
 export function ECCardDetail({ card, initialTab = 'summary' }: ECCardDetailProps) {
   const { user } = useAuth();
+  const { hasCardPermission } = useCardPermissions();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState(initialTab);
 
@@ -47,7 +49,7 @@ export function ECCardDetail({ card, initialTab = 'summary' }: ECCardDetailProps
         .select('*')
         .eq('card_id', card.id)
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
       return data;
     },
@@ -65,7 +67,7 @@ export function ECCardDetail({ card, initialTab = 'summary' }: ECCardDetailProps
         `)
         .eq('card_id', card.id)
         .eq('is_enabled', true);
-      
+
       if (error) throw error;
       return data;
     },
@@ -90,7 +92,7 @@ export function ECCardDetail({ card, initialTab = 'summary' }: ECCardDetailProps
           })
           .select()
           .single();
-        
+
         if (error) throw error;
         return data;
       }
@@ -105,7 +107,7 @@ export function ECCardDetail({ card, initialTab = 'summary' }: ECCardDetailProps
         .eq('id', currentRecord.id)
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },
@@ -163,13 +165,15 @@ export function ECCardDetail({ card, initialTab = 'summary' }: ECCardDetailProps
             </div>
 
             {currentRecord?.status !== 'completed' && currentRecord?.status !== 'reviewed' && (
-              <Button
-                onClick={() => completeMutation.mutate()}
-                disabled={completeMutation.isPending}
-              >
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Marcar Concluído
-              </Button>
+              (hasCardPermission(card.id, 'fill') || hasCardPermission(card.id, 'manage')) && (
+                <Button
+                  onClick={() => completeMutation.mutate()}
+                  disabled={completeMutation.isPending}
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Marcar Concluído
+                </Button>
+              )
             )}
           </div>
         </div>
@@ -264,16 +268,16 @@ export function ECCardDetail({ card, initialTab = 'summary' }: ECCardDetailProps
         </TabsContent>
 
         <TabsContent value="manual">
-          <ECManualForm 
-            card={card} 
-            record={currentRecord} 
+          <ECManualForm
+            card={card}
+            record={currentRecord}
           />
         </TabsContent>
 
         <TabsContent value="datalake">
-          <ECDatalakeViewer 
-            cardId={card.id} 
-            bindings={bindings || []} 
+          <ECDatalakeViewer
+            cardId={card.id}
+            bindings={bindings || []}
             record={currentRecord}
           />
         </TabsContent>

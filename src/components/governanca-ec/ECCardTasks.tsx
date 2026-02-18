@@ -72,12 +72,17 @@ const statusConfig: Record<TaskStatus, { label: string; color: string }> = {
   cancelled: { label: 'Cancelada', color: 'bg-muted text-muted-foreground' },
 };
 
+import { useCardPermissions } from "@/hooks/useCardPermissions";
+
 export function ECCardTasks({ cardId, recordId }: ECCardTasksProps) {
   const queryClient = useQueryClient();
+  const { hasCardPermission } = useCardPermissions();
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [formOpen, setFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null);
+
+  const canEdit = hasCardPermission(cardId, 'fill') || hasCardPermission(cardId, 'manage');
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ['ec-card-tasks', cardId, statusFilter],
@@ -186,35 +191,37 @@ export function ECCardTasks({ cardId, recordId }: ECCardTasksProps) {
             </Badge>
           )}
         </div>
-        <Button onClick={() => setFormOpen(true)} size="sm">
-          <Plus className="h-4 w-4 mr-2" />
-          Nova Tarefa
-        </Button>
+        {canEdit && (
+          <Button onClick={() => setFormOpen(true)} size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Nova Tarefa
+          </Button>
+        )}
       </div>
 
       {tasks?.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <p>Nenhuma tarefa encontrada</p>
-          <p className="text-sm mt-1">Clique em "Nova Tarefa" para adicionar</p>
+          {canEdit && <p className="text-sm mt-1">Clique em "Nova Tarefa" para adicionar</p>}
         </div>
       ) : (
         <div className="space-y-2">
           {tasks?.map((task) => (
             <div
               key={task.id}
-              className={`flex items-start gap-3 p-4 rounded-lg border transition-colors ${
-                task.status === 'completed' ? 'bg-muted/50' : 'bg-card hover:bg-accent/50'
-              }`}
+              className={`flex items-start gap-3 p-4 rounded-lg border transition-colors ${task.status === 'completed' ? 'bg-muted/50' : 'bg-card hover:bg-accent/50'
+                }`}
             >
               <Checkbox
                 checked={task.status === 'completed'}
-                onCheckedChange={() => toggleStatusMutation.mutate({ 
-                  taskId: task.id, 
-                  currentStatus: task.status 
+                onCheckedChange={() => toggleStatusMutation.mutate({
+                  taskId: task.id,
+                  currentStatus: task.status
                 })}
                 className="mt-1"
+                disabled={!canEdit}
               />
-              
+
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
@@ -227,40 +234,41 @@ export function ECCardTasks({ cardId, recordId }: ECCardTasksProps) {
                       </p>
                     )}
                   </div>
-                  
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => handleEditTask(task)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={() => setDeleteTaskId(task.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+
+                  {canEdit && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleEditTask(task)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => setDeleteTaskId(task.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3 mt-3 flex-wrap">
                   <Badge className={priorityConfig[task.priority].color}>
                     {priorityConfig[task.priority].label}
                   </Badge>
-                  
+
                   <Badge className={statusConfig[task.status].color}>
                     {statusConfig[task.status].label}
                   </Badge>
 
                   {task.due_date && (
-                    <div className={`flex items-center gap-1 text-sm ${
-                      isOverdue(task.due_date, task.status) ? 'text-destructive' : 'text-muted-foreground'
-                    }`}>
+                    <div className={`flex items-center gap-1 text-sm ${isOverdue(task.due_date, task.status) ? 'text-destructive' : 'text-muted-foreground'
+                      }`}>
                       {isOverdue(task.due_date, task.status) && <AlertCircle className="h-3 w-3" />}
                       <Calendar className="h-3 w-3" />
                       <span>{format(new Date(task.due_date), "dd/MM/yyyy", { locale: ptBR })}</span>

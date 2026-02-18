@@ -26,12 +26,16 @@ interface ECManualFormProps {
   record?: any;
 }
 
+import { useCardPermissions } from "@/hooks/useCardPermissions";
+
 export function ECManualForm({ card, record }: ECManualFormProps) {
   const { user } = useAuth();
+  const { hasCardPermission } = useCardPermissions();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [checklistState, setChecklistState] = useState<Record<string, boolean>>({});
 
+  const canEdit = hasCardPermission(card.id, 'fill') || hasCardPermission(card.id, 'manage');
   const manualFieldsSchema: ManualFieldSchema[] = card.manual_fields_schema_json || [];
   const checklistTemplate: { id: string; text: string; required?: boolean }[] = card.checklist_template_json || [];
 
@@ -67,7 +71,7 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
             updated_at: new Date().toISOString(),
           })
           .eq('id', record.id);
-        
+
         if (error) throw error;
       } else {
         const competence = format(new Date(), 'yyyy-MM');
@@ -80,7 +84,7 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
             checklist_json: checklistData,
             status: 'in_progress',
           });
-        
+
         if (error) throw error;
       }
     },
@@ -114,6 +118,7 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
             onChange={(e) => handleFieldChange(field.name, e.target.value)}
             placeholder={field.placeholder}
             rows={3}
+            disabled={!canEdit}
           />
         );
       case 'number':
@@ -124,6 +129,7 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
             value={value}
             onChange={(e) => handleFieldChange(field.name, e.target.value)}
             placeholder={field.placeholder}
+            disabled={!canEdit}
           />
         );
       case 'date':
@@ -133,6 +139,7 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
             type="date"
             value={value}
             onChange={(e) => handleFieldChange(field.name, e.target.value)}
+            disabled={!canEdit}
           />
         );
       case 'checkbox':
@@ -142,6 +149,7 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
               id={field.name}
               checked={!!value}
               onCheckedChange={(checked) => handleFieldChange(field.name, checked)}
+              disabled={!canEdit}
             />
             <label htmlFor={field.name} className="text-sm">
               {field.placeholder || 'Sim'}
@@ -156,6 +164,7 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
             value={value}
             onChange={(e) => handleFieldChange(field.name, e.target.value)}
             placeholder={field.placeholder}
+            disabled={!canEdit}
           />
         );
     }
@@ -163,6 +172,12 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
 
   return (
     <div className="space-y-6">
+      {!canEdit && (
+        <div className="bg-muted/50 p-4 rounded-md text-sm text-center text-muted-foreground">
+          Modo visualização: Você não tem permissão para editar este card.
+        </div>
+      )}
+
       {/* Campos dinâmicos */}
       {manualFieldsSchema.length > 0 ? (
         <Card className="p-6">
@@ -183,7 +198,7 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
         <Card className="p-6">
           <h3 className="font-semibold mb-4">Campos do Card</h3>
           <p className="text-muted-foreground text-sm">
-            Este card não possui campos manuais configurados. 
+            Este card não possui campos manuais configurados.
             Acesse Admin &gt; Governança EC para configurar os campos.
           </p>
         </Card>
@@ -200,9 +215,10 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
                   id={`checklist-${item.id}`}
                   checked={checklistState[item.id] || false}
                   onCheckedChange={(checked) => handleChecklistChange(item.id, !!checked)}
+                  disabled={!canEdit}
                 />
-                <label 
-                  htmlFor={`checklist-${item.id}`} 
+                <label
+                  htmlFor={`checklist-${item.id}`}
                   className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 >
                   {item.text}
@@ -222,23 +238,26 @@ export function ECManualForm({ card, record }: ECManualFormProps) {
           onChange={(e) => handleFieldChange('observations', e.target.value)}
           placeholder="Adicione observações relevantes sobre este período..."
           rows={4}
+          disabled={!canEdit}
         />
       </Card>
 
       {/* Botão salvar */}
-      <div className="flex justify-end">
-        <Button
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
-        >
-          {saveMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4 mr-2" />
-          )}
-          Salvar Atualização
-        </Button>
-      </div>
+      {canEdit && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+          >
+            {saveMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-2" />
+            )}
+            Salvar Atualização
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
