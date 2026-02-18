@@ -25,21 +25,12 @@ const DEFAULT_CONFIG: OpenAIConfig = {
 };
 
 const CHAT_MODELS = [
-  // Modelos GPT-5 (mais recentes)
-  { value: 'gpt-5.2', label: 'GPT-5.2 (Último Lançamento)' },
-  { value: 'gpt-5', label: 'GPT-5' },
-  { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
-  { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
-  // Modelos GPT-4.1 / o-series
-  { value: 'gpt-4.1', label: 'GPT-4.1 (Mais Avançado)' },
-  { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
-  { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano (Ultra-leve)' },
-  { value: 'o4-mini', label: 'O4 Mini (Raciocínio)' },
-  { value: 'o3', label: 'O3 (Raciocínio Avançado)' },
-  { value: 'o3-mini', label: 'O3 Mini (Raciocínio Econômico)' },
-  // Modelos GPT-4o
-  { value: 'gpt-4o', label: 'GPT-4o (Recomendado)' },
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Econômico)' },
+  // Modelos GPT-4o (Recomendados)
+  { value: 'gpt-4o', label: 'GPT-4o (Mais Rápido e Inteligente)' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Custo-Benefício)' },
+  // Modelos o1 (Raciocínio Avançado)
+  { value: 'o1-preview', label: 'o1 Preview (Raciocínio Complexo)' },
+  { value: 'o1-mini', label: 'o1 Mini (Raciocínio Rápido)' },
   // Modelos legados
   { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
   { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (Legado)' },
@@ -47,8 +38,6 @@ const CHAT_MODELS = [
 
 const TRANSCRIPTION_MODELS = [
   { value: 'whisper-1', label: 'Whisper-1 (Padrão)' },
-  { value: 'gpt-4o-transcribe', label: 'GPT-4o Transcribe (Mais Preciso)' },
-  { value: 'gpt-4o-mini-transcribe', label: 'GPT-4o Mini Transcribe' },
 ];
 
 export function OpenAIConfigSection() {
@@ -246,9 +235,9 @@ export function OpenAIConfigSection() {
           </div>
           <p className="text-xs text-muted-foreground flex items-center gap-1">
             Obtenha sua API key em{' '}
-            <a 
-              href="https://platform.openai.com/api-keys" 
-              target="_blank" 
+            <a
+              href="https://platform.openai.com/api-keys"
+              target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline inline-flex items-center gap-1"
             >
