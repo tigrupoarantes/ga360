@@ -3,9 +3,60 @@ import { BackButton } from "@/components/ui/back-button";
 import { StockAuditWizard } from "@/components/stock-audit/StockAuditWizard";
 import { AuditHistory } from "@/components/stock-audit/AuditHistory";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, History } from "lucide-react";
+import { Plus, History, ShieldAlert } from "lucide-react";
+import { useCardPermissions } from "@/hooks/useCardPermissions";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/external-client";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 
 export default function StockAuditStart() {
+  const navigate = useNavigate();
+  const { hasCardPermission, isLoading: permissionsLoading } = useCardPermissions();
+
+  // Find the Stock Audit card to check permissions
+  const { data: stockAuditCard, isLoading: cardLoading } = useQuery({
+    queryKey: ['ec-stock-audit-card'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ec_cards')
+        .select('id, title')
+        .or('title.ilike.%auditoria de estoque%,title.ilike.%stock audit%')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  if (permissionsLoading || cardLoading) {
+    return (
+      <MainLayout>
+        <div className="space-y-6">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-96 w-full" />
+        </div>
+      </MainLayout>
+    );
+  }
+
+  // Check card-level permission if we found the Stock Audit card
+  if (stockAuditCard && !hasCardPermission(stockAuditCard.id, 'view')) {
+    return (
+      <MainLayout>
+        <div className="flex flex-col items-center justify-center h-64 gap-4">
+          <ShieldAlert className="h-12 w-12 text-muted-foreground" />
+          <p className="text-muted-foreground text-lg">Você não tem permissão para acessar a Auditoria de Estoque</p>
+          <Button variant="outline" onClick={() => navigate('/governanca-ec')}>
+            Voltar para Governança
+          </Button>
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <div className="space-y-6">

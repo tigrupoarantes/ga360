@@ -32,11 +32,11 @@ export function useCardPermissions() {
   const isSuperAdmin = role === 'super_admin';
 
   const hasCardPermission = (cardId: string, permission: 'view' | 'fill' | 'review' | 'manage'): boolean => {
+    // Only super_admin bypasses card-level permissions
     if (isSuperAdmin) return true;
-    if (checkPermission('governanca', 'edit')) return true; // Editor of module has full access
 
-    // View access to module does NOT automatically mean they can view all cards anymore
-    // They must have specific permissions or be responsible/backup (handled in UI/getVisibleCardIds)
+    // Module-level access does NOT grant access to all cards
+    // Users must have explicit card-level permissions in ec_card_permissions
 
     const perm = permissions?.find(p => p.card_id === cardId);
     if (!perm) return false;
@@ -51,9 +51,8 @@ export function useCardPermissions() {
   };
 
   const getVisibleCardIds = (): string[] | null => {
-    // If super admin or has module EDIT access, return null (all visible)
-    // Module VIEW access no longer grants visibility to all cards automatically
-    if (isSuperAdmin || checkPermission('governanca', 'edit')) {
+    // Only super_admin sees all cards
+    if (isSuperAdmin) {
       return null;
     }
 

@@ -80,7 +80,12 @@ export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps
     ? `${card.responsible.first_name?.[0] || ''}${card.responsible.last_name?.[0] || ''}`
     : '?';
 
+  const canView = hasCardPermission(card.id, 'view');
+
   const handleClick = () => {
+    // Block navigation if user doesn't have view permission
+    if (!canView) return;
+
     // Special handling for "Auditoria de Estoque" card
     const isStockAuditCard = card.title.toLowerCase().includes('auditoria de estoque') || 
                               card.title.toLowerCase().includes('estoque') && 
@@ -144,7 +149,7 @@ export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps
   if (viewMode === 'list') {
     return (
       <Card 
-        className="p-4 cursor-pointer hover:border-primary/50 transition-all"
+        className={`p-4 transition-all ${canView ? 'cursor-pointer hover:border-primary/50' : 'opacity-50 cursor-not-allowed'}`}
         onClick={handleClick}
       >
         <div className="flex items-center justify-between gap-4">
@@ -200,7 +205,7 @@ export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps
   // Grid view
   return (
     <Card 
-      className="p-4 cursor-pointer hover:border-primary/50 transition-all flex flex-col"
+      className={`p-4 transition-all flex flex-col ${canView ? 'cursor-pointer hover:border-primary/50' : 'opacity-50 cursor-not-allowed'}`}
       onClick={handleClick}
     >
       <div className="flex items-start justify-between gap-2 mb-3">
