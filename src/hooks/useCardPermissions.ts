@@ -35,8 +35,8 @@ export function useCardPermissions() {
     if (isSuperAdmin) return true;
     if (checkPermission('governanca', 'edit')) return true; // Editor of module has full access
 
-    // View access to module means they can view all cards
-    if (permission === 'view' && checkPermission('governanca', 'view')) return true;
+    // View access to module does NOT automatically mean they can view all cards anymore
+    // They must have specific permissions or be responsible/backup (handled in UI/getVisibleCardIds)
 
     const perm = permissions?.find(p => p.card_id === cardId);
     if (!perm) return false;
@@ -51,8 +51,9 @@ export function useCardPermissions() {
   };
 
   const getVisibleCardIds = (): string[] | null => {
-    // If super admin or has module view access, return null (all visible)
-    if (isSuperAdmin || checkPermission('governanca', 'view') || checkPermission('governanca', 'edit')) {
+    // If super admin or has module EDIT access, return null (all visible)
+    // Module VIEW access no longer grants visibility to all cards automatically
+    if (isSuperAdmin || checkPermission('governanca', 'edit')) {
       return null;
     }
 
