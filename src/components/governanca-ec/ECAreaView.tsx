@@ -27,8 +27,11 @@ interface ECAreaViewProps {
   areaName: string;
 }
 
+import { useAuth } from "@/contexts/AuthContext";
+
 export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { isSuperAdmin, hasCardPermission, getVisibleCardIds } = useCardPermissions();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,7 +53,7 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
         .eq('area_id', areaId)
         .eq('is_active', true)
         .order('order');
-      
+
       if (error) throw error;
       return data;
     },
@@ -69,7 +72,7 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
         .select('*')
         .in('card_id', cardIds)
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
 
       // Agrupar por card_id e pegar o mais recente
@@ -89,14 +92,17 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
   const visibleCardIds = getVisibleCardIds();
 
   const filteredCards = cards?.filter(card => {
-    // Permission check: if not super admin, only show cards user can view
-    if (visibleCardIds !== null && !visibleCardIds.includes(card.id)) return false;
+    // Permission check: if not super admin/module admin, only show cards user can view or is responsible for
+    if (visibleCardIds !== null) {
+      const isResponsible = user?.id && (card.responsible_id === user.id || card.backup_id === user.id);
+      if (!visibleCardIds.includes(card.id) && !isResponsible) return false;
+    }
 
     const matchesSearch = card.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          card.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    
+      card.description?.toLowerCase().includes(searchQuery.toLowerCase());
+
     if (statusFilter === 'all') return matchesSearch;
-    
+
     const record = latestRecords?.[card.id];
     return matchesSearch && record?.status === statusFilter;
   });
@@ -142,7 +148,7 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
           <Skeleton className="h-10 w-32" />
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          {[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-48" />)}
+          {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-48" />)}
         </div>
       </div>
     );
@@ -172,7 +178,7 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
             className="pl-10"
           />
         </div>
-        <ECFilters 
+        <ECFilters
           statusFilter={statusFilter}
           onStatusChange={setStatusFilter}
         />
@@ -211,8 +217,8 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredCards?.map((card) => (
             <ECCard
-              key={card.id} 
-              card={card} 
+              key={card.id}
+              card={card}
               record={latestRecords?.[card.id]}
               viewMode="grid"
               onEdit={handleEdit}
@@ -223,9 +229,9 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
       ) : (
         <div className="space-y-3">
           {filteredCards?.map((card) => (
-            <ECCard 
-              key={card.id} 
-              card={card} 
+            <ECCard
+              key={card.id}
+              card={card}
               record={latestRecords?.[card.id]}
               viewMode="list"
               onEdit={handleEdit}
@@ -253,7 +259,7 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir card</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja excluir o card "{deletingCard?.title}"? 
+              Tem certeza que deseja excluir o card "{deletingCard?.title}"?
               Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>

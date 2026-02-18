@@ -11,7 +11,7 @@ export interface CardPermission {
 }
 
 export function useCardPermissions() {
-  const { user, role } = useAuth();
+  const { user, role, checkPermission } = useAuth();
 
   const { data: permissions, isLoading } = useQuery({
     queryKey: ['ec-card-permissions', user?.id],
@@ -33,22 +33,31 @@ export function useCardPermissions() {
 
   const hasCardPermission = (cardId: string, permission: 'view' | 'fill' | 'review' | 'manage'): boolean => {
     if (isSuperAdmin) return true;
-    
+    if (checkPermission('governanca', 'edit')) return true; // Editor of module has full access
+
+    // View access to module means they can view all cards
+    if (permission === 'view' && checkPermission('governanca', 'view')) return true;
+
     const perm = permissions?.find(p => p.card_id === cardId);
     if (!perm) return false;
 
     switch (permission) {
-      case 'view': return perm.can_view;
-      case 'fill': return perm.can_fill;
-      case 'review': return perm.can_review;
+      case 'view': return perm.can_view || perm.can_fill || perm.can_review || perm.can_manage;
+      case 'fill': return perm.can_fill || perm.can_manage;
+      case 'review': return perm.can_review || perm.can_manage;
       case 'manage': return perm.can_manage;
       default: return false;
     }
   };
 
   const getVisibleCardIds = (): string[] | null => {
-    if (isSuperAdmin) return null; // null = all cards
-    return permissions?.filter(p => p.can_view).map(p => p.card_id) || [];
+    // If super admin or has module view access, return null (all visible)
+    if (isSuperAdmin || checkPermission('governanca', 'view') || checkPermission('governanca', 'edit')) {
+      return null;
+    }
+
+    // Otherwise, return IDs where user has ANY permission
+    return permissions?.filter(p => p.can_view || p.can_fill || p.can_review || p.can_manage).map(p => p.card_id) || [];
   };
 
   return {
