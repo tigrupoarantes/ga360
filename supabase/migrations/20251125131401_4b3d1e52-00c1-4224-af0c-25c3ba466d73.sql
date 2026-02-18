@@ -1,5 +1,10 @@
--- Criar enum para roles
-CREATE TYPE public.app_role AS ENUM ('ceo', 'diretor', 'gerente', 'colaborador');
+-- Criar enum para roles (com verificação de existência)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN
+        CREATE TYPE public.app_role AS ENUM ('ceo', 'diretor', 'gerente', 'colaborador');
+    END IF;
+END$$;
 
 -- Tabela de Áreas
 CREATE TABLE public.areas (
