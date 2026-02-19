@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { supabase } from "@/integrations/supabase/external-client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCompany } from "@/contexts/CompanyContext";
@@ -43,10 +44,11 @@ export function useControlePJ(competence?: string) {
       if (error) throw error;
       return (data || []) as unknown as PJContract[];
     },
+    staleTime: 1000 * 60 * 2, // 2 minutes
   });
 
   const closingsQuery = useQuery({
-    queryKey: ["pj-closings", competence, selectedCompanyId],
+    queryKey: ["pj-closings", competence],
     queryFn: async () => {
       if (!competence) return [];
       let query = supabase
@@ -65,27 +67,39 @@ export function useControlePJ(competence?: string) {
       return (data || []) as unknown as PJClosing[];
     },
     enabled: !!competence,
+    staleTime: 1000 * 60 * 2,
   });
 
-  // KPIs
-  const activeContracts = contractsQuery.data?.filter(c => c.status === "active") || [];
+  // KPIs — memoized to avoid recomputation on every render
+  const contracts = contractsQuery.data || [];
   const closings = closingsQuery.data || [];
-  const closedOrPaid = closings.filter(c => c.status === "closed" || c.status === "paid");
-  const pendingClosing = activeContracts.length - closedOrPaid.length;
-  const pendingEmail = closings.filter(c => c.email_status !== "sent" && c.status !== "draft");
-  const totalLiquid = closings.reduce((acc, c) => acc + Number(c.total_value || 0), 0);
 
-  return {
-    contracts: contractsQuery.data || [],
-    activeContracts,
-    closings,
-    isLoading: contractsQuery.isLoading || closingsQuery.isLoading,
-    kpis: {
+  const activeContracts = useMemo(
+    () => contracts.filter(c => c.status === "active"),
+    [contracts]
+  );
+
+  const kpis = useMemo(() => {
+    const closedOrPaid = closings.filter(c => c.status === "closed" || c.status === "paid");
+    const pendingClosing = activeContracts.length - closedOrPaid.length;
+    const pendingEmail = closings.filter(c => c.email_status !== "sent" && c.status !== "draft");
+    const totalLiquid = closings.reduce((acc, c) => acc + Number(c.total_value || 0), 0);
+    return {
       totalActive: activeContracts.length,
       totalLiquid,
       pendingClosing: Math.max(pendingClosing, 0),
       pendingEmail: pendingEmail.length,
-    },
+    };
+  }, [closings, activeContracts]);
+
+  return {
+    contracts,
+    activeContracts,
+    closings,
+    isLoading: contractsQuery.isLoading || closingsQuery.isLoading,
+    isError: contractsQuery.isError || closingsQuery.isError,
+    error: contractsQuery.error || closingsQuery.error,
+    kpis,
     refetch: () => {
       contractsQuery.refetch();
       closingsQuery.refetch();
@@ -302,6 +316,17 @@ export function usePJClosings(contractId?: string) {
     enabled: !!contractId,
   });
 
+  // Helper: invalidate all closing-related queries
+  const invalidateClosingQueries = () => {
+    // When contractId is set, invalidate specific + broad; otherwise just broad
+    if (contractId) {
+      queryClient.invalidateQueries({ queryKey: ["pj-contract-closings", contractId] });
+    } else {
+      queryClient.invalidateQueries({ queryKey: ["pj-contract-closings"] });
+    }
+    queryClient.invalidateQueries({ queryKey: ["pj-closings"] });
+  };
+
   const createClosing = useMutation({
     mutationFn: async (data: PJClosingFormData) => {
       // Calcular dependentes
@@ -340,8 +365,7 @@ export function usePJClosings(contractId?: string) {
       return result;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pj-contract-closings", contractId] });
-      queryClient.invalidateQueries({ queryKey: ["pj-closings"] });
+      invalidateClosingQueries();
       toast.success("Fechamento criado com sucesso");
     },
     onError: (err: Error) => {
@@ -389,8 +413,7 @@ export function usePJClosings(contractId?: string) {
       return result;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pj-contract-closings", contractId] });
-      queryClient.invalidateQueries({ queryKey: ["pj-closings"] });
+      invalidateClosingQueries();
       toast.success("Fechamento atualizado com sucesso");
     },
     onError: (err: Error) => {
@@ -404,8 +427,7 @@ export function usePJClosings(contractId?: string) {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pj-contract-closings", contractId] });
-      queryClient.invalidateQueries({ queryKey: ["pj-closings"] });
+      invalidateClosingQueries();
       toast.success("Fechamento excluído com sucesso");
     },
     onError: (err: Error) => {
@@ -426,8 +448,7 @@ export function usePJClosings(contractId?: string) {
       return result;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pj-contract-closings", contractId] });
-      queryClient.invalidateQueries({ queryKey: ["pj-closings"] });
+      invalidateClosingQueries();
       toast.success("Fechamento marcado como pago");
     },
     onError: (err: Error) => {
@@ -465,8 +486,7 @@ export function usePJClosings(contractId?: string) {
       return pdfResult;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pj-contract-closings", contractId] });
-      queryClient.invalidateQueries({ queryKey: ["pj-closings"] });
+      invalidateClosingQueries();
       toast.success("Competência fechada — holerite gerado e enviado");
     },
     onError: (err: Error) => {
@@ -484,8 +504,7 @@ export function usePJClosings(contractId?: string) {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pj-contract-closings", contractId] });
-      queryClient.invalidateQueries({ queryKey: ["pj-closings"] });
+      invalidateClosingQueries();
       toast.success("Holerite reenviado com sucesso");
     },
     onError: (err: Error) => {

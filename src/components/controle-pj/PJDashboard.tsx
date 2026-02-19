@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,12 @@ export function PJDashboard({ cardId }: PJDashboardProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const { contracts, closings, isLoading, kpis } = useControlePJ(competence);
+  const { contracts, closings, isLoading, isError, error, kpis } = useControlePJ(competence);
+
+  // Mutations for contract + closing actions (hooks called without contractId
+  // now correctly invalidate broad cache keys)
+  const { deleteContract } = usePJContract();
+  const { markAsPaid, resendPayslip } = usePJClosings();
 
   // Dialogs
   const [contractDialogOpen, setContractDialogOpen] = useState(false);
@@ -74,41 +79,45 @@ export function PJDashboard({ cardId }: PJDashboardProps) {
   const [vacationContract, setVacationContract] = useState<PJContract | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // Hooks para ações de contrato e fechamento
-  const contractHook = usePJContract();
-  const closingHook = usePJClosings();
+  // Merge contratos + closings — memoized to prevent O(N*M) on every render
+  const merged = useMemo(
+    () =>
+      contracts.map((contract) => {
+        const closing = closings.find((c) => c.contract_id === contract.id);
+        return { contract, closing };
+      }),
+    [contracts, closings]
+  );
 
-  // Merge contratos + closings
-  const merged = contracts.map((contract) => {
-    const closing = closings.find((c) => c.contract_id === contract.id);
-    return { contract, closing };
-  });
-
-  // Filtro
-  const filtered = merged.filter(({ contract, closing }) => {
-    if (search) {
-      const s = search.toLowerCase();
-      if (
-        !contract.name.toLowerCase().includes(s) &&
-        !contract.document.toLowerCase().includes(s) &&
-        !(contract.cost_center?.name || "").toLowerCase().includes(s)
-      ) {
-        return false;
-      }
-    }
-    if (statusFilter !== "all") {
-      if (statusFilter === "pending") {
-        if (closing) return false;
-      } else if (statusFilter === "draft") {
-        if (!closing || closing.status !== "draft") return false;
-      } else if (statusFilter === "closed") {
-        if (!closing || closing.status !== "closed") return false;
-      } else if (statusFilter === "paid") {
-        if (!closing || closing.status !== "paid") return false;
-      }
-    }
-    return contract.status === "active";
-  });
+  // Filtro — memoized
+  const filtered = useMemo(
+    () =>
+      merged.filter(({ contract, closing }) => {
+        if (search) {
+          const s = search.toLowerCase();
+          if (
+            !contract.name.toLowerCase().includes(s) &&
+            !contract.document.toLowerCase().includes(s) &&
+            !(contract.cost_center?.name || "").toLowerCase().includes(s)
+          ) {
+            return false;
+          }
+        }
+        if (statusFilter !== "all") {
+          if (statusFilter === "pending") {
+            if (closing) return false;
+          } else if (statusFilter === "draft") {
+            if (!closing || closing.status !== "draft") return false;
+          } else if (statusFilter === "closed") {
+            if (!closing || closing.status !== "closed") return false;
+          } else if (statusFilter === "paid") {
+            if (!closing || closing.status !== "paid") return false;
+          }
+        }
+        return contract.status === "active";
+      }),
+    [merged, search, statusFilter]
+  );
 
   if (isLoading) {
     return (
@@ -120,6 +129,19 @@ export function PJDashboard({ cardId }: PJDashboardProps) {
         </div>
         <Skeleton className="h-96" />
       </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center space-y-3">
+          <p className="text-destructive font-medium">Erro ao carregar dados do Controle PJ</p>
+          <p className="text-sm text-muted-foreground">
+            {(error as Error)?.message || "Verifique suas permissões ou tente novamente."}
+          </p>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -320,13 +342,13 @@ export function PJDashboard({ cardId }: PJDashboardProps) {
                             </DropdownMenuItem>
                           )}
                           {canFill && closing?.status === "closed" && (
-                            <DropdownMenuItem onClick={() => closingHook.markAsPaid.mutate({ id: closing.id })}>
+                            <DropdownMenuItem onClick={() => markAsPaid.mutate({ id: closing.id })}>
                               <Check className="h-4 w-4 mr-2" />
                               Marcar Pago
                             </DropdownMenuItem>
                           )}
                           {canFill && closing?.payslip_pdf_url && (
-                            <DropdownMenuItem onClick={() => closingHook.resendPayslip.mutate(closing.id)}>
+                            <DropdownMenuItem onClick={() => resendPayslip.mutate(closing.id)}>
                               <Send className="h-4 w-4 mr-2" />
                               Reenviar Holerite
                             </DropdownMenuItem>
@@ -362,12 +384,14 @@ export function PJDashboard({ cardId }: PJDashboardProps) {
         </CardContent>
       </Card>
 
-      {/* Dialogs */}
-      <PJContractFormDialog
-        open={contractDialogOpen}
-        onOpenChange={setContractDialogOpen}
-        editingContract={editingContract}
-      />
+      {/* Dialogs — conditionally rendered to avoid unnecessary hook queries */}
+      {contractDialogOpen && (
+        <PJContractFormDialog
+          open={contractDialogOpen}
+          onOpenChange={setContractDialogOpen}
+          editingContract={editingContract}
+        />
+      )}
 
       {closingContract && (
         <PJClosingFormDialog
@@ -401,7 +425,7 @@ export function PJDashboard({ cardId }: PJDashboardProps) {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 if (deleteConfirmId) {
-                  contractHook.deleteContract.mutate(deleteConfirmId);
+                  deleteContract.mutate(deleteConfirmId);
                 }
                 setDeleteConfirmId(null);
               }}
