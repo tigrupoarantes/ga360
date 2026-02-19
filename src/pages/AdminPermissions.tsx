@@ -241,7 +241,11 @@ export default function AdminPermissions() {
       }
 
       // Save card permissions
-      await supabase.from('ec_card_permissions').delete().eq('user_id', selectedUser);
+      const { error: deleteError } = await supabase.from('ec_card_permissions').delete().eq('user_id', selectedUser);
+      if (deleteError) {
+        console.error('Error deleting card permissions:', deleteError);
+        throw new Error(`Erro ao limpar permissões de cards: ${deleteError.message}`);
+      }
       const cardPermsToSave = Object.entries(cardPermissions)
         .filter(([_, p]) => p.can_view || p.can_fill || p.can_review || p.can_manage)
         .map(([cardId, p]) => ({
@@ -253,7 +257,11 @@ export default function AdminPermissions() {
           can_manage: p.can_manage,
         }));
       if (cardPermsToSave.length > 0) {
-        await supabase.from('ec_card_permissions').insert(cardPermsToSave);
+        const { error: insertError } = await supabase.from('ec_card_permissions').insert(cardPermsToSave);
+        if (insertError) {
+          console.error('Error inserting card permissions:', insertError);
+          throw new Error(`Erro ao salvar permissões de cards: ${insertError.message}`);
+        }
       }
 
       toast({ title: "Sucesso", description: "Permissões atualizadas com sucesso." });

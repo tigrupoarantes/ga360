@@ -32,7 +32,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const { isSuperAdmin, hasCardPermission, getVisibleCardIds } = useCardPermissions();
+  const { isSuperAdmin, hasCardPermission, getVisibleCardIds, isLoading: permissionsLoading } = useCardPermissions();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -93,7 +93,8 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
 
   const filteredCards = cards?.filter(card => {
     // Permission check: if not super admin/module admin, only show cards user can view or is responsible for
-    if (visibleCardIds !== null) {
+    // visibleCardIds is null for super_admin (show all), undefined while loading, or string[] when loaded
+    if (visibleCardIds !== null && visibleCardIds !== undefined) {
       const isResponsible = user?.id && (card.responsible_id === user.id || card.backup_id === user.id);
       if (!visibleCardIds.includes(card.id) && !isResponsible) return false;
     }
@@ -140,7 +141,7 @@ export function ECAreaView({ areaId, areaName }: ECAreaViewProps) {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || permissionsLoading) {
     return (
       <div className="space-y-4">
         <div className="flex gap-4">

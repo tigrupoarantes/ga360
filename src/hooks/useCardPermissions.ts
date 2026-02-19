@@ -50,14 +50,17 @@ export function useCardPermissions() {
     }
   };
 
-  const getVisibleCardIds = (): string[] | null => {
+  const getVisibleCardIds = (): string[] | null | undefined => {
     // Only super_admin sees all cards
     if (isSuperAdmin) {
       return null;
     }
 
+    // If permissions haven't loaded yet, return undefined to signal loading
+    if (!permissions) return undefined;
+
     // Otherwise, return IDs where user has ANY permission
-    return permissions?.filter(p => p.can_view || p.can_fill || p.can_review || p.can_manage).map(p => p.card_id) || [];
+    return permissions.filter(p => p.can_view || p.can_fill || p.can_review || p.can_manage).map(p => p.card_id);
   };
 
   return {
