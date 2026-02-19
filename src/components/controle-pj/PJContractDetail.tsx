@@ -55,7 +55,7 @@ export function PJContractDetail({ contractId, cardId, initialTab = "contract" }
   const currentYear = new Date().getFullYear();
   const [vacationYear, setVacationYear] = useState(currentYear);
   const { events, balance, isLoading: vacLoading, deleteEvent } = usePJVacation(contractId, vacationYear);
-  const { closings, isLoading: closingsLoading, markAsPaid, resendPayslip, deleteClosing } = usePJClosings(contractId);
+  const { closings, isLoading: closingsLoading, markAsPaid, resendPayslip, regeneratePayslip, deleteClosing } = usePJClosings(contractId);
 
   // Dialogs
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -67,13 +67,20 @@ export function PJContractDetail({ contractId, cardId, initialTab = "contract" }
   const fmt = (v: number) =>
     Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  const handleDownloadPayslip = async (pdfUrl: string) => {
+  const handleDownloadPayslip = async (pdfUrl: string, competence: string) => {
     try {
-      const { data, error } = await supabase.storage
+      const { data: blob, error } = await supabase.storage
         .from("holerites")
-        .createSignedUrl(pdfUrl, 300);
+        .download(pdfUrl);
       if (error) throw error;
-      window.open(data.signedUrl, "_blank");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const ext = pdfUrl.endsWith(".pdf") ? "pdf" : "html";
+      a.download = `holerite-${competence}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
     } catch {
       toast.error("Erro ao baixar holerite");
     }
@@ -273,13 +280,21 @@ export function PJContractDetail({ contractId, cardId, initialTab = "contract" }
                                   variant="ghost"
                                   size="icon"
                                   title="Baixar Holerite"
-                                  onClick={() => handleDownloadPayslip(closing.payslip_pdf_url!)}
+                                  onClick={() => handleDownloadPayslip(closing.payslip_pdf_url!, closing.competence)}
                                 >
                                   <Download className="h-4 w-4" />
                                 </Button>
                               )}
                               {closing.status === "closed" && canFill && (
                                 <>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="Regenerar Holerite (PDF)"
+                                    onClick={() => regeneratePayslip.mutate(closing.id)}
+                                  >
+                                    <FileText className="h-4 w-4" />
+                                  </Button>
                                   <Button
                                     variant="ghost"
                                     size="icon"

@@ -68,7 +68,7 @@ export function PJDashboard({ cardId }: PJDashboardProps) {
   // Mutations for contract + closing actions (hooks called without contractId
   // now correctly invalidate broad cache keys)
   const { deleteContract } = usePJContract();
-  const { markAsPaid, resendPayslip } = usePJClosings();
+  const { markAsPaid, resendPayslip, regeneratePayslip } = usePJClosings();
 
   // Dialogs
   const [contractDialogOpen, setContractDialogOpen] = useState(false);

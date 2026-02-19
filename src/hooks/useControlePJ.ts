@@ -459,12 +459,13 @@ export function usePJClosings(contractId?: string) {
   // Fechar competência (gerar holerite + enviar e-mail via Edge Function)
   const closeCompetence = useMutation({
     mutationFn: async (closingId: string) => {
-      // 1. Gerar holerite
+      // 1. Gerar holerite (PDF)
       const { data: pdfResult, error: pdfError } = await supabase.functions.invoke(
         "generate-pj-payslip",
         { body: { closingId } }
       );
       if (pdfError) throw new Error("Erro ao gerar holerite: " + pdfError.message);
+      if (pdfResult && !pdfResult.success) throw new Error("Erro ao gerar holerite: " + (pdfResult.error || "desconhecido"));
 
       // 2. Atualizar status para closed
       const { error: updateError } = await supabase
@@ -494,9 +495,36 @@ export function usePJClosings(contractId?: string) {
     },
   });
 
+  // Regenerar holerite (PDF)
+  const regeneratePayslip = useMutation({
+    mutationFn: async (closingId: string) => {
+      const { data, error } = await supabase.functions.invoke(
+        "generate-pj-payslip",
+        { body: { closingId } }
+      );
+      if (error) throw new Error("Erro ao regenerar holerite: " + error.message);
+      if (data && !data.success) throw new Error("Erro ao regenerar holerite: " + (data.error || "desconhecido"));
+      return data;
+    },
+    onSuccess: () => {
+      invalidateClosingQueries();
+      toast.success("Holerite regenerado em PDF com sucesso");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
+
   // Reenviar holerite
   const resendPayslip = useMutation({
     mutationFn: async (closingId: string) => {
+      // Regenera o PDF antes de reenviar (garante que é PDF)
+      const { error: regenError } = await supabase.functions.invoke(
+        "generate-pj-payslip",
+        { body: { closingId } }
+      );
+      if (regenError) console.warn("Aviso: não foi possível regenerar antes de reenviar", regenError);
+
       const { error } = await supabase.functions.invoke(
         "send-pj-payslip-email",
         { body: { closingId } }
@@ -520,6 +548,7 @@ export function usePJClosings(contractId?: string) {
     deleteClosing,
     markAsPaid,
     closeCompetence,
+    regeneratePayslip,
     resendPayslip,
   };
 }
