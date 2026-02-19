@@ -217,7 +217,7 @@ export default function AdminPermissions() {
     try {
       // Save module permissions (simplified to on/off via can_view)
       for (const mod of MODULES) {
-        await supabase
+        const { error: modError } = await supabase
           .from('user_permissions')
           .upsert({
             user_id: selectedUser,
@@ -227,17 +227,29 @@ export default function AdminPermissions() {
             can_edit: moduleAccess[mod.id] || false,
             can_delete: moduleAccess[mod.id] || false,
           }, { onConflict: 'user_id,module' });
+        if (modError) {
+          console.error('Error saving module permission:', mod.id, modError);
+          throw new Error(`Erro ao salvar permissão do módulo ${mod.label}: ${modError.message}`);
+        }
       }
 
       // Save company permissions
-      await supabase.from('user_companies').delete().eq('user_id', selectedUser);
+      const { error: delCompError } = await supabase.from('user_companies').delete().eq('user_id', selectedUser);
+      if (delCompError) {
+        console.error('Error deleting company permissions:', delCompError);
+        throw new Error(`Erro ao limpar permissões de empresas: ${delCompError.message}`);
+      }
       if (allCompanies) {
-        await supabase.from('user_companies').insert({ user_id: selectedUser, company_id: null, all_companies: true, can_view: true });
+        const { error: insCompError } = await supabase.from('user_companies').insert({ user_id: selectedUser, company_id: null, all_companies: true, can_view: true });
+        if (insCompError) throw new Error(`Erro ao salvar permissão de empresas: ${insCompError.message}`);
       } else {
         const toSave = Object.entries(companyPermissions).filter(([_, v]) => v).map(([companyId]) => ({
           user_id: selectedUser, company_id: companyId, all_companies: false, can_view: true,
         }));
-        if (toSave.length > 0) await supabase.from('user_companies').insert(toSave);
+        if (toSave.length > 0) {
+          const { error: insCompError } = await supabase.from('user_companies').insert(toSave);
+          if (insCompError) throw new Error(`Erro ao salvar permissão de empresas: ${insCompError.message}`);
+        }
       }
 
       // Save card permissions
@@ -265,9 +277,10 @@ export default function AdminPermissions() {
       }
 
       toast({ title: "Sucesso", description: "Permissões atualizadas com sucesso." });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving permissions:', error);
-      toast({ title: "Erro", description: "Não foi possível salvar as permissões.", variant: "destructive" });
+      const errorMsg = error?.message || 'Não foi possível salvar as permissões.';
+      toast({ title: "Erro", description: errorMsg, variant: "destructive" });
     } finally {
       setSaving(false);
     }
