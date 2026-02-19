@@ -234,10 +234,10 @@ serve(async (req) => {
         html: emailHTML,
         attachments: [
           {
-            filename: `holerite-${closing.competence}.html`,
+            filename: `holerite-${closing.competence}.pdf`,
             content: payslipBase64,
             encoding: "base64",
-            contentType: "text/html",
+            contentType: "application/pdf",
           },
         ],
       });

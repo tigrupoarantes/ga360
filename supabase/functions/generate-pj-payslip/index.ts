@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.85.0";
+import {
+  PDFDocument,
+  rgb,
+  StandardFonts,
+} from "https://esm.sh/pdf-lib@1.17.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,11 +50,7 @@ interface ContractRow {
 }
 
 // ---------------------------------------------------------------------------
-// PDF generation via HTML → simple text-based "payslip" stored as HTML
-// Edge Functions on Deno Deploy don't have native PDF libs, so we generate
-// a professional HTML payslip, convert it to a self-contained HTML file and
-// store it in the "holerites" bucket. The front-end can later render it with
-// <iframe> or open it in a new tab (the browser print dialog produces a PDF).
+// Helpers
 // ---------------------------------------------------------------------------
 
 function formatBRL(value: number): string {
@@ -65,12 +66,40 @@ function formatCompetence(comp: string): string {
   return `${months[parseInt(month, 10) - 1]} / ${year}`;
 }
 
-function generatePayslipHTML(
+// ---------------------------------------------------------------------------
+// Replace accented characters with ASCII equivalents for Helvetica (which
+// only supports WinAnsiEncoding and cannot render most non-ASCII glyphs).
+// ---------------------------------------------------------------------------
+function sanitize(text: string): string {
+  const map: Record<string, string> = {
+    "á": "a", "à": "a", "â": "a", "ã": "a", "ä": "a",
+    "é": "e", "è": "e", "ê": "e", "ë": "e",
+    "í": "i", "ì": "i", "î": "i", "ï": "i",
+    "ó": "o", "ò": "o", "ô": "o", "õ": "o", "ö": "o",
+    "ú": "u", "ù": "u", "û": "u", "ü": "u",
+    "ç": "c",
+    "Á": "A", "À": "A", "Â": "A", "Ã": "A", "Ä": "A",
+    "É": "E", "È": "E", "Ê": "E", "Ë": "E",
+    "Í": "I", "Ì": "I", "Î": "I", "Ï": "I",
+    "Ó": "O", "Ò": "O", "Ô": "O", "Õ": "O", "Ö": "O",
+    "Ú": "U", "Ù": "U", "Û": "U", "Ü": "U",
+    "Ç": "C",
+    "ñ": "n", "Ñ": "N",
+    "×": "x",
+  };
+  return text.replace(/[^\x00-\x7F]/g, (ch) => map[ch] ?? ch);
+}
+
+// ---------------------------------------------------------------------------
+// PDF generation using pdf-lib (pure JS, no native deps)
+// ---------------------------------------------------------------------------
+
+async function generatePayslipPDF(
   contract: ContractRow,
   closing: ClosingRow,
-): string {
+): Promise<Uint8Array> {
   const companyName = contract.company?.[0]?.name || "Empresa";
-  const costCenter = contract.cost_center?.[0]?.name || "—";
+  const costCenter = contract.cost_center?.[0]?.name || "--";
   const otherItems: OtherItem[] = closing.other_items || [];
   const otherEarnings = otherItems.filter((i) => i.type === "earning");
   const otherDiscounts = otherItems.filter((i) => i.type === "discount");
@@ -90,105 +119,254 @@ function generatePayslipHTML(
   const earningRows = [
     { desc: "Valor Base Mensal", val: closing.base_value },
     ...(closing.thirteenth_paid_value > 0
-      ? [{ desc: "13º Salário", val: closing.thirteenth_paid_value }]
+      ? [{ desc: "13o Salario", val: closing.thirteenth_paid_value }]
       : []),
     ...(closing.fourteenth_paid_value > 0
-      ? [{ desc: "14º Salário", val: closing.fourteenth_paid_value }]
+      ? [{ desc: "14o Salario", val: closing.fourteenth_paid_value }]
       : []),
-    ...otherEarnings.map((i) => ({ desc: i.description, val: i.value })),
+    ...otherEarnings.map((i) => ({ desc: sanitize(i.description), val: i.value })),
   ];
 
   const discountRows = [
     ...(closing.restaurant_discount_value > 0
-      ? [{ desc: "Vale Refeição", val: closing.restaurant_discount_value }]
+      ? [{ desc: "Vale Refeicao", val: closing.restaurant_discount_value }]
       : []),
     ...(closing.health_dependents_discount_value > 0
       ? [
           {
-            desc: `Dependentes Saúde (${contract.health_dependents_count}×${formatBRL(contract.health_dependent_unit_value)})`,
+            desc: `Depend. Saude (${contract.health_dependents_count}x${formatBRL(contract.health_dependent_unit_value)})`,
             val: closing.health_dependents_discount_value,
           },
         ]
       : []),
     ...(closing.health_coparticipation_discount_value > 0
-      ? [{ desc: "Coparticipação Saúde", val: closing.health_coparticipation_discount_value }]
+      ? [{ desc: "Coparticipacao Saude", val: closing.health_coparticipation_discount_value }]
       : []),
-    ...otherDiscounts.map((i) => ({ desc: i.description, val: i.value })),
+    ...otherDiscounts.map((i) => ({ desc: sanitize(i.description), val: i.value })),
   ];
 
-  const tableRow = (desc: string, val: string, bold = false) =>
-    `<tr>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;${bold ? "font-weight:700;" : ""}">${desc}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:right;${bold ? "font-weight:700;" : ""}">${val}</td>
-    </tr>`;
+  // ---- Create PDF ----
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.setTitle(`Holerite PJ - ${sanitize(contract.name)} - ${closing.competence}`);
+  pdfDoc.setSubject(`Competencia ${formatCompetence(closing.competence)}`);
+  pdfDoc.setProducer("GA 360");
 
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <title>Holerite PJ – ${contract.name} – ${closing.competence}</title>
-  <style>
-    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 24px; background: #f9fafb; color: #1f2937; }
-    .container { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
-    .header { background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: #fff; padding: 24px 28px; }
-    .header h1 { margin: 0; font-size: 20px; } .header p { margin: 4px 0 0; opacity: .85; font-size: 13px; }
-    .info { display: flex; flex-wrap: wrap; gap: 8px 32px; padding: 18px 28px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
-    .info span { color: #6b7280; } .info strong { color: #111827; }
-    .section { padding: 14px 28px; }
-    .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #6b7280; margin: 0 0 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    .total-row td { border-top: 2px solid #1e40af; font-weight: 700; font-size: 15px; padding-top: 10px; }
-    .footer { padding: 14px 28px; background: #f3f4f6; text-align: center; font-size: 11px; color: #9ca3af; }
-  </style>
-</head>
-<body>
-<div class="container">
-  <div class="header">
-    <h1>HOLERITE PJ</h1>
-    <p>${companyName} · GA 360</p>
-  </div>
+  const page = pdfDoc.addPage([595.28, 841.89]); // A4
+  const { width, height } = page.getSize();
 
-  <div class="info">
-    <div><span>Prestador:</span> <strong>${contract.name}</strong></div>
-    <div><span>Documento:</span> <strong>${contract.document}</strong></div>
-    <div><span>Centro de Custo:</span> <strong>${costCenter}</strong></div>
-    <div><span>Competência:</span> <strong>${formatCompetence(closing.competence)}</strong></div>
-  </div>
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  <div class="section">
-    <p class="section-title">Proventos</p>
-    <table>
-      ${earningRows.map((r) => tableRow(r.desc, formatBRL(r.val))).join("")}
-      ${tableRow("Total Proventos", formatBRL(totalEarnings), true)}
-    </table>
-  </div>
+  const margin = 50;
+  const contentW = width - margin * 2;
+  let y = height - margin;
 
-  ${discountRows.length > 0 ? `
-  <div class="section" style="padding-top:0">
-    <p class="section-title">Descontos</p>
-    <table>
-      ${discountRows.map((r) => tableRow(r.desc, `- ${formatBRL(r.val)}`)).join("")}
-      ${tableRow("Total Descontos", `- ${formatBRL(totalDiscounts)}`, true)}
-    </table>
-  </div>` : ""}
+  // Colors
+  const blue = rgb(0.118, 0.251, 0.686);       // #1e40af
+  const lightBlue = rgb(0.231, 0.510, 0.965);  // #3b82f6
+  const darkText = rgb(0.067, 0.067, 0.067);   // #111
+  const grayText = rgb(0.42, 0.44, 0.50);      // #6b7280
+  const lineGray = rgb(0.90, 0.91, 0.93);      // #e5e7eb
+  const bgLight = rgb(0.953, 0.957, 0.965);    // #f3f4f6
+  const white = rgb(1, 1, 1);
 
-  <div class="section" style="padding-top:0">
-    <table>
-      <tr class="total-row">
-        <td style="padding:10px 10px 6px;">VALOR LÍQUIDO</td>
-        <td style="padding:10px 10px 6px; text-align:right; color:#1e40af;">${formatBRL(closing.total_value)}</td>
-      </tr>
-    </table>
-  </div>
+  // ---- HEADER (blue bar) ----
+  const headerH = 64;
+  page.drawRectangle({
+    x: margin,
+    y: y - headerH,
+    width: contentW,
+    height: headerH,
+    color: blue,
+  });
+  // Accent stripe
+  page.drawRectangle({
+    x: margin,
+    y: y - headerH,
+    width: contentW,
+    height: 4,
+    color: lightBlue,
+  });
+  page.drawText("HOLERITE PJ", {
+    x: margin + 20,
+    y: y - 30,
+    size: 18,
+    font: fontBold,
+    color: white,
+  });
+  page.drawText(sanitize(`${companyName}  |  GA 360`), {
+    x: margin + 20,
+    y: y - 50,
+    size: 10,
+    font: fontRegular,
+    color: rgb(0.82, 0.87, 0.95),
+  });
+  y -= headerH + 20;
 
-  <div class="footer">
-    Documento gerado automaticamente em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}<br/>
-    GA 360 · Sistema de Governança Corporativa
-  </div>
-</div>
-</body>
-</html>`;
+  // ---- INFO SECTION ----
+  const infoFields = [
+    { label: "Prestador:", value: sanitize(contract.name) },
+    { label: "Documento:", value: contract.document || "--" },
+    { label: "Centro de Custo:", value: sanitize(costCenter) },
+    { label: "Competencia:", value: sanitize(formatCompetence(closing.competence)) },
+  ];
+
+  for (const field of infoFields) {
+    page.drawText(field.label, {
+      x: margin + 10,
+      y,
+      size: 9,
+      font: fontRegular,
+      color: grayText,
+    });
+    const labelW = fontRegular.widthOfTextAtSize(field.label, 9);
+    page.drawText(` ${field.value}`, {
+      x: margin + 10 + labelW + 2,
+      y,
+      size: 10,
+      font: fontBold,
+      color: darkText,
+    });
+    y -= 18;
+  }
+
+  // Divider line
+  y -= 4;
+  page.drawLine({
+    start: { x: margin, y },
+    end: { x: margin + contentW, y },
+    thickness: 1,
+    color: lineGray,
+  });
+  y -= 20;
+
+  // ---- HELPER: draw a table section ----
+  function drawSectionTitle(title: string) {
+    page.drawText(title.toUpperCase(), {
+      x: margin + 10,
+      y,
+      size: 10,
+      font: fontBold,
+      color: grayText,
+    });
+    y -= 20;
+  }
+
+  function drawTableRow(
+    desc: string,
+    val: string,
+    bold = false,
+    accentColor?: typeof blue,
+  ) {
+    const font = bold ? fontBold : fontRegular;
+    const color = accentColor || darkText;
+    const size = bold ? 11 : 10;
+
+    page.drawText(desc, {
+      x: margin + 14,
+      y,
+      size,
+      font,
+      color,
+    });
+    const valW = font.widthOfTextAtSize(val, size);
+    page.drawText(val, {
+      x: margin + contentW - 14 - valW,
+      y,
+      size,
+      font,
+      color,
+    });
+    y -= 6;
+    // Subtle bottom border
+    page.drawLine({
+      start: { x: margin + 10, y },
+      end: { x: margin + contentW - 10, y },
+      thickness: 0.5,
+      color: lineGray,
+    });
+    y -= 16;
+  }
+
+  // ---- PROVENTOS ----
+  drawSectionTitle("Proventos");
+  for (const row of earningRows) {
+    drawTableRow(row.desc, formatBRL(row.val));
+  }
+  drawTableRow("Total Proventos", formatBRL(totalEarnings), true);
+  y -= 10;
+
+  // ---- DESCONTOS ----
+  if (discountRows.length > 0) {
+    drawSectionTitle("Descontos");
+    for (const row of discountRows) {
+      drawTableRow(row.desc, `- ${formatBRL(row.val)}`);
+    }
+    drawTableRow("Total Descontos", `- ${formatBRL(totalDiscounts)}`, true);
+    y -= 10;
+  }
+
+  // ---- VALOR LÍQUIDO (highlighted) ----
+  const netBoxH = 44;
+  page.drawRectangle({
+    x: margin,
+    y: y - netBoxH,
+    width: contentW,
+    height: netBoxH,
+    color: bgLight,
+  });
+  // Top accent line
+  page.drawLine({
+    start: { x: margin, y },
+    end: { x: margin + contentW, y },
+    thickness: 2,
+    color: blue,
+  });
+
+  const netLabel = "VALOR LIQUIDO";
+  const netValue = formatBRL(closing.total_value);
+  page.drawText(netLabel, {
+    x: margin + 14,
+    y: y - 28,
+    size: 13,
+    font: fontBold,
+    color: darkText,
+  });
+  const netValW = fontBold.widthOfTextAtSize(netValue, 16);
+  page.drawText(netValue, {
+    x: margin + contentW - 14 - netValW,
+    y: y - 30,
+    size: 16,
+    font: fontBold,
+    color: blue,
+  });
+  y -= netBoxH + 30;
+
+  // ---- FOOTER ----
+  const footerText1 = sanitize(
+    `Documento gerado automaticamente em ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
+  );
+  const footerText2 = "GA 360 - Sistema de Governanca Corporativa";
+
+  const ft1W = fontRegular.widthOfTextAtSize(footerText1, 8);
+  const ft2W = fontRegular.widthOfTextAtSize(footerText2, 8);
+
+  page.drawText(footerText1, {
+    x: (width - ft1W) / 2,
+    y: margin + 16,
+    size: 8,
+    font: fontRegular,
+    color: grayText,
+  });
+  page.drawText(footerText2, {
+    x: (width - ft2W) / 2,
+    y: margin + 4,
+    size: 8,
+    font: fontRegular,
+    color: grayText,
+  });
+
+  return await pdfDoc.save();
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +385,7 @@ serve(async (req) => {
       throw new Error("closingId is required");
     }
 
-    console.log(`[generate-pj-payslip] Generating payslip for closing: ${closingId}`);
+    console.log(`[generate-pj-payslip] Generating PDF payslip for closing: ${closingId}`);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -241,17 +419,19 @@ serve(async (req) => {
       throw new Error("Contrato PJ não encontrado");
     }
 
-    // ---- Generate HTML payslip ----
-    const html = generatePayslipHTML(contract as unknown as ContractRow, closing as unknown as ClosingRow);
-    const htmlBytes = new TextEncoder().encode(html);
+    // ---- Generate PDF payslip ----
+    const pdfBytes = await generatePayslipPDF(
+      contract as unknown as ContractRow,
+      closing as unknown as ClosingRow,
+    );
 
     // ---- Upload to Storage ----
-    const filePath = `${closing.contract_id}/${closing.competence}.html`;
+    const filePath = `${closing.contract_id}/${closing.competence}.pdf`;
 
     const { error: uploadError } = await supabase.storage
       .from("holerites")
-      .upload(filePath, htmlBytes, {
-        contentType: "text/html; charset=utf-8",
+      .upload(filePath, pdfBytes, {
+        contentType: "application/pdf",
         upsert: true,
       });
 
@@ -260,7 +440,7 @@ serve(async (req) => {
       throw new Error("Erro ao fazer upload do holerite: " + uploadError.message);
     }
 
-    console.log(`[generate-pj-payslip] Uploaded to holerites/${filePath}`);
+    console.log(`[generate-pj-payslip] Uploaded PDF to holerites/${filePath}`);
 
     // ---- Update closing record ----
     const { error: updateError } = await supabase
