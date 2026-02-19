@@ -104,6 +104,13 @@ export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps
       navigate('/governanca-ec/pessoas-cultura/qlp');
       return;
     }
+
+    // Special handling for Controle PJ card
+    const isControlePJCard = titleLower.includes('controle pj') || titleLower.includes('controle de pj');
+    if (isControlePJCard) {
+      navigate('/governanca-ec/pessoas-cultura/controle-pj');
+      return;
+    }
     
     navigate(`/governanca-ec/${areaSlug}/${card.id}`);
   };

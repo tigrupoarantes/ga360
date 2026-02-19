@@ -41,6 +41,8 @@ import GovernancaECCardDetail from "./pages/GovernancaECCardDetail";
 import StockAuditStart from "./pages/StockAuditStart";
 import StockAuditExecution from "./pages/StockAuditExecution";
 import QLPPage from "./pages/QLPPage";
+import ControlePJ from "./pages/ControlePJ";
+import ControlePJDetail from "./pages/ControlePJDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -272,6 +274,22 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <QLPPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/pessoas-cultura/controle-pj"
+                  element={
+                    <ProtectedRoute>
+                      <ControlePJ />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/pessoas-cultura/controle-pj/:contractId"
+                  element={
+                    <ProtectedRoute>
+                      <ControlePJDetail />
                     </ProtectedRoute>
                   }
                 />
