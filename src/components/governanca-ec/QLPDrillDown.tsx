@@ -31,11 +31,12 @@ interface Employee {
   unidade: string | null;
   company_id: string | null;
   companies: { name: string } | null;
+  source_system?: string | null;
 }
 
 export function QLPDrillDown() {
   const [drillLevel, setDrillLevel] = useState(0);
-  const [selectedCompany, setSelectedCompany] = useState<{ id: string; name: string } | null>(null);
+  const [selectedCompany, setSelectedCompany] = useState<{ id: string | null; name: string } | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
 
   const { data: employees, isLoading } = useQuery({
@@ -43,8 +44,9 @@ export function QLPDrillDown() {
     queryFn: async () => {
       const { data, error } = await supabaseExternal
         .from("external_employees")
-        .select("id, full_name, email, position, department, unidade, company_id, companies(name)")
+        .select("id, full_name, email, position, department, unidade, company_id, source_system, companies(name)")
         .eq("is_active", true)
+        .eq("source_system", "dab_api")
         .order("full_name");
       if (error) throw error;
       return data as Employee[];
@@ -53,10 +55,11 @@ export function QLPDrillDown() {
 
   const companyGroups = useMemo(() => {
     if (!employees) return [];
-    const map = new Map<string, { id: string; name: string; count: number }>();
+    const map = new Map<string, { id: string | null; name: string; count: number }>();
     employees.forEach((e) => {
-      const key = e.unidade || "Sem Unidade";
-      const entry = map.get(key) || { id: key, name: key, count: 0 };
+      const companyName = e.companies?.name || "Sem Empresa";
+      const key = e.company_id || `sem_empresa::${companyName}`;
+      const entry = map.get(key) || { id: e.company_id, name: companyName, count: 0 };
       entry.count++;
       map.set(key, entry);
     });
@@ -65,7 +68,12 @@ export function QLPDrillDown() {
 
   const departmentGroups = useMemo(() => {
     if (!employees || !selectedCompany) return [];
-    const filtered = employees.filter((e) => (e.unidade || "Sem Unidade") === selectedCompany.id);
+    const filtered = employees.filter((e) => {
+      if (selectedCompany.id === null) {
+        return e.company_id === null;
+      }
+      return e.company_id === selectedCompany.id;
+    });
     const map = new Map<string, number>();
     filtered.forEach((e) => {
       const dept = e.department || "Sem Departamento";
@@ -79,9 +87,10 @@ export function QLPDrillDown() {
   const filteredEmployees = useMemo(() => {
     if (!employees || !selectedCompany || !selectedDepartment) return [];
     return employees.filter(
-      (e) =>
-        (e.unidade || "Sem Unidade") === selectedCompany.id &&
-        (e.department || "Sem Departamento") === selectedDepartment
+      (e) => {
+        const sameCompany = selectedCompany.id === null ? e.company_id === null : e.company_id === selectedCompany.id;
+        return sameCompany && (e.department || "Sem Departamento") === selectedDepartment;
+      }
     );
   }, [employees, selectedCompany, selectedDepartment]);
 
@@ -90,14 +99,14 @@ export function QLPDrillDown() {
   const uniqueDepartments = useMemo(() => {
     if (!employees) return 0;
     const source = drillLevel >= 1 && selectedCompany
-      ? employees.filter((e) => (e.unidade || "Sem Unidade") === selectedCompany.id)
+      ? employees.filter((e) => (selectedCompany.id === null ? e.company_id === null : e.company_id === selectedCompany.id))
       : employees;
     return new Set(source.map((e) => e.department || "Sem Departamento")).size;
   }, [employees, drillLevel, selectedCompany]);
   const uniquePositions = useMemo(() => {
     if (!employees) return 0;
     const source = drillLevel >= 1 && selectedCompany
-      ? employees.filter((e) => (e.unidade || "Sem Unidade") === selectedCompany.id)
+      ? employees.filter((e) => (selectedCompany.id === null ? e.company_id === null : e.company_id === selectedCompany.id))
       : employees;
     return new Set(source.filter((e) => e.position).map((e) => e.position)).size;
   }, [employees, drillLevel, selectedCompany]);
@@ -105,12 +114,12 @@ export function QLPDrillDown() {
   const currentTotal = useMemo(() => {
     if (drillLevel === 0) return totalEmployees;
     if (drillLevel === 1 && selectedCompany) {
-      return employees?.filter((e) => (e.unidade || "Sem Unidade") === selectedCompany.id).length || 0;
+      return employees?.filter((e) => (selectedCompany.id === null ? e.company_id === null : e.company_id === selectedCompany.id)).length || 0;
     }
     return filteredEmployees.length;
   }, [drillLevel, totalEmployees, selectedCompany, employees, filteredEmployees]);
 
-  const handleCompanyClick = (company: { id: string; name: string }) => {
+  const handleCompanyClick = (company: { id: string | null; name: string }) => {
     setSelectedCompany(company);
     setDrillLevel(1);
   };
