@@ -12,12 +12,15 @@ interface DabProxyRequest {
   path?: string;
   query?: Record<string, string | number | boolean | null | undefined>;
   nextLink?: string;
+  connectionId?: string;
 }
 
 interface ApiConnectionConfig {
   baseUrl: string;
   apiKey?: string;
   authHeader?: string;
+  authHeaderName?: string;
+  headersJson?: Record<string, string>;
 }
 
 function normalizePath(path: string): string {
@@ -37,14 +40,23 @@ function sanitizeError(error: unknown) {
   return "unknown_error";
 }
 
-function buildUrl(baseUrl: string, payload: DabProxyRequest): string {
+function applyQueryParams(url: URL, query?: Record<string, string | number | boolean | null | undefined>) {
+  if (!query) return;
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === "") continue;
+    url.searchParams.set(key, String(value));
+  }
+}
+
+function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[] {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
 
   if (payload.nextLink) {
     if (/^https?:\/\//i.test(payload.nextLink)) {
-      return payload.nextLink;
+      return [payload.nextLink];
     }
-    return new URL(payload.nextLink, base).toString();
+    return [new URL(payload.nextLink, base).toString()];
   }
 
   const normalized = normalizePath(payload.path || "");
@@ -55,25 +67,46 @@ function buildUrl(baseUrl: string, payload: DabProxyRequest): string {
     );
   }
 
-  const endpoint = `v1/${normalized}`;
-  const url = new URL(endpoint, base);
+  const baseUrlObject = new URL(base);
+  const normalizedPathname = baseUrlObject.pathname.replace(/\/+$/, "").toLowerCase();
 
-  if (payload.query) {
-    for (const [key, value] of Object.entries(payload.query)) {
-      if (value === undefined || value === null || value === "") continue;
-      url.searchParams.set(key, String(value));
-    }
+  if (normalizedPathname.endsWith("/funcionarios")) {
+    applyQueryParams(baseUrlObject, payload.query);
+    return [baseUrlObject.toString()];
   }
 
-  return url.toString();
+  const endpoints: string[] = [];
+
+  if (normalizedPathname.endsWith("/api") || normalizedPathname.endsWith("/v1/api")) {
+    endpoints.push(normalized);
+  } else if (normalizedPathname.endsWith("/v1")) {
+    endpoints.push(`api/${normalized}`);
+    endpoints.push(normalized);
+  } else {
+    endpoints.push(`api/${normalized}`);
+    endpoints.push(`v1/api/${normalized}`);
+    endpoints.push(`v1/${normalized}`);
+  }
+
+  const uniqueUrls = new Set<string>();
+
+  for (const endpoint of endpoints) {
+    const url = new URL(endpoint, base);
+    applyQueryParams(url, payload.query);
+    uniqueUrls.add(url.toString());
+  }
+
+  return [...uniqueUrls];
 }
 
 function resolveApiKeyFromRecord(record: Record<string, any>): string | undefined {
   const headersJson = record.headers_json || {};
   const authConfigJson = record.auth_config_json || {};
+  const customHeaderName = authConfigJson.authHeaderName;
 
   return (
     record.api_key ||
+    (customHeaderName ? headersJson[customHeaderName] : undefined) ||
     headersJson["X-API-Key"] ||
     headersJson["x-api-key"] ||
     authConfigJson.apiKey ||
@@ -89,7 +122,48 @@ function resolveAuthHeaderFromRecord(record: Record<string, any>): string | unde
   return undefined;
 }
 
-async function getConnectionConfig(supabaseService: ReturnType<typeof createClient>): Promise<ApiConnectionConfig> {
+function resolveAuthHeaderNameFromRecord(record: Record<string, any>): string | undefined {
+  const authConfigJson = record.auth_config_json || {};
+  return authConfigJson.authHeaderName || undefined;
+}
+
+function resolveHeadersFromRecord(record: Record<string, any>): Record<string, string> {
+  const headersJson = record.headers_json || {};
+  const headers: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(headersJson)) {
+    if (!key || value === undefined || value === null) continue;
+    headers[key] = String(value);
+  }
+
+  return headers;
+}
+
+async function getConnectionConfig(
+  supabaseService: ReturnType<typeof createClient>,
+  connectionId?: string,
+): Promise<ApiConnectionConfig> {
+  if (connectionId) {
+    const { data: selectedConnection, error: selectedConnectionError } = await supabaseService
+      .from("dl_connections")
+      .select("*")
+      .eq("id", connectionId)
+      .eq("is_enabled", true)
+      .maybeSingle();
+
+    if (selectedConnectionError || !selectedConnection) {
+      throw new Error("Selected connection not found or disabled");
+    }
+
+    return {
+      baseUrl: selectedConnection.base_url,
+      apiKey: resolveApiKeyFromRecord(selectedConnection),
+      authHeader: resolveAuthHeaderFromRecord(selectedConnection),
+      authHeaderName: resolveAuthHeaderNameFromRecord(selectedConnection),
+      headersJson: resolveHeadersFromRecord(selectedConnection),
+    };
+  }
+
   const { data: apiConnection, error: apiConnectionError } = await supabaseService
     .from("api_connections")
     .select("*")
@@ -103,6 +177,8 @@ async function getConnectionConfig(supabaseService: ReturnType<typeof createClie
       baseUrl: apiConnection.base_url,
       apiKey: resolveApiKeyFromRecord(apiConnection),
       authHeader: resolveAuthHeaderFromRecord(apiConnection),
+      authHeaderName: resolveAuthHeaderNameFromRecord(apiConnection),
+      headersJson: resolveHeadersFromRecord(apiConnection),
     };
   }
 
@@ -123,6 +199,8 @@ async function getConnectionConfig(supabaseService: ReturnType<typeof createClie
     baseUrl: dlConnection.base_url,
     apiKey: resolveApiKeyFromRecord(dlConnection),
     authHeader: resolveAuthHeaderFromRecord(dlConnection),
+    authHeaderName: resolveAuthHeaderNameFromRecord(dlConnection),
+    headersJson: resolveHeadersFromRecord(dlConnection),
   };
 }
 
@@ -172,46 +250,60 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const connection = await getConnectionConfig(supabaseService);
-    const targetUrl = buildUrl(connection.baseUrl, payload);
+    const connection = await getConnectionConfig(supabaseService, payload.connectionId);
+    const candidateUrls = buildCandidateUrls(connection.baseUrl, payload);
 
     const upstreamHeaders: Record<string, string> = {
       Accept: "application/json",
+      ...(connection.headersJson || {}),
     };
 
     if (connection.apiKey) {
-      upstreamHeaders["X-API-Key"] = connection.apiKey;
+      const apiKeyHeaderName = connection.authHeaderName || "X-API-Key";
+      upstreamHeaders[apiKeyHeaderName] = connection.apiKey;
     }
     if (connection.authHeader) {
       upstreamHeaders["Authorization"] = connection.authHeader;
     }
 
-    const upstreamResponse = await fetch(targetUrl, {
-      method: "GET",
-      headers: upstreamHeaders,
-    });
+    let upstreamResponse: Response | null = null;
+    let lastBody: any = null;
 
-    const text = await upstreamResponse.text();
-    const body = text ? JSON.parse(text) : {};
+    for (const targetUrl of candidateUrls) {
+      const response = await fetch(targetUrl, {
+        method: "GET",
+        headers: upstreamHeaders,
+      });
 
-    if (!upstreamResponse.ok) {
-      return new Response(
-        JSON.stringify({
-          error: "upstream_error",
-          status: upstreamResponse.status,
-          details: body,
-        }),
-        {
-          status: upstreamResponse.status,
+      const text = await response.text();
+      const body = text ? JSON.parse(text) : {};
+
+      if (response.ok) {
+        return new Response(JSON.stringify(body), {
+          status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+        });
+      }
+
+      upstreamResponse = response;
+      lastBody = body;
+
+      if (response.status !== 404) {
+        break;
+      }
     }
 
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        error: "upstream_error",
+        status: upstreamResponse?.status || 502,
+        details: lastBody,
+      }),
+      {
+        status: upstreamResponse?.status || 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     if (error instanceof Response) {
       return error;

@@ -357,6 +357,7 @@ export function ExternalEmployeesList() {
       }
     } catch (error: any) {
       const status = error?.context?.status ?? error?.status;
+      const details = error?.details || error?.message;
       if (status === 401) {
         toast.error('Sessão inválida. Faça login novamente.');
       } else if (status === 403) {
@@ -366,9 +367,9 @@ export function ExternalEmployeesList() {
       } else if (status === 502 || status === 504) {
         toast.error('Backend temporariamente indisponível. Tente novamente em instantes.');
       } else {
-        toast.error('Erro ao sincronizar funcionários via API.');
+        toast.error(details ? `Erro ao sincronizar funcionários via API: ${details}` : 'Erro ao sincronizar funcionários via API.');
       }
-      console.error('[employees_api_sync_failed]', { status, message: error?.message });
+      console.error('[employees_api_sync_failed]', { status, message: error?.message, details });
     } finally {
       setSyncingApi(false);
     }

@@ -33,6 +33,30 @@ function normalizeDocument(value: string | null | undefined): string | null {
   return digits || null;
 }
 
+function normalizeDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  const brMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) {
+    return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+  }
+
+  const date = new Date(raw);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  return null;
+}
+
 function normalizeName(value: string | null | undefined): string {
   return (value || "").trim().toLowerCase();
 }
@@ -98,27 +122,105 @@ async function callDabProxy(payload: { path?: string; query?: Record<string, str
   });
 
   if (error) {
-    trackEmployeesApiError(error.context?.status, "dab_proxy_invoke_failed", error.message);
-    throw error;
+    const status = error.context?.status;
+    let details = "";
+
+    try {
+      if (error.context) {
+        const responseText = await error.context.text();
+        try {
+          const responseBody = JSON.parse(responseText || "{}");
+          details =
+            responseBody?.details?.message ||
+            responseBody?.details?.error ||
+            responseBody?.error ||
+            responseText ||
+            "";
+        } catch {
+          details = responseText || "";
+        }
+      }
+    } catch {
+      details = "";
+    }
+
+    trackEmployeesApiError(status, "dab_proxy_invoke_failed", details || error.message);
+
+    const wrappedError = new Error(details || error.message) as Error & { status?: number; details?: string };
+    wrappedError.status = status;
+    wrappedError.details = details;
+    throw wrappedError;
   }
 
   return (data || {}) as DabPageResponse;
 }
 
+async function resolveEmployeesConnectionId(): Promise<string | undefined> {
+  const { data, error } = await supabase
+    .from("dl_connections")
+    .select("id, name, base_url, is_enabled, updated_at")
+    .eq("is_enabled", true)
+    .eq("type", "api_proxy")
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    trackEmployeesApiError(undefined, "resolve_connection_failed", error.message);
+    return undefined;
+  }
+
+  const rows = data || [];
+
+  const byBaseUrl = rows.find((row) =>
+    String(row.base_url || "").toLowerCase().includes("funcionarios"),
+  );
+  if (byBaseUrl?.id) return byBaseUrl.id;
+
+  const byName = rows.find((row) =>
+    String(row.name || "").toLowerCase().includes("funcion"),
+  );
+  if (byName?.id) return byName.id;
+
+  return rows[0]?.id;
+}
+
+async function fetchFirstPageWithFallback(pageSize: number, connectionId?: string): Promise<DabPageResponse> {
+  const candidateQueries: Array<Record<string, string | number> | undefined> = [
+    { $first: pageSize },
+    { first: pageSize },
+    { $top: pageSize },
+    undefined,
+  ];
+
+  let lastError: any = null;
+
+  for (const query of candidateQueries) {
+    try {
+      return await callDabProxy(
+        query
+          ? { path: "funcionarios", query, ...(connectionId ? { connectionId } : {}) }
+          : { path: "funcionarios", ...(connectionId ? { connectionId } : {}) },
+      );
+    } catch (error: any) {
+      lastError = error;
+      if (error?.status && error.status !== 400) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError || new Error("Failed to load first page from funcionarios endpoint");
+}
+
 export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promise<DabEmployee[]> {
   const employees: DabEmployee[] = [];
+  const connectionId = await resolveEmployeesConnectionId();
   let nextLink: string | undefined;
   let pageCount = 0;
 
   do {
-    const response = await callDabProxy(
-      nextLink
-        ? { nextLink }
-        : {
-            path: "funcionarios",
-            query: { $first: pageSize },
-          },
-    );
+    const response = nextLink
+      ? await callDabProxy({ nextLink, ...(connectionId ? { connectionId } : {}) })
+      : await fetchFirstPageWithFallback(pageSize, connectionId);
 
     const pageData = Array.isArray(response.value) ? response.value : [];
     employees.push(...pageData);
@@ -166,7 +268,7 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
       full_name: employee.nome_funcionario,
       cpf: normalizeDocument(employee.cpf),
       registration_number: normalizeDocument(employee.cpf),
-      hire_date: employee.data_admissao,
+      hire_date: normalizeDate(employee.data_admissao),
       position: employee.cargo || null,
       department: employee.departamento || null,
       metadata: {
@@ -188,15 +290,17 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
     if (existingId) {
       const { error } = await supabase.from("external_employees").update(payload).eq("id", existingId);
       if (error) {
-        trackEmployeesApiError(undefined, "update_external_employee_failed", error.message);
-        throw error;
+        const detailedMessage = [error.message, error.details, error.hint].filter(Boolean).join(" | ");
+        trackEmployeesApiError(undefined, "update_external_employee_failed", detailedMessage || error.message);
+        throw new Error(`Falha ao atualizar funcionário ${employee.id_funcionario}: ${detailedMessage || error.message}`);
       }
       updated += 1;
     } else {
       const { error } = await supabase.from("external_employees").insert(payload);
       if (error) {
-        trackEmployeesApiError(undefined, "insert_external_employee_failed", error.message);
-        throw error;
+        const detailedMessage = [error.message, error.details, error.hint].filter(Boolean).join(" | ");
+        trackEmployeesApiError(undefined, "insert_external_employee_failed", detailedMessage || error.message);
+        throw new Error(`Falha ao inserir funcionário ${employee.id_funcionario}: ${detailedMessage || error.message}`);
       }
       inserted += 1;
     }
