@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { ConvertToUsersDialog } from "./ConvertToUsersDialog";
 import { ImportEmployeesDialog } from "./ImportEmployeesDialog";
 import { EditEmployeeDialog } from "./EditEmployeeDialog";
+import { syncEmployeesFromDab } from "@/services/employeesApiSource";
 
 interface LinkedProfile {
   id: string;
@@ -71,9 +72,12 @@ interface ExternalEmployee {
 }
 
 export function ExternalEmployeesList() {
+  const enableManualEmployeeImport = import.meta.env.VITE_ENABLE_MANUAL_EMPLOYEE_IMPORT === "true";
+  const useEmployeesApiAsPrimary = import.meta.env.VITE_EMPLOYEES_API_PRIMARY !== "false";
   const { selectedCompanyId, companies } = useCompany();
   const { role, hasAllCompaniesAccess } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [syncingApi, setSyncingApi] = useState(false);
   const [employees, setEmployees] = useState<ExternalEmployee[]>([]);
   // ... (keep state variables same) ...
   const [filteredEmployees, setFilteredEmployees] = useState<ExternalEmployee[]>([]);
@@ -133,6 +137,10 @@ export function ExternalEmployeesList() {
         .eq('is_active', true) // Apenas funcionários ativos
         .order('full_name', { ascending: true });
 
+      if (useEmployeesApiAsPrimary) {
+        query = query.eq('source_system', 'dab_api');
+      }
+
       // Se não for admin/CEO, filtrar por empresa selecionada
       if (!canViewAllCompanies && selectedCompanyId) {
         query = query.eq('company_id', selectedCompanyId);
@@ -169,13 +177,19 @@ export function ExternalEmployeesList() {
 
   const fetchConvertibleCount = async () => {
     try {
-      const { count, error } = await supabase
+      let query = supabase
         .from('external_employees')
         .select('*', { count: 'exact', head: true })
         .not('email', 'is', null)
         .neq('email', '')
         .is('linked_profile_id', null)
         .eq('is_active', true);
+
+      if (useEmployeesApiAsPrimary) {
+        query = query.eq('source_system', 'dab_api');
+      }
+
+      const { count, error } = await query;
 
       if (!error) {
         setConvertibleCount(count || 0);
@@ -326,6 +340,40 @@ export function ExternalEmployeesList() {
     toast.success('Exportação concluída');
   };
 
+  const maskCpf = (value?: string | null) => {
+    const digits = (value || '').replace(/\D/g, '');
+    if (digits.length !== 11) return value || '-';
+    return `${digits.slice(0, 3)}.***.***-${digits.slice(9, 11)}`;
+  };
+
+  const handleApiSync = async () => {
+    setSyncingApi(true);
+    try {
+      const result = await syncEmployeesFromDab();
+      toast.success(`Sincronização concluída: ${result.totalFetched} lidos, ${result.inserted} novos, ${result.updated} atualizados, ${result.deactivated} inativados.`);
+      await fetchEmployees();
+      if (canViewAllCompanies) {
+        await fetchConvertibleCount();
+      }
+    } catch (error: any) {
+      const status = error?.context?.status ?? error?.status;
+      if (status === 401) {
+        toast.error('Sessão inválida. Faça login novamente.');
+      } else if (status === 403) {
+        toast.error('Acesso negado ao endpoint configurado no proxy.');
+      } else if (status === 404) {
+        toast.error('Endpoint de funcionários não encontrado no backend.');
+      } else if (status === 502 || status === 504) {
+        toast.error('Backend temporariamente indisponível. Tente novamente em instantes.');
+      } else {
+        toast.error('Erro ao sincronizar funcionários via API.');
+      }
+      console.error('[employees_api_sync_failed]', { status, message: error?.message });
+    } finally {
+      setSyncingApi(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -358,9 +406,19 @@ export function ExternalEmployeesList() {
                     </Badge>
                   )}
                 </Button>
-                <ImportEmployeesDialog onComplete={() => { fetchEmployees(); fetchConvertibleCount(); }} />
+                {enableManualEmployeeImport && (
+                  <ImportEmployeesDialog onComplete={() => { fetchEmployees(); fetchConvertibleCount(); }} />
+                )}
               </>
             )}
+            <Button variant="outline" size="sm" onClick={handleApiSync} disabled={syncingApi}>
+              {syncingApi ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Sincronizar API
+            </Button>
             <Button variant="outline" size="sm" onClick={relinkAllEmployees} disabled={relinkingAll}>
               {relinkingAll ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -517,7 +575,7 @@ export function ExternalEmployeesList() {
                       </TableCell>
                     )}
                     <TableCell className="font-mono text-sm">
-                      {employee.cpf || employee.registration_number || '-'}
+                      {maskCpf(employee.cpf || employee.registration_number)}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col">

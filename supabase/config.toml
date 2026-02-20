@@ -71,3 +71,6 @@ verify_jwt = true
 
 [functions.test-openai-connection]
 verify_jwt = true
+
+[functions.dab-proxy]
+verify_jwt = true

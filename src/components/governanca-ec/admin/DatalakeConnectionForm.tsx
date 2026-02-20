@@ -38,6 +38,7 @@ const formSchema = z.object({
   type: z.string().min(1, 'Tipo é obrigatório'),
   base_url: z.string().url('URL inválida'),
   auth_type: z.string().min(1, 'Tipo de autenticação é obrigatório'),
+  api_key: z.string().optional(),
   auth_config_json: z.string().optional(),
   headers_json: z.string().optional(),
 });
@@ -65,6 +66,7 @@ export function DatalakeConnectionForm({
       type: 'api_proxy',
       base_url: '',
       auth_type: 'bearer',
+      api_key: '',
       auth_config_json: '{}',
       headers_json: '{}',
     },
@@ -72,11 +74,19 @@ export function DatalakeConnectionForm({
 
   useEffect(() => {
     if (connection) {
+      const apiKeyFromConfig =
+        connection.auth_config_json?.apiKey ||
+        connection.auth_config_json?.api_key ||
+        connection.headers_json?.['X-API-Key'] ||
+        connection.headers_json?.['x-api-key'] ||
+        '';
+
       form.reset({
         name: connection.name,
         type: connection.type,
         base_url: connection.base_url,
         auth_type: connection.auth_type,
+        api_key: apiKeyFromConfig,
         auth_config_json: JSON.stringify(connection.auth_config_json || {}, null, 2),
         headers_json: JSON.stringify(connection.headers_json || {}, null, 2),
       });
@@ -86,6 +96,7 @@ export function DatalakeConnectionForm({
         type: 'api_proxy',
         base_url: '',
         auth_type: 'bearer',
+        api_key: '',
         auth_config_json: '{}',
         headers_json: '{}',
       });
@@ -102,6 +113,23 @@ export function DatalakeConnectionForm({
         headersConfig = JSON.parse(data.headers_json || '{}');
       } catch (e) {
         throw new Error('JSON inválido');
+      }
+
+      const apiKey = data.api_key?.trim();
+      if (apiKey) {
+        authConfig = {
+          ...authConfig,
+          apiKey,
+        };
+        headersConfig = {
+          ...headersConfig,
+          "X-API-Key": apiKey,
+        };
+      } else {
+        const { apiKey: _apiKey, api_key: _legacyApiKey, ...restAuthConfig } = authConfig as Record<string, any>;
+        const { "X-API-Key": _xApiKey, "x-api-key": _xApiKeyLower, ...restHeadersConfig } = headersConfig as Record<string, any>;
+        authConfig = restAuthConfig;
+        headersConfig = restHeadersConfig;
       }
 
       const payload = {
@@ -223,6 +251,28 @@ export function DatalakeConnectionForm({
                       <SelectItem value="none">Sem autenticação</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="api_key"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>API Key</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      placeholder="Cole a credencial da API"
+                      autoComplete="off"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Campo direto para autenticação da API (salvo em headers/config para uso no proxy).
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
