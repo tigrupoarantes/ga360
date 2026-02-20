@@ -4,6 +4,8 @@ const SOURCE_SYSTEM = "dab_api";
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGES = 200;
 const ENABLE_EMPLOYEE_DEACTIVATION = false;
+const ENABLE_FULL_REFRESH_REPLACE = true;
+const INSERT_BATCH_SIZE = 500;
 
 export interface DabEmployee {
   id_funcionario: string;
@@ -20,8 +22,16 @@ export interface DabEmployee {
 }
 
 interface DabPageResponse {
-  value: DabEmployee[];
+  value?: DabEmployee[];
+  data?: DabEmployee[];
+  items?: DabEmployee[];
+  results?: DabEmployee[];
   nextLink?: string;
+  next?: string;
+  next_link?: string;
+  nextlink?: string;
+  "@odata.nextLink"?: string;
+  "@odata.nextlink"?: string;
 }
 
 interface CompanyLookup {
@@ -265,20 +275,73 @@ async function fetchFirstPageWithFallback(pageSize: number, connectionId?: strin
   throw new Error(finalMessage);
 }
 
+function extractPageEmployees(response: DabPageResponse): DabEmployee[] {
+  const candidates = [response?.value, response?.data, response?.items, response?.results];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+  }
+
+  const nestedData = (response as any)?.data;
+  if (nestedData && typeof nestedData === "object") {
+    const nestedCandidates = [nestedData.value, nestedData.items, nestedData.results];
+    for (const candidate of nestedCandidates) {
+      if (Array.isArray(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return [];
+}
+
+function extractNextLink(response: DabPageResponse): string | undefined {
+  const links = [
+    response?.nextLink,
+    response?.next,
+    response?.next_link,
+    response?.nextlink,
+    (response as any)?.["@odata.nextLink"],
+    (response as any)?.["@odata.nextlink"],
+    (response as any)?.odataNextLink,
+    (response as any)?.pagination?.nextLink,
+    (response as any)?.pagination?.next,
+    (response as any)?.meta?.next,
+  ];
+
+  for (const link of links) {
+    if (typeof link === "string" && link.trim()) {
+      return link.trim();
+    }
+  }
+
+  return undefined;
+}
+
 export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promise<DabEmployee[]> {
   const employees: DabEmployee[] = [];
   const connectionId = await resolveEmployeesConnectionId();
   let nextLink: string | undefined;
   let pageCount = 0;
+  const visitedNextLinks = new Set<string>();
 
   do {
     const response = nextLink
       ? await callDabProxy({ nextLink, ...(connectionId ? { connectionId } : {}) })
       : await fetchFirstPageWithFallback(pageSize, connectionId);
 
-    const pageData = Array.isArray(response.value) ? response.value : [];
+    const pageData = extractPageEmployees(response);
     employees.push(...pageData);
-    nextLink = response.nextLink;
+    nextLink = extractNextLink(response);
+
+    if (nextLink) {
+      if (visitedNextLinks.has(nextLink)) {
+        throw new Error("Loop de paginação detectado no endpoint de funcionários");
+      }
+      visitedNextLinks.add(nextLink);
+    }
+
     pageCount += 1;
 
     if (pageCount > MAX_PAGES) {
@@ -294,6 +357,76 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
     fetchEmployeesFromDab(DEFAULT_PAGE_SIZE),
     fetchCompaniesLookup(),
   ]);
+
+  if (ENABLE_FULL_REFRESH_REPLACE) {
+    if (!Array.isArray(fetchedEmployees) || fetchedEmployees.length === 0) {
+      throw new Error("A API retornou 0 funcionários. Limpeza cancelada para evitar apagar dados existentes.");
+    }
+
+    const uniquePayloadByKey = new Map<string, Record<string, any>>();
+
+    for (const employee of fetchedEmployees) {
+      if (!employee.id_funcionario || !employee.nome_funcionario) continue;
+
+      const companyId = resolveCompanyId(employee, companyLookup);
+      const uniqueKey = buildEmployeeUniqueKey(companyId, employee.id_funcionario);
+
+      uniquePayloadByKey.set(uniqueKey, {
+        external_id: employee.id_funcionario,
+        source_system: SOURCE_SYSTEM,
+        full_name: employee.nome_funcionario,
+        cpf: normalizeDocument(employee.cpf),
+        registration_number: normalizeDocument(employee.cpf),
+        hire_date: normalizeDate(employee.data_admissao),
+        position: employee.cargo || null,
+        department: employee.departamento || null,
+        metadata: {
+          function_name: employee.funcao || null,
+          company_code: employee.cod_empresa ?? null,
+          company_name: employee.nome_fantasia || null,
+          contabilizacao: employee.contabilizacao || null,
+          categoria: employee.categoria || null,
+          cpf_masked: maskSensitiveForLog(employee.cpf),
+        },
+        company_id: companyId,
+        is_active: true,
+        synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    const payloadRows = [...uniquePayloadByKey.values()];
+
+    const { error: clearError } = await supabase
+      .from("external_employees")
+      .delete()
+      .eq("source_system", SOURCE_SYSTEM);
+
+    if (clearError) {
+      throw new Error(`Falha ao limpar funcionários atuais: ${clearError.message}`);
+    }
+
+    let inserted = 0;
+
+    for (let index = 0; index < payloadRows.length; index += INSERT_BATCH_SIZE) {
+      const batch = payloadRows.slice(index, index + INSERT_BATCH_SIZE);
+      const { error } = await supabase.from("external_employees").insert(batch);
+
+      if (error) {
+        const detailedMessage = [error.message, (error as any).details, (error as any).hint].filter(Boolean).join(" | ");
+        throw new Error(`Falha ao inserir lote da sincronização: ${detailedMessage || error.message}`);
+      }
+
+      inserted += batch.length;
+    }
+
+    return {
+      inserted,
+      updated: 0,
+      deactivated: 0,
+      totalFetched: fetchedEmployees.length,
+    };
+  }
 
   const externalIds = fetchedEmployees
     .map((employee) => employee.id_funcionario)
