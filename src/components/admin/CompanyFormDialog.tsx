@@ -15,6 +15,8 @@ interface Company {
   is_auditable?: boolean;
   logo_url?: string;
   color?: string;
+  accounting_group_code?: string;
+  accounting_group_description?: string;
 }
 
 interface CompanyFormDialogProps {
@@ -39,6 +41,8 @@ export function CompanyFormDialog({
     is_auditable: false,
     logo_url: "",
     color: "#0B3D91",
+    accounting_group_code: "",
+    accounting_group_description: "",
   });
 
   useEffect(() => {
@@ -53,6 +57,8 @@ export function CompanyFormDialog({
           is_auditable: false,
           logo_url: "",
           color: "#0B3D91",
+          accounting_group_code: "",
+          accounting_group_description: "",
         });
       }
     }
@@ -73,6 +79,8 @@ export function CompanyFormDialog({
             is_auditable: formData.is_auditable ?? false,
             logo_url: formData.logo_url || null,
             color: formData.color || null,
+            accounting_group_code: formData.accounting_group_code || null,
+            accounting_group_description: formData.accounting_group_description || null,
           })
           .eq("id", company.id);
 
@@ -90,6 +98,8 @@ export function CompanyFormDialog({
           is_auditable: formData.is_auditable ?? false,
           logo_url: formData.logo_url || null,
           color: formData.color || null,
+          accounting_group_code: formData.accounting_group_code || null,
+          accounting_group_description: formData.accounting_group_description || null,
         });
 
         if (error) throw error;
@@ -170,6 +180,30 @@ export function CompanyFormDialog({
               onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
               placeholder="https://exemplo.com/logo.png"
             />
+          </div>
+
+          <div className="space-y-3">
+            <Label>Grupo de Contabilização</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="accounting_group_code">Código</Label>
+                <Input
+                  id="accounting_group_code"
+                  value={formData.accounting_group_code || ""}
+                  onChange={(e) => setFormData({ ...formData, accounting_group_code: e.target.value })}
+                  placeholder="Ex: 1001"
+                />
+              </div>
+              <div>
+                <Label htmlFor="accounting_group_description">Descrição</Label>
+                <Input
+                  id="accounting_group_description"
+                  value={formData.accounting_group_description || ""}
+                  onChange={(e) => setFormData({ ...formData, accounting_group_description: e.target.value })}
+                  placeholder="Ex: Distribuição SP"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center justify-between py-2">

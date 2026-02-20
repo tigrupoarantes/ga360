@@ -133,6 +133,8 @@ export type Database = {
       }
       companies: {
         Row: {
+          accounting_group_code: string | null
+          accounting_group_description: string | null
           address: string | null
           cnpj: string | null
           color: string | null
@@ -149,6 +151,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          accounting_group_code?: string | null
+          accounting_group_description?: string | null
           address?: string | null
           cnpj?: string | null
           color?: string | null
@@ -165,6 +169,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          accounting_group_code?: string | null
+          accounting_group_description?: string | null
           address?: string | null
           cnpj?: string | null
           color?: string | null
