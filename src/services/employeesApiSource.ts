@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/external-client";
 const SOURCE_SYSTEM = "dab_api";
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGES = 200;
+const ENABLE_EMPLOYEE_DEACTIVATION = false;
 
 export interface DabEmployee {
   id_funcionario: string;
@@ -26,6 +27,10 @@ interface DabPageResponse {
 interface CompanyLookup {
   byName: Map<string, string>;
   byExternalId: Map<string, string>;
+}
+
+function buildEmployeeUniqueKey(companyId: string | null | undefined, externalId: string | null | undefined): string {
+  return `${companyId || "__null__"}::${externalId || ""}`;
 }
 
 function normalizeDocument(value: string | null | undefined): string | null {
@@ -216,6 +221,8 @@ async function fetchFirstPageWithFallback(pageSize: number, connectionId?: strin
   const candidateSizes = [...new Set([pageSize, 50, 20, 10, 1].filter((value) => value > 0))];
   const candidateQueries: Array<Record<string, string | number> | undefined> = [];
 
+  candidateQueries.push(undefined);
+
   for (const size of candidateSizes) {
     candidateQueries.push({ $first: size });
     candidateQueries.push({ first: size });
@@ -223,8 +230,6 @@ async function fetchFirstPageWithFallback(pageSize: number, connectionId?: strin
     candidateQueries.push({ top: size });
     candidateQueries.push({ limit: size });
   }
-
-  candidateQueries.push(undefined);
 
   let lastError: any = null;
   const attemptMessages: string[] = [];
@@ -238,15 +243,26 @@ async function fetchFirstPageWithFallback(pageSize: number, connectionId?: strin
       );
     } catch (error: any) {
       lastError = error;
-      attemptMessages.push(`${JSON.stringify(query || {})} => ${error?.details || error?.message || "unknown_error"}`);
-      if (error?.status && error.status !== 400) {
+      const status = error?.status;
+      attemptMessages.push(`${JSON.stringify(query || {})} => [${status || 0}] ${error?.details || error?.message || "unknown_error"}`);
+
+      if (status === 401 || status === 403) {
         throw error;
       }
     }
   }
 
   const attempts = attemptMessages.length > 0 ? ` Tentativas: ${attemptMessages.join(" | ")}` : "";
-  throw lastError || new Error(`Failed to load first page from funcionarios endpoint.${attempts}`);
+  const finalMessage = `Falha ao carregar a primeira página do endpoint funcionarios.${attempts}`;
+
+  if (lastError) {
+    const wrapped = new Error(finalMessage) as Error & { status?: number; details?: string };
+    wrapped.status = lastError?.status;
+    wrapped.details = finalMessage;
+    throw wrapped;
+  }
+
+  throw new Error(finalMessage);
 }
 
 export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promise<DabEmployee[]> {
@@ -285,13 +301,14 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
 
   const { data: existingRows, error: existingError } = await supabase
     .from("external_employees")
-    .select("id, external_id")
-    .eq("source_system", SOURCE_SYSTEM)
-    .in("external_id", externalIds.length > 0 ? externalIds : ["__none__"]);
+    .select("id, external_id, company_id")
+    .eq("source_system", SOURCE_SYSTEM);
 
   if (existingError) throw existingError;
 
-  const existingByExternalId = new Map((existingRows || []).map((row) => [row.external_id, row.id]));
+  const existingByUniqueKey = new Map(
+    (existingRows || []).map((row) => [buildEmployeeUniqueKey(row.company_id, row.external_id), row.id]),
+  );
 
   let inserted = 0;
   let updated = 0;
@@ -323,7 +340,8 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
       updated_at: new Date().toISOString(),
     };
 
-    const existingId = existingByExternalId.get(employee.id_funcionario);
+    const uniqueKey = buildEmployeeUniqueKey(companyId, employee.id_funcionario);
+    const existingId = existingByUniqueKey.get(uniqueKey);
 
     if (existingId) {
       const { error } = await supabase.from("external_employees").update(payload).eq("id", existingId);
@@ -336,16 +354,61 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
     } else {
       const { error } = await supabase.from("external_employees").insert(payload);
       if (error) {
+        if ((error as any).code === "23505" || String(error.message || "").toLowerCase().includes("duplicate key")) {
+          let conflictQuery = supabase
+            .from("external_employees")
+            .select("id")
+            .eq("source_system", SOURCE_SYSTEM)
+            .eq("external_id", employee.id_funcionario);
+
+          conflictQuery = companyId === null
+            ? conflictQuery.is("company_id", null)
+            : conflictQuery.eq("company_id", companyId);
+
+          const { data: conflictingRow } = await conflictQuery.maybeSingle();
+
+          const fallbackId = conflictingRow?.id || existingByUniqueKey.get(uniqueKey);
+          if (fallbackId) {
+            const { error: retryError } = await supabase
+              .from("external_employees")
+              .update(payload)
+              .eq("id", fallbackId);
+
+            if (!retryError) {
+              updated += 1;
+              existingByUniqueKey.set(uniqueKey, fallbackId);
+              continue;
+            }
+          }
+        }
+
         const detailedMessage = [error.message, error.details, error.hint].filter(Boolean).join(" | ");
         trackEmployeesApiError(undefined, "insert_external_employee_failed", detailedMessage || error.message);
         throw new Error(`Falha ao inserir funcionário ${employee.id_funcionario}: ${detailedMessage || error.message}`);
       }
       inserted += 1;
+      let insertedRowQuery = supabase
+        .from("external_employees")
+        .select("id")
+        .eq("source_system", SOURCE_SYSTEM)
+        .eq("external_id", employee.id_funcionario)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+
+      insertedRowQuery = companyId === null
+        ? insertedRowQuery.is("company_id", null)
+        : insertedRowQuery.eq("company_id", companyId);
+
+      const { data: insertedRow } = await insertedRowQuery.maybeSingle();
+
+      if (insertedRow?.id) {
+        existingByUniqueKey.set(uniqueKey, insertedRow.id);
+      }
     }
   }
 
   let deactivated = 0;
-  if (externalIds.length > 0) {
+  if (ENABLE_EMPLOYEE_DEACTIVATION && externalIds.length > 0) {
     const { data: currentlyActive, error: activeError } = await supabase
       .from("external_employees")
       .select("id, external_id")

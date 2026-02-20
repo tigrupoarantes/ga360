@@ -150,19 +150,55 @@ export function ExternalEmployeesList() {
 
       if (error) throw error;
 
-      setEmployees(data || []);
+      let resolvedData = data || [];
+
+      if (resolvedData.length === 0 && useEmployeesApiAsPrimary) {
+        let fallbackQuery = supabase
+          .from('external_employees')
+          .select(`
+            *,
+            profiles:linked_profile_id (
+              id,
+              first_name,
+              last_name
+            ),
+            lider_direto:lider_direto_id (
+              id,
+              full_name
+            ),
+            companies:company_id (
+              id,
+              name
+            )
+          `)
+          .eq('source_system', 'dab_api')
+          .order('full_name', { ascending: true });
+
+        if (!canViewAllCompanies && selectedCompanyId) {
+          fallbackQuery = fallbackQuery.eq('company_id', selectedCompanyId);
+        }
+
+        const { data: fallbackData, error: fallbackError } = await fallbackQuery;
+
+        if (!fallbackError && fallbackData && fallbackData.length > 0) {
+          resolvedData = fallbackData as ExternalEmployee[];
+          toast.warning('Exibindo funcionários em modo de recuperação. Execute uma nova sincronização.');
+        }
+      }
+
+      setEmployees(resolvedData);
 
       // Extract unique departments
-      const uniqueDepts = [...new Set(data?.map(e => e.department).filter(Boolean) as string[])];
+      const uniqueDepts = [...new Set(resolvedData?.map(e => e.department).filter(Boolean) as string[])];
       setDepartments(uniqueDepts.sort());
 
       // Extract unique unidades
-      const uniqueUnidades = [...new Set(data?.map(e => e.unidade).filter(Boolean) as string[])];
+      const uniqueUnidades = [...new Set(resolvedData?.map(e => e.unidade).filter(Boolean) as string[])];
       setUnidades(uniqueUnidades.sort());
 
       // Get last sync time
-      if (data && data.length > 0) {
-        const latestSync = data.reduce((latest, emp) =>
+      if (resolvedData && resolvedData.length > 0) {
+        const latestSync = resolvedData.reduce((latest, emp) =>
           new Date(emp.synced_at) > new Date(latest.synced_at) ? emp : latest
         );
         setLastSync(latestSync.synced_at);
