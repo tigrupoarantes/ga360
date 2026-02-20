@@ -116,7 +116,7 @@ function resolveCompanyId(employee: DabEmployee, lookup: CompanyLookup): string 
   return null;
 }
 
-async function callDabProxy(payload: { path?: string; query?: Record<string, string | number>; nextLink?: string }) {
+async function callDabProxy(payload: { path?: string; query?: Record<string, string | number>; nextLink?: string; connectionId?: string }) {
   const { data, error } = await supabase.functions.invoke("dab-proxy", {
     body: payload,
   });
@@ -144,11 +144,22 @@ async function callDabProxy(payload: { path?: string; query?: Record<string, str
       details = "";
     }
 
-    trackEmployeesApiError(status, "dab_proxy_invoke_failed", details || error.message);
+    const payloadContext = {
+      path: payload.path,
+      hasNextLink: Boolean(payload.nextLink),
+      queryKeys: payload.query ? Object.keys(payload.query) : [],
+      connectionId: payload.connectionId || null,
+    };
 
-    const wrappedError = new Error(details || error.message) as Error & { status?: number; details?: string };
+    trackEmployeesApiError(status, "dab_proxy_invoke_failed", {
+      message: details || error.message,
+      payload: payloadContext,
+    });
+
+    const fallbackMessage = `HTTP ${status || 0} no dab-proxy (${JSON.stringify(payloadContext)})`;
+    const wrappedError = new Error(details || error.message || fallbackMessage) as Error & { status?: number; details?: string };
     wrappedError.status = status;
-    wrappedError.details = details;
+    wrappedError.details = details || fallbackMessage;
     throw wrappedError;
   }
 
@@ -169,29 +180,54 @@ async function resolveEmployeesConnectionId(): Promise<string | undefined> {
   }
 
   const rows = data || [];
+  if (rows.length === 0) return undefined;
 
-  const byBaseUrl = rows.find((row) =>
-    String(row.base_url || "").toLowerCase().includes("funcionarios"),
-  );
-  if (byBaseUrl?.id) return byBaseUrl.id;
+  const prioritized = [...rows].sort((a, b) => {
+    const aScore =
+      (String(a.base_url || "").toLowerCase().includes("funcionarios") ? 2 : 0) +
+      (String(a.name || "").toLowerCase().includes("funcion") ? 1 : 0);
+    const bScore =
+      (String(b.base_url || "").toLowerCase().includes("funcionarios") ? 2 : 0) +
+      (String(b.name || "").toLowerCase().includes("funcion") ? 1 : 0);
+    return bScore - aScore;
+  });
 
-  const byName = rows.find((row) =>
-    String(row.name || "").toLowerCase().includes("funcion"),
-  );
-  if (byName?.id) return byName.id;
+  let lastErrorMessage = "";
 
-  return rows[0]?.id;
+  for (const row of prioritized) {
+    try {
+      await callDabProxy({ path: "funcionarios", query: { $first: 1 }, connectionId: row.id });
+      return row.id;
+    } catch (errorFirst: any) {
+      try {
+        await callDabProxy({ path: "funcionarios", connectionId: row.id });
+        return row.id;
+      } catch (errorSecond: any) {
+        const msg = errorSecond?.details || errorSecond?.message || errorFirst?.details || errorFirst?.message;
+        lastErrorMessage = `connection=${row.id} name=${row.name || "sem_nome"} error=${msg || "unknown_error"}`;
+      }
+    }
+  }
+
+  throw new Error(`Nenhuma conexão API ativa respondeu ao endpoint de funcionários. ${lastErrorMessage}`);
 }
 
 async function fetchFirstPageWithFallback(pageSize: number, connectionId?: string): Promise<DabPageResponse> {
-  const candidateQueries: Array<Record<string, string | number> | undefined> = [
-    { $first: pageSize },
-    { first: pageSize },
-    { $top: pageSize },
-    undefined,
-  ];
+  const candidateSizes = [...new Set([pageSize, 50, 20, 10, 1].filter((value) => value > 0))];
+  const candidateQueries: Array<Record<string, string | number> | undefined> = [];
+
+  for (const size of candidateSizes) {
+    candidateQueries.push({ $first: size });
+    candidateQueries.push({ first: size });
+    candidateQueries.push({ $top: size });
+    candidateQueries.push({ top: size });
+    candidateQueries.push({ limit: size });
+  }
+
+  candidateQueries.push(undefined);
 
   let lastError: any = null;
+  const attemptMessages: string[] = [];
 
   for (const query of candidateQueries) {
     try {
@@ -202,13 +238,15 @@ async function fetchFirstPageWithFallback(pageSize: number, connectionId?: strin
       );
     } catch (error: any) {
       lastError = error;
+      attemptMessages.push(`${JSON.stringify(query || {})} => ${error?.details || error?.message || "unknown_error"}`);
       if (error?.status && error.status !== 400) {
         throw error;
       }
     }
   }
 
-  throw lastError || new Error("Failed to load first page from funcionarios endpoint");
+  const attempts = attemptMessages.length > 0 ? ` Tentativas: ${attemptMessages.join(" | ")}` : "";
+  throw lastError || new Error(`Failed to load first page from funcionarios endpoint.${attempts}`);
 }
 
 export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promise<DabEmployee[]> {
