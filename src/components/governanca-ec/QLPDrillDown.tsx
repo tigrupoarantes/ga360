@@ -4,6 +4,7 @@ import { supabaseExternal } from "@/integrations/supabase/external-client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -30,13 +31,45 @@ interface Employee {
   department: string | null;
   unidade: string | null;
   company_id: string | null;
-  companies: { name: string } | null;
+  companies: {
+    name: string;
+    accounting_group_code: string | null;
+    accounting_group_description: string | null;
+  } | null;
+  metadata?: {
+    contabilizacao?: string | null;
+  } | null;
   source_system?: string | null;
+}
+
+type QuantitativeMode = "company" | "accounting_group";
+
+interface TopLevelGroup {
+  id: string | null;
+  name: string;
+  mode: QuantitativeMode;
+  count: number;
+}
+
+function normalizeGroupName(value: string | null | undefined): string {
+  return (value || "").trim();
+}
+
+function getAccountingGroup(employee: Employee): { key: string; name: string } {
+  const groupCode = normalizeGroupName(employee.companies?.accounting_group_code);
+  const groupDescription = normalizeGroupName(employee.companies?.accounting_group_description);
+  const metadataGroup = normalizeGroupName(employee.metadata?.contabilizacao);
+
+  const name = groupDescription || metadataGroup || "Sem Grupo de Contabilização";
+  const key = groupCode || name.toLowerCase();
+
+  return { key, name };
 }
 
 export function QLPDrillDown() {
   const [drillLevel, setDrillLevel] = useState(0);
-  const [selectedCompany, setSelectedCompany] = useState<{ id: string | null; name: string } | null>(null);
+  const [quantitativeMode, setQuantitativeMode] = useState<QuantitativeMode>("company");
+  const [selectedTopLevel, setSelectedTopLevel] = useState<TopLevelGroup | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
 
   const { data: employees, isLoading } = useQuery({
@@ -44,7 +77,7 @@ export function QLPDrillDown() {
     queryFn: async () => {
       const { data, error } = await supabaseExternal
         .from("external_employees")
-        .select("id, full_name, email, position, department, unidade, company_id, source_system, companies(name)")
+        .select("id, full_name, email, position, department, unidade, company_id, source_system, metadata, companies(name, accounting_group_code, accounting_group_description)")
         .eq("is_active", true)
         .eq("source_system", "dab_api")
         .order("full_name");
@@ -53,74 +86,114 @@ export function QLPDrillDown() {
     },
   });
 
-  const companyGroups = useMemo(() => {
+  const topLevelGroups = useMemo(() => {
     if (!employees) return [];
-    const map = new Map<string, { id: string | null; name: string; count: number }>();
-    employees.forEach((e) => {
-      const companyName = e.companies?.name || "Sem Empresa";
-      const key = e.company_id || `sem_empresa::${companyName}`;
-      const entry = map.get(key) || { id: e.company_id, name: companyName, count: 0 };
-      entry.count++;
-      map.set(key, entry);
-    });
+    const map = new Map<string, TopLevelGroup>();
+
+    for (const employee of employees) {
+      if (quantitativeMode === "company") {
+        const companyName = employee.companies?.name || "Sem Empresa";
+        const key = employee.company_id || `sem_empresa::${companyName}`;
+        const entry = map.get(key) || { id: employee.company_id, name: companyName, mode: "company" as const, count: 0 };
+        entry.count += 1;
+        map.set(key, entry);
+      } else {
+        const group = getAccountingGroup(employee);
+        const entry = map.get(group.key) || { id: group.key, name: group.name, mode: "accounting_group" as const, count: 0 };
+        entry.count += 1;
+        map.set(group.key, entry);
+      }
+    }
+
     return Array.from(map.values()).sort((a, b) => b.count - a.count);
-  }, [employees]);
+  }, [employees, quantitativeMode]);
 
   const departmentGroups = useMemo(() => {
-    if (!employees || !selectedCompany) return [];
-    const filtered = employees.filter((e) => {
-      if (selectedCompany.id === null) {
-        return e.company_id === null;
+    if (!employees || !selectedTopLevel) return [];
+    const filtered = employees.filter((employee) => {
+      if (selectedTopLevel.mode === "company") {
+        if (selectedTopLevel.id === null) {
+          return employee.company_id === null;
+        }
+        return employee.company_id === selectedTopLevel.id;
       }
-      return e.company_id === selectedCompany.id;
+
+      const group = getAccountingGroup(employee);
+      return group.key === selectedTopLevel.id;
     });
+
     const map = new Map<string, number>();
-    filtered.forEach((e) => {
-      const dept = e.department || "Sem Departamento";
+    filtered.forEach((employee) => {
+      const dept = employee.department || "Sem Departamento";
       map.set(dept, (map.get(dept) || 0) + 1);
     });
+
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
-  }, [employees, selectedCompany]);
+  }, [employees, selectedTopLevel]);
 
   const filteredEmployees = useMemo(() => {
-    if (!employees || !selectedCompany || !selectedDepartment) return [];
+    if (!employees || !selectedTopLevel || !selectedDepartment) return [];
     return employees.filter(
-      (e) => {
-        const sameCompany = selectedCompany.id === null ? e.company_id === null : e.company_id === selectedCompany.id;
-        return sameCompany && (e.department || "Sem Departamento") === selectedDepartment;
+      (employee) => {
+        const sameTopLevel = selectedTopLevel.mode === "company"
+          ? (selectedTopLevel.id === null ? employee.company_id === null : employee.company_id === selectedTopLevel.id)
+          : getAccountingGroup(employee).key === selectedTopLevel.id;
+
+        return sameTopLevel && (employee.department || "Sem Departamento") === selectedDepartment;
       }
     );
-  }, [employees, selectedCompany, selectedDepartment]);
+  }, [employees, selectedTopLevel, selectedDepartment]);
 
   const totalEmployees = employees?.length || 0;
-  const uniqueCompanies = companyGroups.length;
+  const uniqueTopLevel = topLevelGroups.length;
   const uniqueDepartments = useMemo(() => {
     if (!employees) return 0;
-    const source = drillLevel >= 1 && selectedCompany
-      ? employees.filter((e) => (selectedCompany.id === null ? e.company_id === null : e.company_id === selectedCompany.id))
+    const source = drillLevel >= 1 && selectedTopLevel
+      ? employees.filter((employee) => {
+          if (selectedTopLevel.mode === "company") {
+            return selectedTopLevel.id === null ? employee.company_id === null : employee.company_id === selectedTopLevel.id;
+          }
+
+          return getAccountingGroup(employee).key === selectedTopLevel.id;
+        })
       : employees;
+
     return new Set(source.map((e) => e.department || "Sem Departamento")).size;
-  }, [employees, drillLevel, selectedCompany]);
+  }, [employees, drillLevel, selectedTopLevel]);
+
   const uniquePositions = useMemo(() => {
     if (!employees) return 0;
-    const source = drillLevel >= 1 && selectedCompany
-      ? employees.filter((e) => (selectedCompany.id === null ? e.company_id === null : e.company_id === selectedCompany.id))
+    const source = drillLevel >= 1 && selectedTopLevel
+      ? employees.filter((employee) => {
+          if (selectedTopLevel.mode === "company") {
+            return selectedTopLevel.id === null ? employee.company_id === null : employee.company_id === selectedTopLevel.id;
+          }
+
+          return getAccountingGroup(employee).key === selectedTopLevel.id;
+        })
       : employees;
+
     return new Set(source.filter((e) => e.position).map((e) => e.position)).size;
-  }, [employees, drillLevel, selectedCompany]);
+  }, [employees, drillLevel, selectedTopLevel]);
 
   const currentTotal = useMemo(() => {
     if (drillLevel === 0) return totalEmployees;
-    if (drillLevel === 1 && selectedCompany) {
-      return employees?.filter((e) => (selectedCompany.id === null ? e.company_id === null : e.company_id === selectedCompany.id)).length || 0;
+    if (drillLevel === 1 && selectedTopLevel) {
+      return employees?.filter((employee) => {
+        if (selectedTopLevel.mode === "company") {
+          return selectedTopLevel.id === null ? employee.company_id === null : employee.company_id === selectedTopLevel.id;
+        }
+
+        return getAccountingGroup(employee).key === selectedTopLevel.id;
+      }).length || 0;
     }
     return filteredEmployees.length;
-  }, [drillLevel, totalEmployees, selectedCompany, employees, filteredEmployees]);
+  }, [drillLevel, totalEmployees, selectedTopLevel, employees, filteredEmployees]);
 
-  const handleCompanyClick = (company: { id: string | null; name: string }) => {
-    setSelectedCompany(company);
+  const handleTopLevelClick = (topLevel: TopLevelGroup) => {
+    setSelectedTopLevel(topLevel);
     setDrillLevel(1);
   };
 
@@ -131,7 +204,7 @@ export function QLPDrillDown() {
 
   const goToLevel = (level: number) => {
     if (level === 0) {
-      setSelectedCompany(null);
+      setSelectedTopLevel(null);
       setSelectedDepartment(null);
     } else if (level === 1) {
       setSelectedDepartment(null);
@@ -170,15 +243,15 @@ export function QLPDrillDown() {
               </BreadcrumbLink>
             )}
           </BreadcrumbItem>
-          {drillLevel >= 1 && selectedCompany && (
+          {drillLevel >= 1 && selectedTopLevel && (
             <>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
                 {drillLevel === 1 ? (
-                  <BreadcrumbPage>{selectedCompany.name}</BreadcrumbPage>
+                  <BreadcrumbPage>{selectedTopLevel.name}</BreadcrumbPage>
                 ) : (
                   <BreadcrumbLink className="cursor-pointer" onClick={() => goToLevel(1)}>
-                    {selectedCompany.name}
+                    {selectedTopLevel.name}
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>
@@ -194,6 +267,26 @@ export function QLPDrillDown() {
           )}
         </BreadcrumbList>
       </Breadcrumb>
+
+      <div className="flex items-center justify-end">
+        <Select
+          value={quantitativeMode}
+          onValueChange={(value: QuantitativeMode) => {
+            setQuantitativeMode(value);
+            setDrillLevel(0);
+            setSelectedTopLevel(null);
+            setSelectedDepartment(null);
+          }}
+        >
+          <SelectTrigger className="w-[270px]">
+            <SelectValue placeholder="Modo de visualização" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="company">Quantitativo por empresa</SelectItem>
+            <SelectItem value="accounting_group">Quantitativo por grupo de contabilização</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -213,9 +306,9 @@ export function QLPDrillDown() {
             <Building2 className="h-5 w-5 text-blue-500" />
           </div>
           <div>
-            <p className="text-2xl font-bold">{drillLevel === 0 ? uniqueCompanies : uniqueDepartments}</p>
+            <p className="text-2xl font-bold">{drillLevel === 0 ? uniqueTopLevel : uniqueDepartments}</p>
             <p className="text-xs text-muted-foreground">
-              {drillLevel === 0 ? "Empresas" : "Departamentos"}
+              {drillLevel === 0 ? (quantitativeMode === "company" ? "Empresas" : "Grupos de Contabilização") : "Departamentos"}
             </p>
           </div>
         </Card>
@@ -242,18 +335,22 @@ export function QLPDrillDown() {
       {/* Level 0: Companies */}
       {drillLevel === 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {companyGroups.map((company) => (
+          {topLevelGroups.map((topLevel) => (
             <Card
-              key={company.id}
+              key={`${topLevel.mode}::${topLevel.id ?? "null"}::${topLevel.name}`}
               className="p-4 cursor-pointer hover:border-primary/50 transition-all flex items-center justify-between"
-              onClick={() => handleCompanyClick(company)}
+              onClick={() => handleTopLevelClick(topLevel)}
             >
               <div className="flex items-center gap-3">
-                <Building2 className="h-5 w-5 text-muted-foreground" />
+                {quantitativeMode === "company" ? (
+                  <Building2 className="h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <Layers className="h-5 w-5 text-muted-foreground" />
+                )}
                 <div>
-                  <p className="font-semibold">{company.name}</p>
+                  <p className="font-semibold">{topLevel.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {company.count} funcionário{company.count !== 1 ? "s" : ""}
+                    {topLevel.count} funcionário{topLevel.count !== 1 ? "s" : ""}
                   </p>
                 </div>
               </div>
