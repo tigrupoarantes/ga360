@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -105,6 +105,8 @@ export function ExternalEmployeesList() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingEmployee, setDeletingEmployee] = useState<ExternalEmployee | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   // Verificar se o usuário pode ver todas as empresas
   const canViewAllCompanies = role === 'super_admin' || hasAllCompaniesAccess;
 
@@ -118,6 +120,10 @@ export function ExternalEmployeesList() {
   useEffect(() => {
     filterEmployees();
   }, [employees, searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter, rowsPerPage]);
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -394,6 +400,20 @@ export function ExternalEmployeesList() {
     return `${digits.slice(0, 3)}.***.***-${digits.slice(9, 11)}`;
   };
 
+  const totalPages = useMemo(() => {
+    if (filteredEmployees.length === 0) return 1;
+    return Math.ceil(filteredEmployees.length / rowsPerPage);
+  }, [filteredEmployees.length, rowsPerPage]);
+
+  const paginatedEmployees = useMemo(() => {
+    const start = (currentPage - 1) * rowsPerPage;
+    const end = start + rowsPerPage;
+    return filteredEmployees.slice(start, end);
+  }, [filteredEmployees, currentPage, rowsPerPage]);
+
+  const pageStart = filteredEmployees.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
+  const pageEnd = Math.min(currentPage * rowsPerPage, filteredEmployees.length);
+
   const handleApiSync = async () => {
     setSyncingApi(true);
     try {
@@ -617,7 +637,7 @@ export function ExternalEmployeesList() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredEmployees.map((employee) => (
+                {paginatedEmployees.map((employee) => (
                   <TableRow key={employee.id}>
                     {canViewAllCompanies && (
                       <TableCell>
@@ -767,8 +787,40 @@ export function ExternalEmployeesList() {
         )}
 
         {filteredEmployees.length > 0 && (
-          <div className="text-sm text-muted-foreground mt-4 text-center">
-            Exibindo {filteredEmployees.length} de {employees.length} funcionários
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-muted-foreground mt-4">
+            <div>
+              Exibindo {pageStart}-{pageEnd} de {filteredEmployees.length} funcionários (total: {employees.length})
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={String(rowsPerPage)} onValueChange={(value) => setRowsPerPage(Number(value))}>
+                <SelectTrigger className="w-[130px] h-8">
+                  <SelectValue placeholder="Por página" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10 / página</SelectItem>
+                  <SelectItem value="25">25 / página</SelectItem>
+                  <SelectItem value="50">50 / página</SelectItem>
+                  <SelectItem value="100">100 / página</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                Anterior
+              </Button>
+              <span className="text-xs min-w-[72px] text-center">Página {currentPage} / {totalPages}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage >= totalPages}
+              >
+                Próxima
+              </Button>
+            </div>
           </div>
         )}
       </CardContent>
