@@ -23,6 +23,48 @@ interface ApiConnectionConfig {
   headersJson?: Record<string, string>;
 }
 
+function sanitizeBaseUrl(rawBaseUrl: string): string {
+  let normalized = (rawBaseUrl || "").trim();
+  if (!normalized) return normalized;
+
+  normalized = normalized.replace(/\/+$/, "");
+
+  normalized = normalized
+    .replace(/\/v1\/v1(\/|$)/i, "/v1$1")
+    .replace(/\/api\/api(\/|$)/i, "/api$1")
+    .replace(/\/v1\/api(\/|$)/i, "/v1$1");
+
+  normalized = normalized.replace(/\/(health|funcionarios)$/i, "");
+
+  return normalized;
+}
+
+function normalizeNextLink(nextLink: string, baseUrl: string): string {
+  const trimmed = (nextLink || "").trim();
+  if (!trimmed) return trimmed;
+
+  const safeBase = sanitizeBaseUrl(baseUrl);
+  const base = safeBase.endsWith("/") ? safeBase : `${safeBase}/`;
+  const baseUrlObject = new URL(base);
+  const basePath = baseUrlObject.pathname.replace(/\/+$/, "").toLowerCase();
+  const shouldUseV1 = basePath.endsWith("/v1");
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    const absolute = new URL(trimmed);
+    if (shouldUseV1 && absolute.pathname.toLowerCase().startsWith("/api/")) {
+      absolute.pathname = absolute.pathname.replace(/^\/api\//i, "/v1/");
+    }
+    return absolute.toString();
+  }
+
+  if (shouldUseV1 && /^\/?api\//i.test(trimmed)) {
+    const rewritten = trimmed.replace(/^\/?api\//i, "v1/");
+    return new URL(rewritten, base).toString();
+  }
+
+  return new URL(trimmed, base).toString();
+}
+
 function normalizePath(path: string): string {
   return path
     .trim()
@@ -50,13 +92,11 @@ function applyQueryParams(url: URL, query?: Record<string, string | number | boo
 }
 
 function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[] {
-  const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const sanitizedBaseUrl = sanitizeBaseUrl(baseUrl);
+  const base = sanitizedBaseUrl.endsWith("/") ? sanitizedBaseUrl : `${sanitizedBaseUrl}/`;
 
   if (payload.nextLink) {
-    if (/^https?:\/\//i.test(payload.nextLink)) {
-      return [payload.nextLink];
-    }
-    return [new URL(payload.nextLink, base).toString()];
+    return [normalizeNextLink(payload.nextLink, sanitizedBaseUrl)];
   }
 
   const normalized = normalizePath(payload.path || "");
@@ -80,8 +120,8 @@ function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[]
   if (normalizedPathname.endsWith("/api") || normalizedPathname.endsWith("/v1/api")) {
     endpoints.push(normalized);
   } else if (normalizedPathname.endsWith("/v1")) {
-    endpoints.push(`api/${normalized}`);
     endpoints.push(normalized);
+    endpoints.push(`api/${normalized}`);
   } else {
     endpoints.push(`api/${normalized}`);
     endpoints.push(`v1/api/${normalized}`);
