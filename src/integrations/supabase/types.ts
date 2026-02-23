@@ -813,6 +813,8 @@ export type Database = {
       }
       external_employees: {
         Row: {
+          age: number | null
+          birth_date: string | null
           cnh_categoria: string | null
           cnh_numero: string | null
           cnh_validade: string | null
@@ -821,15 +823,20 @@ export type Database = {
           cpf: string | null
           created_at: string | null
           department: string | null
+          education_level: string | null
           email: string | null
           external_id: string
+          first_job: boolean | null
           full_name: string
+          gender: string | null
           hire_date: string | null
           id: string
           is_active: boolean | null
+          is_disabled: boolean | null
           is_condutor: boolean | null
           lider_direto_id: string | null
           linked_profile_id: string | null
+          marital_status: string | null
           metadata: Json | null
           phone: string | null
           position: string | null
@@ -840,6 +847,8 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          age?: number | null
+          birth_date?: string | null
           cnh_categoria?: string | null
           cnh_numero?: string | null
           cnh_validade?: string | null
@@ -848,15 +857,20 @@ export type Database = {
           cpf?: string | null
           created_at?: string | null
           department?: string | null
+          education_level?: string | null
           email?: string | null
           external_id: string
+          first_job?: boolean | null
           full_name: string
+          gender?: string | null
           hire_date?: string | null
           id?: string
           is_active?: boolean | null
+          is_disabled?: boolean | null
           is_condutor?: boolean | null
           lider_direto_id?: string | null
           linked_profile_id?: string | null
+          marital_status?: string | null
           metadata?: Json | null
           phone?: string | null
           position?: string | null
@@ -867,6 +881,8 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          age?: number | null
+          birth_date?: string | null
           cnh_categoria?: string | null
           cnh_numero?: string | null
           cnh_validade?: string | null
@@ -875,15 +891,20 @@ export type Database = {
           cpf?: string | null
           created_at?: string | null
           department?: string | null
+          education_level?: string | null
           email?: string | null
           external_id?: string
+          first_job?: boolean | null
           full_name?: string
+          gender?: string | null
           hire_date?: string | null
           id?: string
           is_active?: boolean | null
+          is_disabled?: boolean | null
           is_condutor?: boolean | null
           lider_direto_id?: string | null
           linked_profile_id?: string | null
+          marital_status?: string | null
           metadata?: Json | null
           phone?: string | null
           position?: string | null

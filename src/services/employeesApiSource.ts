@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/external-client";
+import type { Database } from "@/integrations/supabase/types";
 
 const SOURCE_SYSTEM = "dab_api";
 const DEFAULT_PAGE_SIZE = 100;
@@ -7,10 +8,17 @@ const ENABLE_EMPLOYEE_DEACTIVATION = false;
 const ENABLE_FULL_REFRESH_REPLACE = true;
 const INSERT_BATCH_SIZE = 500;
 
+type ExternalEmployeeInsert = Database["public"]["Tables"]["external_employees"]["Insert"];
+
 export interface DabEmployee {
   id_funcionario: string;
   cpf: string | null;
   nome_funcionario: string;
+  email?: string | null;
+  sexo?: string | null;
+  data_nascimento?: string | null;
+  idade?: number | string | null;
+  primeiro_emprego?: string | null;
   data_admissao: string | null;
   contabilizacao?: string | null;
   cargo?: string | null;
@@ -37,6 +45,7 @@ interface DabPageResponse {
 interface CompanyLookup {
   byName: Map<string, string>;
   byExternalId: Map<string, string>;
+  byAccountingGroupCode: Map<string, string>;
 }
 
 function buildEmployeeUniqueKey(companyId: string | null | undefined, externalId: string | null | undefined): string {
@@ -81,6 +90,39 @@ function normalizeExternalCode(value: string | number | null | undefined): strin
   return String(value).trim();
 }
 
+function normalizeCodeDigits(value: string | number | null | undefined): string {
+  const raw = normalizeExternalCode(value);
+  return raw.replace(/\D/g, "");
+}
+
+function normalizeGender(value: string | null | undefined): string | null {
+  const normalized = normalizeName(value).toUpperCase();
+  if (!normalized) return null;
+
+  if (normalized === "M" || normalized === "MASCULINO") return "MASCULINO";
+  if (normalized === "F" || normalized === "FEMININO") return "FEMININO";
+  if (normalized === "INDEFINIDO" || normalized === "NAO INFORMADO" || normalized === "NÃO INFORMADO") return "INDEFINIDO";
+
+  return normalized;
+}
+
+function normalizeFirstJob(value: string | null | undefined): boolean | null {
+  const normalized = normalizeName(value);
+  if (!normalized) return null;
+
+  if (["sim", "s", "true", "1"].includes(normalized)) return true;
+  if (["nao", "não", "n", "false", "0"].includes(normalized)) return false;
+
+  return null;
+}
+
+function normalizeInteger(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.trunc(parsed);
+}
+
 function maskSensitiveForLog(value: string | null | undefined): string {
   const digits = (value || "").replace(/\D/g, "");
   if (digits.length < 4) return "***";
@@ -98,12 +140,13 @@ function trackEmployeesApiError(status: number | undefined, context: string, det
 async function fetchCompaniesLookup(): Promise<CompanyLookup> {
   const { data, error } = await supabase
     .from("companies")
-    .select("id, name, external_id");
+    .select("id, name, external_id, accounting_group_code");
 
   if (error) throw error;
 
   const byName = new Map<string, string>();
   const byExternalId = new Map<string, string>();
+  const byAccountingGroupCode = new Map<string, string>();
 
   for (const company of data || []) {
     if (company.name) {
@@ -112,12 +155,24 @@ async function fetchCompaniesLookup(): Promise<CompanyLookup> {
     if (company.external_id) {
       byExternalId.set(normalizeExternalCode(company.external_id), company.id);
     }
+
+    if (company.accounting_group_code) {
+      const normalizedAccounting = normalizeCodeDigits(company.accounting_group_code);
+      if (normalizedAccounting) {
+        byAccountingGroupCode.set(normalizedAccounting, company.id);
+      }
+    }
   }
 
-  return { byName, byExternalId };
+  return { byName, byExternalId, byAccountingGroupCode };
 }
 
 function resolveCompanyId(employee: DabEmployee, lookup: CompanyLookup): string | null {
+  const byAccountingCode = normalizeCodeDigits(employee.cod_empresa);
+  if (byAccountingCode && lookup.byAccountingGroupCode.has(byAccountingCode)) {
+    return lookup.byAccountingGroupCode.get(byAccountingCode) || null;
+  }
+
   const byCode = normalizeExternalCode(employee.cod_empresa);
   if (byCode && lookup.byExternalId.has(byCode)) {
     return lookup.byExternalId.get(byCode) || null;
@@ -363,7 +418,7 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
       throw new Error("A API retornou 0 funcionários. Limpeza cancelada para evitar apagar dados existentes.");
     }
 
-    const uniquePayloadByKey = new Map<string, Record<string, any>>();
+    const uniquePayloadByKey = new Map<string, ExternalEmployeeInsert>();
 
     for (const employee of fetchedEmployees) {
       if (!employee.id_funcionario || !employee.nome_funcionario) continue;
@@ -375,8 +430,13 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
         external_id: employee.id_funcionario,
         source_system: SOURCE_SYSTEM,
         full_name: employee.nome_funcionario,
+        email: employee.email || null,
         cpf: normalizeDocument(employee.cpf),
         registration_number: normalizeDocument(employee.cpf),
+        birth_date: normalizeDate(employee.data_nascimento),
+        gender: normalizeGender(employee.sexo),
+        age: normalizeInteger(employee.idade),
+        first_job: normalizeFirstJob(employee.primeiro_emprego),
         hire_date: normalizeDate(employee.data_admissao),
         position: employee.cargo || null,
         department: employee.departamento || null,
@@ -386,6 +446,8 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
           company_name: employee.nome_fantasia || null,
           contabilizacao: employee.contabilizacao || null,
           categoria: employee.categoria || null,
+          sexo_raw: employee.sexo || null,
+          primeiro_emprego_raw: employee.primeiro_emprego || null,
           cpf_masked: maskSensitiveForLog(employee.cpf),
         },
         company_id: companyId,
@@ -395,7 +457,7 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
       });
     }
 
-    const payloadRows = [...uniquePayloadByKey.values()];
+    const payloadRows: ExternalEmployeeInsert[] = [...uniquePayloadByKey.values()];
 
     const { error: clearError } = await supabase
       .from("external_employees")
@@ -450,12 +512,17 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
     if (!employee.id_funcionario || !employee.nome_funcionario) continue;
 
     const companyId = resolveCompanyId(employee, companyLookup);
-    const payload = {
+    const payload: ExternalEmployeeInsert = {
       external_id: employee.id_funcionario,
       source_system: SOURCE_SYSTEM,
       full_name: employee.nome_funcionario,
+      email: employee.email || null,
       cpf: normalizeDocument(employee.cpf),
       registration_number: normalizeDocument(employee.cpf),
+      birth_date: normalizeDate(employee.data_nascimento),
+      gender: normalizeGender(employee.sexo),
+      age: normalizeInteger(employee.idade),
+      first_job: normalizeFirstJob(employee.primeiro_emprego),
       hire_date: normalizeDate(employee.data_admissao),
       position: employee.cargo || null,
       department: employee.departamento || null,
@@ -465,6 +532,8 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
         company_name: employee.nome_fantasia || null,
         contabilizacao: employee.contabilizacao || null,
         categoria: employee.categoria || null,
+        sexo_raw: employee.sexo || null,
+        primeiro_emprego_raw: employee.primeiro_emprego || null,
         cpf_masked: maskSensitiveForLog(employee.cpf),
       },
       company_id: companyId,
