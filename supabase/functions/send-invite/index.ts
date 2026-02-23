@@ -20,8 +20,6 @@ interface EmailConfig {
   };
 }
 
-declare const EdgeRuntime: { waitUntil: (promise: Promise<any>) => void };
-
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const SMTP_TIMEOUT_MS = 10000;
@@ -101,7 +99,7 @@ async function sendEmail(opts: {
   console.log(`[SMTP] Connecting to ${host}:${port} (${encryption})...`);
 
   let conn: Deno.Conn;
-  if (encryption === 'ssl') {
+  if (encryption === 'ssl' || encryption === 'tls') {
     conn = await withTimeout(Deno.connectTls({ hostname: host, port }), SMTP_TIMEOUT_MS, 'TLS connect');
   } else {
     conn = await withTimeout(Deno.connect({ hostname: host, port }), SMTP_TIMEOUT_MS, 'TCP connect');
@@ -190,12 +188,9 @@ serve(async (req) => {
 
     const emailConfig = emailConfigData?.value as unknown as EmailConfig | null;
     const fromName = emailConfig?.from_name || 'GA 360';
-    const APP_URL = appUrl || Deno.env.get('PUBLIC_SITE_URL') || 'http://localhost:3000';
+    const configuredPublicUrl = Deno.env.get('PUBLIC_SITE_URL');
+    const APP_URL = (configuredPublicUrl || appUrl || 'http://localhost:3000').replace(/\/$/, '');
     const registrationUrl = `${APP_URL}/auth?invite=${invite.token}`;
-
-    if (!emailConfig?.smtp?.host) {
-      throw new Error('Configuração SMTP não encontrada.');
-    }
 
     const password = Deno.env.get('SMTP_PASSWORD');
     if (!password) {
@@ -278,30 +273,25 @@ Se você não solicitou este convite, ignore este email.
 </html>`;
 
     const subject = `Convite para ${fromName}`;
-    const host = emailConfig.smtp.host;
-    const port = parseInt(emailConfig.smtp.port || '465');
-    const user = emailConfig.smtp.user;
-    const encryption = emailConfig.smtp.encryption || 'ssl';
+    const host = emailConfig?.smtp?.host || Deno.env.get('SMTP_HOST') || '';
+    const port = parseInt(emailConfig?.smtp?.port || Deno.env.get('SMTP_PORT') || '465');
+    const user = emailConfig?.smtp?.user || Deno.env.get('SMTP_USER') || '';
+    const encryption = emailConfig?.smtp?.encryption || Deno.env.get('SMTP_ENCRYPTION') || 'ssl';
     const fromAddress = emailConfig.from_email || user;
     const replyTo = emailConfig.reply_to || '';
 
-    // Send email in background with full error handling
-    const sendEmailTask = (async () => {
-      try {
-        await sendEmail({
-          host, port, user, password, encryption,
-          fromName, fromAddress, replyTo, toEmail: email,
-          subject, html: emailHtml,
-        });
-      } catch (err: any) {
-        console.error(`❌ Failed to send invite email to ${email}:`, err.message);
-      }
-    })();
+    if (!host || !user) {
+      throw new Error('Configuração SMTP não encontrada (host/user).');
+    }
 
-    EdgeRuntime.waitUntil(sendEmailTask);
+    await sendEmail({
+      host, port, user, password, encryption,
+      fromName, fromAddress, replyTo, toEmail: email,
+      subject, html: emailHtml,
+    });
 
     return new Response(
-      JSON.stringify({ success: true, message: 'Convite sendo enviado' }),
+      JSON.stringify({ success: true, message: 'Convite enviado com sucesso' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
