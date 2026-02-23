@@ -821,6 +821,7 @@ export type Database = {
           cnh_validade: string | null
           cod_vendedor: string | null
           company_id: string | null
+          contract_company_id: string | null
           cpf: string | null
           created_at: string | null
           department: string | null
@@ -839,6 +840,7 @@ export type Database = {
           linked_profile_id: string | null
           marital_status: string | null
           metadata: Json | null
+          accounting_company_id: string | null
           phone: string | null
           position: string | null
           registration_number: string | null
@@ -856,6 +858,7 @@ export type Database = {
           cnh_validade?: string | null
           cod_vendedor?: string | null
           company_id?: string | null
+          contract_company_id?: string | null
           cpf?: string | null
           created_at?: string | null
           department?: string | null
@@ -874,6 +877,7 @@ export type Database = {
           linked_profile_id?: string | null
           marital_status?: string | null
           metadata?: Json | null
+          accounting_company_id?: string | null
           phone?: string | null
           position?: string | null
           registration_number?: string | null
@@ -891,6 +895,7 @@ export type Database = {
           cnh_validade?: string | null
           cod_vendedor?: string | null
           company_id?: string | null
+          contract_company_id?: string | null
           cpf?: string | null
           created_at?: string | null
           department?: string | null
@@ -909,6 +914,7 @@ export type Database = {
           linked_profile_id?: string | null
           marital_status?: string | null
           metadata?: Json | null
+          accounting_company_id?: string | null
           phone?: string | null
           position?: string | null
           registration_number?: string | null
@@ -918,6 +924,20 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "external_employees_accounting_company_id_fkey"
+            columns: ["accounting_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_employees_contract_company_id_fkey"
+            columns: ["contract_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "external_employees_company_id_fkey"
             columns: ["company_id"]

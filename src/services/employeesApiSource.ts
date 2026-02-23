@@ -26,8 +26,18 @@ export interface DabEmployee {
   departamento?: string | null;
   funcao?: string | null;
   cod_empresa?: number | null;
+  cod_contabilizacao?: number | string | null;
   nome_fantasia?: string | null;
 }
+
+const ACCOUNTING_CODE_TO_NAME: Record<string, string> = {
+  "9": "CHOK AGRO",
+  "3": "CHOK DISTRIBUIDORA",
+  "4": "BROKER J. ARANTES",
+  "5": "LOJAS CHOKDOCE",
+  "8": "ESCRITORIO CENTRAL",
+  "11": "G4 DISTRIBUIDORA",
+};
 
 interface DabPageResponse {
   value?: DabEmployee[];
@@ -44,6 +54,7 @@ interface DabPageResponse {
 
 interface CompanyLookup {
   byName: Map<string, string>;
+  byAccountingGroupDescription: Map<string, string>;
   byExternalId: Map<string, string>;
   byAccountingGroupCode: Map<string, string>;
 }
@@ -85,6 +96,17 @@ function normalizeName(value: string | null | undefined): string {
   return (value || "").trim().toLowerCase();
 }
 
+function normalizeLabel(value: string | null | undefined): string {
+  const raw = (value || "").trim().toLowerCase();
+  if (!raw) return "";
+
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function normalizeExternalCode(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "";
   return String(value).trim();
@@ -93,6 +115,24 @@ function normalizeExternalCode(value: string | number | null | undefined): strin
 function normalizeCodeDigits(value: string | number | null | undefined): string {
   const raw = normalizeExternalCode(value);
   return raw.replace(/\D/g, "");
+}
+
+function resolveAccountingCode(employee: DabEmployee): string {
+  const codeFromAccounting = normalizeCodeDigits(employee.cod_contabilizacao);
+  if (codeFromAccounting) return codeFromAccounting;
+
+  return "";
+}
+
+function resolveAccountingLabel(employee: DabEmployee): string | null {
+  const accountingCode = resolveAccountingCode(employee);
+  const labelByCode = accountingCode ? ACCOUNTING_CODE_TO_NAME[accountingCode] : undefined;
+  if (labelByCode) return labelByCode;
+
+  const labelFromApi = (employee.contabilizacao || "").trim();
+  if (labelFromApi) return labelFromApi;
+
+  return null;
 }
 
 function normalizeGender(value: string | null | undefined): string | null {
@@ -140,17 +180,28 @@ function trackEmployeesApiError(status: number | undefined, context: string, det
 async function fetchCompaniesLookup(): Promise<CompanyLookup> {
   const { data, error } = await supabase
     .from("companies")
-    .select("id, name, external_id, accounting_group_code");
+    .select("id, name, external_id, accounting_group_code, accounting_group_description");
 
   if (error) throw error;
 
   const byName = new Map<string, string>();
+  const byAccountingGroupDescription = new Map<string, string>();
   const byExternalId = new Map<string, string>();
   const byAccountingGroupCode = new Map<string, string>();
 
   for (const company of data || []) {
     if (company.name) {
-      byName.set(normalizeName(company.name), company.id);
+      const normalizedName = normalizeName(company.name);
+      const normalizedLabel = normalizeLabel(company.name);
+      if (normalizedName) byName.set(normalizedName, company.id);
+      if (normalizedLabel) byName.set(normalizedLabel, company.id);
+    }
+
+    if (company.accounting_group_description) {
+      const normalizedGroupDescription = normalizeLabel(company.accounting_group_description);
+      if (normalizedGroupDescription) {
+        byAccountingGroupDescription.set(normalizedGroupDescription, company.id);
+      }
     }
     if (company.external_id) {
       byExternalId.set(normalizeExternalCode(company.external_id), company.id);
@@ -164,10 +215,19 @@ async function fetchCompaniesLookup(): Promise<CompanyLookup> {
     }
   }
 
-  return { byName, byExternalId, byAccountingGroupCode };
+  return { byName, byAccountingGroupDescription, byExternalId, byAccountingGroupCode };
 }
 
 function resolveCompanyId(employee: DabEmployee, lookup: CompanyLookup): string | null {
+  return resolveContractCompanyId(employee, lookup);
+}
+
+function resolveContractCompanyId(employee: DabEmployee, lookup: CompanyLookup): string | null {
+  const byCompanyName = normalizeLabel(employee.nome_fantasia);
+  if (byCompanyName && lookup.byName.has(byCompanyName)) {
+    return lookup.byName.get(byCompanyName) || null;
+  }
+
   const byAccountingCode = normalizeCodeDigits(employee.cod_empresa);
   if (byAccountingCode && lookup.byAccountingGroupCode.has(byAccountingCode)) {
     return lookup.byAccountingGroupCode.get(byAccountingCode) || null;
@@ -181,6 +241,27 @@ function resolveCompanyId(employee: DabEmployee, lookup: CompanyLookup): string 
   const byName = normalizeName(employee.nome_fantasia);
   if (byName && lookup.byName.has(byName)) {
     return lookup.byName.get(byName) || null;
+  }
+
+  return null;
+}
+
+function resolveAccountingCompanyId(employee: DabEmployee, lookup: CompanyLookup): string | null {
+  const accountingCode = resolveAccountingCode(employee);
+  const accountingLabelByCode = accountingCode ? ACCOUNTING_CODE_TO_NAME[accountingCode] : undefined;
+
+  const byAccountingLabelCode = normalizeLabel(accountingLabelByCode);
+  if (byAccountingLabelCode && lookup.byAccountingGroupDescription.has(byAccountingLabelCode)) {
+    return lookup.byAccountingGroupDescription.get(byAccountingLabelCode) || null;
+  }
+
+  if (accountingCode && lookup.byAccountingGroupCode.has(accountingCode)) {
+    return lookup.byAccountingGroupCode.get(accountingCode) || null;
+  }
+
+  const byAccountingDescription = normalizeLabel(employee.contabilizacao);
+  if (byAccountingDescription && lookup.byAccountingGroupDescription.has(byAccountingDescription)) {
+    return lookup.byAccountingGroupDescription.get(byAccountingDescription) || null;
   }
 
   return null;
@@ -423,15 +504,18 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
     for (const employee of fetchedEmployees) {
       if (!employee.id_funcionario || !employee.nome_funcionario) continue;
 
-      const companyId = resolveCompanyId(employee, companyLookup);
-      const uniqueKey = buildEmployeeUniqueKey(companyId, employee.id_funcionario);
+      const contractCompanyId = resolveContractCompanyId(employee, companyLookup);
+      const accountingCompanyId = resolveAccountingCompanyId(employee, companyLookup);
+        const accountingLabel = resolveAccountingLabel(employee);
+        const accountingCode = resolveAccountingCode(employee);
+      const uniqueKey = buildEmployeeUniqueKey(contractCompanyId, employee.id_funcionario);
 
       uniquePayloadByKey.set(uniqueKey, {
         external_id: employee.id_funcionario,
         source_system: SOURCE_SYSTEM,
         full_name: employee.nome_funcionario,
         email: employee.email || null,
-        accounting_group: employee.contabilizacao || null,
+        accounting_group: accountingLabel,
         cpf: normalizeDocument(employee.cpf),
         registration_number: normalizeDocument(employee.cpf),
         birth_date: normalizeDate(employee.data_nascimento),
@@ -445,13 +529,19 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
           function_name: employee.funcao || null,
           company_code: employee.cod_empresa ?? null,
           company_name: employee.nome_fantasia || null,
-          contabilizacao: employee.contabilizacao || null,
+          contabilizacao: accountingLabel,
+          contabilizacao_raw: employee.contabilizacao || null,
+          cod_contabilizacao: accountingCode || null,
           categoria: employee.categoria || null,
           sexo_raw: employee.sexo || null,
           primeiro_emprego_raw: employee.primeiro_emprego || null,
+          contract_company_id: contractCompanyId,
+          accounting_company_id: accountingCompanyId,
           cpf_masked: maskSensitiveForLog(employee.cpf),
         },
-        company_id: companyId,
+        contract_company_id: contractCompanyId,
+        accounting_company_id: accountingCompanyId,
+        company_id: contractCompanyId,
         is_active: true,
         synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -512,13 +602,16 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
   for (const employee of fetchedEmployees) {
     if (!employee.id_funcionario || !employee.nome_funcionario) continue;
 
-    const companyId = resolveCompanyId(employee, companyLookup);
+    const contractCompanyId = resolveContractCompanyId(employee, companyLookup);
+    const accountingCompanyId = resolveAccountingCompanyId(employee, companyLookup);
+    const accountingLabel = resolveAccountingLabel(employee);
+    const accountingCode = resolveAccountingCode(employee);
     const payload: ExternalEmployeeInsert = {
       external_id: employee.id_funcionario,
       source_system: SOURCE_SYSTEM,
       full_name: employee.nome_funcionario,
       email: employee.email || null,
-      accounting_group: employee.contabilizacao || null,
+      accounting_group: accountingLabel,
       cpf: normalizeDocument(employee.cpf),
       registration_number: normalizeDocument(employee.cpf),
       birth_date: normalizeDate(employee.data_nascimento),
@@ -532,19 +625,25 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
         function_name: employee.funcao || null,
         company_code: employee.cod_empresa ?? null,
         company_name: employee.nome_fantasia || null,
-        contabilizacao: employee.contabilizacao || null,
+        contabilizacao: accountingLabel,
+        contabilizacao_raw: employee.contabilizacao || null,
+        cod_contabilizacao: accountingCode || null,
         categoria: employee.categoria || null,
         sexo_raw: employee.sexo || null,
         primeiro_emprego_raw: employee.primeiro_emprego || null,
+        contract_company_id: contractCompanyId,
+        accounting_company_id: accountingCompanyId,
         cpf_masked: maskSensitiveForLog(employee.cpf),
       },
-      company_id: companyId,
+      contract_company_id: contractCompanyId,
+      accounting_company_id: accountingCompanyId,
+      company_id: contractCompanyId,
       is_active: true,
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    const uniqueKey = buildEmployeeUniqueKey(companyId, employee.id_funcionario);
+    const uniqueKey = buildEmployeeUniqueKey(contractCompanyId, employee.id_funcionario);
     const existingId = existingByUniqueKey.get(uniqueKey);
 
     if (existingId) {
@@ -565,9 +664,9 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
             .eq("source_system", SOURCE_SYSTEM)
             .eq("external_id", employee.id_funcionario);
 
-          conflictQuery = companyId === null
+          conflictQuery = contractCompanyId === null
             ? conflictQuery.is("company_id", null)
-            : conflictQuery.eq("company_id", companyId);
+            : conflictQuery.eq("company_id", contractCompanyId);
 
           const { data: conflictingRow } = await conflictQuery.maybeSingle();
 
@@ -599,9 +698,9 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
         .order("updated_at", { ascending: false })
         .limit(1);
 
-      insertedRowQuery = companyId === null
+      insertedRowQuery = contractCompanyId === null
         ? insertedRowQuery.is("company_id", null)
-        : insertedRowQuery.eq("company_id", companyId);
+        : insertedRowQuery.eq("company_id", contractCompanyId);
 
       const { data: insertedRow } = await insertedRowQuery.maybeSingle();
 
