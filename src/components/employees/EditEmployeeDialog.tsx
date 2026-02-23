@@ -33,6 +33,13 @@ interface EditEmployeeDialogProps {
     is_condutor: boolean;
     company_id: string | null;
     hire_date: string | null;
+    birth_date: string | null;
+    gender: string | null;
+    age: number | null;
+    first_job: boolean | null;
+    education_level: string | null;
+    marital_status: string | null;
+    is_disabled: boolean | null;
   } | null;
   onSuccess: () => void;
 }
@@ -53,6 +60,13 @@ export function EditEmployeeDialog({ open, onOpenChange, employee, onSuccess }: 
     is_condutor: false,
     company_id: "",
     hire_date: "",
+    birth_date: "",
+    gender: "",
+    age: "",
+    first_job: "",
+    education_level: "",
+    marital_status: "",
+    is_disabled: "",
   });
 
   useEffect(() => {
@@ -70,6 +84,13 @@ export function EditEmployeeDialog({ open, onOpenChange, employee, onSuccess }: 
         is_condutor: employee.is_condutor || false,
         company_id: employee.company_id || "",
         hire_date: employee.hire_date ? employee.hire_date.split("T")[0] : "",
+        birth_date: employee.birth_date ? employee.birth_date.split("T")[0] : "",
+        gender: employee.gender || "",
+        age: employee.age !== null && employee.age !== undefined ? String(employee.age) : "",
+        first_job: employee.first_job === null ? "" : employee.first_job ? "sim" : "nao",
+        education_level: employee.education_level || "",
+        marital_status: employee.marital_status || "",
+        is_disabled: employee.is_disabled === null ? "" : employee.is_disabled ? "sim" : "nao",
       });
     }
   }, [employee]);
@@ -98,6 +119,13 @@ export function EditEmployeeDialog({ open, onOpenChange, employee, onSuccess }: 
           is_condutor: form.is_condutor,
           company_id: form.company_id || null,
           hire_date: form.hire_date || null,
+          birth_date: form.birth_date || null,
+          gender: form.gender || null,
+          age: form.age ? Number(form.age) : null,
+          first_job: form.first_job ? form.first_job === "sim" : null,
+          education_level: form.education_level.trim() || null,
+          marital_status: form.marital_status.trim() || null,
+          is_disabled: form.is_disabled ? form.is_disabled === "sim" : null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", employee.id);
@@ -175,6 +203,59 @@ export function EditEmployeeDialog({ open, onOpenChange, employee, onSuccess }: 
           <div className="space-y-2">
             <Label>Data Admissão</Label>
             <Input type="date" value={form.hire_date} onChange={(e) => setForm({ ...form, hire_date: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Data Nascimento</Label>
+            <Input type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Sexo</Label>
+            <Select value={form.gender} onValueChange={(v) => setForm({ ...form, gender: v })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecionar sexo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="MASCULINO">Masculino</SelectItem>
+                <SelectItem value="FEMININO">Feminino</SelectItem>
+                <SelectItem value="INDEFINIDO">Indefinido</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Idade</Label>
+            <Input type="number" min={0} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Primeiro Emprego</Label>
+            <Select value={form.first_job} onValueChange={(v) => setForm({ ...form, first_job: v })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecionar" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sim">Sim</SelectItem>
+                <SelectItem value="nao">Não</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Escolaridade</Label>
+            <Input value={form.education_level} onChange={(e) => setForm({ ...form, education_level: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Estado Civil</Label>
+            <Input value={form.marital_status} onChange={(e) => setForm({ ...form, marital_status: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Deficiente Físico</Label>
+            <Select value={form.is_disabled} onValueChange={(v) => setForm({ ...form, is_disabled: v })}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecionar" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sim">Sim</SelectItem>
+                <SelectItem value="nao">Não</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2 flex items-center gap-3 pt-6">
             <Switch checked={form.is_condutor} onCheckedChange={(v) => setForm({ ...form, is_condutor: v })} />

@@ -64,6 +64,13 @@ interface ExternalEmployee {
   company_id: string | null;
   companies?: Company | null;
   cpf: string | null;
+  birth_date: string | null;
+  gender: string | null;
+  age: number | null;
+  first_job: boolean | null;
+  education_level: string | null;
+  marital_status: string | null;
+  is_disabled: boolean | null;
   unidade: string | null;
   is_condutor: boolean;
   cod_vendedor: string | null;
@@ -246,6 +253,7 @@ export function ExternalEmployeesList() {
         e.registration_number?.toLowerCase().includes(term) ||
         e.cpf?.toLowerCase().includes(term) ||
         e.cod_vendedor?.toLowerCase().includes(term) ||
+        e.gender?.toLowerCase().includes(term) ||
         e.external_id.toLowerCase().includes(term)
       );
     }
@@ -349,13 +357,17 @@ export function ExternalEmployeesList() {
   };
 
   const exportToCsv = () => {
-    const headers = ['CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
+    const headers = ['CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Sexo', 'Data Nascimento', 'Idade', 'Primeiro Emprego', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
     const rows = filteredEmployees.map(e => [
       e.cpf || '',
       e.registration_number || '',
       e.full_name,
       e.email || '',
       e.phone || '',
+      e.gender || '',
+      e.birth_date ? format(new Date(e.birth_date), 'dd/MM/yyyy') : '',
+      e.age ?? '',
+      e.first_job === null ? '' : e.first_job ? 'Sim' : 'Não',
       e.department || '',
       e.position || '',
       e.unidade || '',
@@ -593,6 +605,9 @@ export function ExternalEmployeesList() {
                   <TableHead>CPF</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead className="hidden lg:table-cell">Sexo</TableHead>
+                  <TableHead className="hidden xl:table-cell">Nascimento</TableHead>
+                  <TableHead className="hidden xl:table-cell">1º Emprego</TableHead>
                   <TableHead>Departamento</TableHead>
                   <TableHead>Cargo</TableHead>
                   <TableHead>Unidade</TableHead>
@@ -624,6 +639,15 @@ export function ExternalEmployeesList() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {employee.email || '-'}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      {employee.gender || '-'}
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell">
+                      {employee.birth_date ? format(new Date(employee.birth_date), 'dd/MM/yyyy') : '-'}
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell">
+                      {employee.first_job === null ? '-' : employee.first_job ? 'Sim' : 'Não'}
                     </TableCell>
                     <TableCell>
                       {employee.department ? (
