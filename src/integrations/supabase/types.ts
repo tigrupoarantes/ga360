@@ -813,6 +813,7 @@ export type Database = {
       }
       external_employees: {
         Row: {
+          accounting_group: string | null
           age: number | null
           birth_date: string | null
           cnh_categoria: string | null
@@ -847,6 +848,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          accounting_group?: string | null
           age?: number | null
           birth_date?: string | null
           cnh_categoria?: string | null
@@ -881,6 +883,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          accounting_group?: string | null
           age?: number | null
           birth_date?: string | null
           cnh_categoria?: string | null
