@@ -23,11 +23,16 @@ export interface DabEmployee {
   contabilizacao?: string | null;
   cargo?: string | null;
   categoria?: string | null;
+  unidade?: string | null;
   departamento?: string | null;
   funcao?: string | null;
   cod_empresa?: number | null;
   cod_contabilizacao?: number | string | null;
   nome_fantasia?: string | null;
+}
+
+function resolveUnit(employee: DabEmployee): string | null {
+  return employee.categoria || employee.unidade || null;
 }
 
 const ACCOUNTING_CODE_TO_NAME: Record<string, string> = {
@@ -524,6 +529,7 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
         first_job: normalizeFirstJob(employee.primeiro_emprego),
         hire_date: normalizeDate(employee.data_admissao),
         position: employee.cargo || null,
+        unidade: resolveUnit(employee),
         department: employee.departamento || null,
         metadata: {
           function_name: employee.funcao || null,
@@ -620,6 +626,7 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
       first_job: normalizeFirstJob(employee.primeiro_emprego),
       hire_date: normalizeDate(employee.data_admissao),
       position: employee.cargo || null,
+      unidade: resolveUnit(employee),
       department: employee.departamento || null,
       metadata: {
         function_name: employee.funcao || null,
