@@ -63,6 +63,13 @@
     --info: 263 70% 50%;
     --info-foreground: 0 0% 100%;
 
+    /* Chart semantic palette */
+    --chart-1: 214 89% 61%;  /* azul */
+    --chart-2: 330 81% 60%;  /* magenta */
+    --chart-3: 262 83% 58%;  /* roxo */
+    --chart-4: 160 84% 39%;  /* verde */
+    --chart-5: 31 95% 56%;   /* laranja */
+
     /* New identity colors */
     --cyan: 185 80% 70%;
     --coral: 14 85% 65%;
@@ -134,6 +141,13 @@
 
     --info: 263 80% 60%;
     --info-foreground: 0 0% 100%;
+
+    /* Chart semantic palette (dark) */
+    --chart-1: 213 94% 68%;  /* azul claro */
+    --chart-2: 328 86% 70%;  /* magenta claro */
+    --chart-3: 262 90% 70%;  /* roxo claro */
+    --chart-4: 160 84% 49%;  /* verde claro */
+    --chart-5: 35 96% 64%;   /* laranja claro */
 
     --cyan: 185 70% 60%;
     --coral: 14 75% 60%;
