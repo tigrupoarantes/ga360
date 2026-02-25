@@ -1,14 +1,21 @@
 # GA 360 — Product Requirements Document (PRD)
 
-> **Versão:** 1.0  
-> **Última atualização:** 2026-02-18  
+> **Versão:** 1.1  
+> **Última atualização:** 2026-02-25  
 > **Produto:** GA 360 (CRESCER+)  
 > **Organização:** Grupo Arantes  
-> **Status:** Em produção — Fase 1 (MVP) amplamente implementada
+> **Status:** Em produção
 
 ---
 
 ## 1. Visão Geral do Produto
+
+### 1.0 Atualizações recentes (produção)
+
+- **Governança EC:** automatização de permissões granulares de visualização por card ao habilitar módulo `governanca` para um usuário.
+- **Governança EC:** backfill para usuários já existentes e propagação automática para novos cards ativos.
+- **Controle PJ:** disponibilizados scripts operacionais de sincronização (`external_employees` → `pj_contracts`) e limpeza segura por empresa.
+- **Estabilidade de acesso:** ajuste de fallback no frontend para evitar tela vazia em onboarding de novos usuários com governança habilitada.
 
 ### 1.1 Descrição
 
@@ -89,9 +96,16 @@ Uma plataforma **100% configurável pelo CEO** que une rituais de governança (r
 - Cards de governança com periodicidade, checklists, campos manuais, escopo
 - Registros mensais/periódicos com workflow de status
 - Permissões por card (view/fill/review/manage)
+- Seed automático de `can_view` por card para usuários com módulo governança ativo
 - Tarefas vinculadas a cards/registros
 - Comentários e evidências (arquivos/links)
 - Integração com Datalake externo para dados automatizados
+
+#### Pessoas & Cultura — Controle PJ
+- Gestão de contratos PJ com fechamento por competência
+- Banco de folgas, logs de e-mail e geração de holerite
+- Sincronização de base PJ via `external_employees`
+- Procedimento de reset seguro por empresa para operação e treinamentos
 
 #### Auditoria de Estoque (Stock Audit)
 - Wizard completo: seleção de unidade → upload de base → geração de amostra → checklist de contagem → finalização → relatório
@@ -277,6 +291,7 @@ Uma plataforma **100% configurável pelo CEO** que une rituais de governança (r
 | Calendário corporativo | ✅ Completo |
 | OKRs | ✅ Completo |
 | Governança EC + Stock Audit | ✅ Completo |
+| Governança EC — Auto-seed de permissões por card | ✅ Completo |
 | Gamificação | ✅ Completo |
 | Analytics | ✅ Completo |
 | Relatórios IA | ✅ Completo |
@@ -321,4 +336,4 @@ Uma plataforma **100% configurável pelo CEO** que une rituais de governança (r
 
 ---
 
-*Documento gerado a partir do PRD original e análise do código-fonte em produção.*
+*Documento atualizado conforme estado atual de produção e migrações aplicadas até 2026-02-25.*

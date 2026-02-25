@@ -1,7 +1,7 @@
 # GA 360 — Documentação Técnica
 
-> **Versão:** 1.0  
-> **Última atualização:** 2026-02-18  
+> **Versão:** 1.1  
+> **Última atualização:** 2026-02-25  
 > **Produto:** GA 360 (CRESCER+)
 
 ---
@@ -11,7 +11,7 @@
 | Camada | Tecnologia | Versão |
 |--------|------------|--------|
 | **Frontend** | React + TypeScript | React 18.3, TS 5.x |
-| **Build** | Vite + SWC | Vite 5.4 |
+| **Build** | Vite + SWC | Vite 7.3 |
 | **UI Components** | shadcn/ui (Radix UI) | — |
 | **Estilização** | Tailwind CSS | 3.4 |
 | **Routing** | React Router | v6.30 |
@@ -42,7 +42,10 @@ ga360/
 │       ├── rls-policies.sql
 │       ├── seed-data.sql
 │       ├── storage-buckets.sql
-│       └── data-export-queries.sql
+│       ├── data-export-queries.sql
+│       ├── reset-pj-data-by-company.sql
+│       ├── sync-pj-contracts-from-company.sql
+│       └── fix-governanca-permissions-by-email.sql
 ├── public/                         # Assets estáticos
 ├── src/
 │   ├── App.tsx                     # Router principal (todas as rotas)
@@ -152,6 +155,13 @@ ga360/
 ---
 
 ## 4. Modelo de Dados
+
+### 4.0 Atualizações recentes de permissão (Governança EC)
+
+- Migração aplicada: `supabase/migrations/20260225130000_auto_seed_governanca_card_permissions.sql`
+- Trigger em `user_permissions` para auto-seed de `ec_card_permissions` (`can_view`) ao habilitar `governanca`.
+- Trigger em `ec_cards` para propagar permissão de visualização a usuários elegíveis em novos cards ativos.
+- Backfill incluído na migração para usuários já existentes.
 
 ### 4.1 Tabelas Principais
 
@@ -281,6 +291,14 @@ system_module: 'dashboard_executivo' | 'dashboard_pessoal' | 'meetings' |
 | `link_all_external_employees(company_id)` | Vincula empregados externos |
 | `count_convertible_employees(company_id)` | Conta empregados convertíveis |
 | `cleanup_expired_2fa_codes()` | Limpa códigos 2FA expirados |
+
+### 4.4 Scripts operacionais (docs/migration)
+
+| Script | Finalidade |
+|--------|------------|
+| `sync-pj-contracts-from-company.sql` | Sincroniza colaboradores externos para `pj_contracts` de forma idempotente |
+| `reset-pj-data-by-company.sql` | Remove dados do módulo Controle PJ por empresa (inclui objetos de holerite) |
+| `fix-governanca-permissions-by-email.sql` | Reaplica permissões de governança/cards para usuário específico |
 
 ---
 
@@ -471,7 +489,7 @@ const mutation = useMutation({
 ```tsx
 // Em App.tsx
 <Route path="/admin" element={
-  <ProtectedRoute requiredPermission="admin:view">
+  <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
     <Admin />
   </ProtectedRoute>
 } />
@@ -519,7 +537,7 @@ const mutation = useMutation({
 # Instalar dependências
 npm install
 
-# Servidor de desenvolvimento (porta 8080)
+# Servidor de desenvolvimento (porta padrão do Vite)
 npm run dev
 
 # Build de produção
@@ -595,4 +613,4 @@ supabase functions deploy <nome-da-funcao>
 
 ---
 
-*Documento gerado a partir da análise do código-fonte em 2026-02-18.*
+*Documento atualizado conforme código e migrações em produção até 2026-02-25.*
