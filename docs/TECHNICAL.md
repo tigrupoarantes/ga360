@@ -613,4 +613,99 @@ supabase functions deploy <nome-da-funcao>
 
 ---
 
+## 13. Plano Técnico de Implantação — Portal de Metas + Agente IA
+
+### 13.1 Estratégia de entrega (fases)
+
+Para reduzir risco de regressão no app em produção, a implantação do módulo `metas` deve ocorrer em quatro fases incrementais.
+
+| Fase | Objetivo | Escopo | Critério de conclusão |
+|------|----------|--------|-----------------------|
+| **F1 — Base de dados + Segurança** | Disponibilizar fundação do módulo com RLS | Migration (`system_module='metas'`, enums, tabelas `goals`, `goal_activities`, `goal_updates`, `goal_comments`, `goal_agent_messages`), índices, triggers, policies | Leitura/escrita funcionando via SQL com isolamento por empresa e sem violar RLS |
+| **F2 — CRUD operacional (sem IA)** | Entregar módulo utilizável pelo time | Rota `/metas`, item no `AppleNav`, lista, filtros, criação/edição de meta, atividades e atualização de progresso/histórico | Usuário com permissão `metas` consegue criar e acompanhar metas sem usar chat |
+| **F3 — Agente IA** | Acelerar operação por linguagem natural | Edge Function `goal-assistant`, painel lateral fixo, histórico em `goal_agent_messages`, function calling com tools de metas | Chat cria/edita/consulta metas com auditoria de chamadas e invalidando cache corretamente |
+| **F4 — Integrações e fechamento** | Consolidar valor do módulo no ecossistema | Integração com gamificação ao concluir meta, widget no dashboard executivo, ajustes de performance/observabilidade | Indicadores visíveis no dashboard e fluxo completo validado em produção |
+
+### 13.2 Backlog técnico por fase
+
+#### F1 — Base de dados + Segurança
+- Criar migration versionada para o Portal de Metas.
+- Adicionar `metas` ao enum `system_module`.
+- Criar políticas RLS por empresa para todas as novas tabelas.
+- Garantir imutabilidade prática de `goal_updates` (SELECT/INSERT apenas).
+- Regenerar tipos Supabase em `src/integrations/supabase/types.ts`.
+
+#### F2 — CRUD operacional (sem IA)
+- Criar `src/pages/Metas.tsx` com layout principal.
+- Implementar componentes de lista, card, filtros, detalhe e formulários.
+- Implementar hooks React Query (`useQuery`/`useMutation`) com invalidação por `queryKey`.
+- Respeitar `selectedCompanyId` do `CompanyContext` em todas as queries.
+- Proteger rota com `ProtectedRoute requiredPermission={{ module: 'metas', action: 'view' }}`.
+
+#### F3 — Agente IA
+- Criar `supabase/functions/goal-assistant/index.ts` com padrão de Edge Functions existente.
+- Implementar tools: `create_goal`, `create_goal_activity`, `update_goal`, `update_goal_progress`, `deactivate_goal`, `complete_goal_activity`, `query_goals`.
+- Persistir mensagens e tool calls em `goal_agent_messages`.
+- Implementar `GoalAgentPanel` fixo na página `/metas`.
+- Garantir guardrails: nunca operar fora da `company_id` do usuário.
+
+#### F4 — Integrações e fechamento
+- Integrar pontos de gamificação para conclusão de metas.
+- Adicionar card/widget de metas no dashboard executivo.
+- Criar consultas de auditoria para metas sem responsável e metas vencidas ativas.
+- Refinar UX (loading states, empty states, mensagens de erro).
+- Validar rollout em produção com usuários reais de áreas distintas.
+
+### 13.3 Estimativa de esforço (referência)
+
+| Fase | Esforço estimado |
+|------|------------------|
+| F1 | 1–2 dias |
+| F2 | 3–5 dias |
+| F3 | 3–4 dias |
+| F4 | 1–2 dias |
+
+Total estimado: **8–13 dias úteis** (1 dev full-time, sem bloqueios externos).
+
+### 13.4 Critérios de aceite por fase
+
+#### Aceite F1
+- Migration aplicada sem erro em ambiente de homologação.
+- Políticas RLS validadas com usuário com e sem acesso à empresa.
+
+#### Aceite F2
+- CRUD completo de metas e atividades operando via UI.
+- Histórico de progresso registrando em `goal_updates`.
+- Build e lint sem regressões.
+
+#### Aceite F3
+- Agente responde e executa tools com segurança.
+- Todas as mutações do agente refletem na UI após invalidação de cache.
+- Logs de erro da edge function legíveis para suporte.
+
+#### Aceite F4
+- Pontuação de gamificação em conclusão de meta funcionando.
+- Dashboard exibe indicadores de metas por pilar.
+- Checklist de regressão aprovado para módulos existentes.
+
+### 13.5 Riscos técnicos e mitigação
+
+- **Risco:** divergência de nomenclatura de permissões (`view/create/edit/delete` vs `read/update`).
+  - **Mitigação:** padronizar no módulo novo com a convenção já vigente do app.
+- **Risco:** exposição indevida por RLS mal parentizada em policies com `OR`.
+  - **Mitigação:** sempre usar parênteses explícitos em condições compostas.
+- **Risco:** custo/latência altos no agente IA.
+  - **Mitigação:** limitar histórico enviado, reduzir contexto e monitorar uso por empresa.
+- **Risco:** escopo grande para um único release.
+  - **Mitigação:** liberar por fases com feature completeness progressiva.
+
+### 13.6 Ordem recomendada de deploy
+
+1. Deploy do backend (migration F1).
+2. Deploy do frontend F2 (sem painel IA).
+3. Deploy da Edge Function `goal-assistant` e frontend F3.
+4. Deploy final com integrações F4.
+
+---
+
 *Documento atualizado conforme código e migrações em produção até 2026-02-25.*

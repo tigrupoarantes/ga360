@@ -46,6 +46,7 @@ const MODULES = [
   { id: 'calendar', label: 'Calendário' },
   { id: 'tasks', label: 'Tarefas' },
   { id: 'processes', label: 'Processos' },
+  { id: 'metas', label: 'Portal de Metas' },
   { id: 'trade', label: 'Trade Marketing' },
   { id: 'reports', label: 'Relatórios' },
   { id: 'governanca', label: 'Governança EC' },

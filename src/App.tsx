@@ -16,6 +16,7 @@ import Tasks from "./pages/Tasks";
 import Calendar from "./pages/Calendar";
 import Trade from "./pages/Trade";
 import OKRs from "./pages/OKRs";
+import Metas from "./pages/Metas";
 import Reports from "./pages/Reports";
 import Analytics from "./pages/Analytics";
 import Gamification from "./pages/Gamification";
@@ -130,6 +131,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <OKRs />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/metas"
+                  element={
+                    <ProtectedRoute requiredPermission={{ module: 'metas', action: 'view' }}>
+                      <Metas />
                     </ProtectedRoute>
                   }
                 />

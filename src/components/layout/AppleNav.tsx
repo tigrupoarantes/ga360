@@ -19,6 +19,7 @@ import {
   TrendingUp,
   Gamepad2,
   Crosshair,
+  Target,
   Building,
   Bug
 } from "lucide-react";
@@ -60,6 +61,7 @@ const navigation: NavItem[] = [
   { name: 'Processos', href: '/processos', icon: FileText },
   { name: 'Tarefas', href: '/tarefas', icon: ListTodo },
   { name: 'OKRs', href: '/okrs', icon: Crosshair },
+  { name: 'Metas', href: '/metas', icon: Target },
   { name: 'Governança', href: '/governanca-ec', icon: Building },
   { name: 'Trade', href: '/trade', icon: ShoppingCart },
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
