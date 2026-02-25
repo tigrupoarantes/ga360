@@ -12,6 +12,7 @@ export interface CardPermission {
 
 export function useCardPermissions() {
   const { user, role, checkPermission } = useAuth();
+  const hasGovernancaModuleAccess = checkPermission('governanca', 'view');
 
   const { data: permissions, isLoading } = useQuery({
     queryKey: ['ec-card-permissions', user?.id],
@@ -39,7 +40,13 @@ export function useCardPermissions() {
     // Users must have explicit card-level permissions in ec_card_permissions
 
     const perm = permissions?.find(p => p.card_id === cardId);
-    if (!perm) return false;
+    if (!perm) {
+      // Resiliência: usuários novos podem ter módulo habilitado antes de
+      // a permissão granular ser persistida/propagada. Nesse caso, permitimos
+      // apenas visualização pelo acesso de módulo.
+      if (permission === 'view' && hasGovernancaModuleAccess) return true;
+      return false;
+    }
 
     switch (permission) {
       case 'view': return perm.can_view || perm.can_fill || perm.can_review || perm.can_manage;
@@ -58,6 +65,12 @@ export function useCardPermissions() {
 
     // If permissions haven't loaded yet, return undefined to signal loading
     if (!permissions) return undefined;
+
+    // Fallback: se usuário tem módulo governança e não há linhas granulares,
+    // exibir cards para evitar tela vazia em onboarding de novos usuários.
+    if (permissions.length === 0 && hasGovernancaModuleAccess) {
+      return null;
+    }
 
     // Otherwise, return IDs where user has ANY permission
     return permissions.filter(p => p.can_view || p.can_fill || p.can_review || p.can_manage).map(p => p.card_id);

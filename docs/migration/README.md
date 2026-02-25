@@ -10,6 +10,9 @@ Este diretório contém todos os arquivos necessários para migrar o backend do 
 | `rls-policies.sql` | Todas as políticas RLS (Row Level Security) |
 | `storage-buckets.sql` | Criação dos buckets de storage e suas políticas |
 | `seed-data.sql` | Dados iniciais (badges, configurações, áreas EC) |
+| `reset-pj-data-by-company.sql` | Limpa dados do módulo Controle PJ por empresa (inclui holerites) |
+| `sync-pj-contracts-from-company.sql` | Sincroniza funcionários (external_employees) para contratos no módulo Controle PJ |
+| `fix-governanca-permissions-by-email.sql` | Reaplica permissões de Governança EC e cards por email do usuário |
 
 ## 🚀 Ordem de Execução
 
