@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type MouseEvent } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Repeat, Clock, MapPin, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Repeat, Clock, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/external-client";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -70,8 +70,12 @@ const getStatusBadgeVariant = (status: string): "default" | "secondary" | "destr
 
 export default function Calendar() {
   const { toast } = useToast();
-  const { role, checkPermission } = useAuth();
-  // ... other state ...
+  const { checkPermission } = useAuth();
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const canClickMeetings = checkPermission('calendar', 'view');
 
@@ -148,7 +152,7 @@ export default function Calendar() {
       year === today.getFullYear();
   };
 
-  const handleMeetingClick = (meeting: Meeting, e: React.MouseEvent) => {
+  const handleMeetingClick = (meeting: Meeting, e: MouseEvent) => {
     e.stopPropagation();
     if (canClickMeetings) {
       setSelectedMeeting(meeting);
