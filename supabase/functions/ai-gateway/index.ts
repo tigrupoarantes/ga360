@@ -14,6 +14,7 @@ const corsHeaders = {
 interface AIGatewayRequest extends Partial<RequestBody> {
   module?: "metas" | "global";
   message: string;
+  contextMessages?: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
 const GLOBAL_TOOL_DEFINITIONS = [
@@ -51,6 +52,30 @@ const GLOBAL_TOOL_DEFINITIONS = [
           company_id: { type: ["string", "null"] },
           date: { type: ["string", "null"], description: "YYYY-MM-DD" },
           month: { type: ["string", "null"], description: "YYYY-MM" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "employee_segment_overview",
+      description:
+        "Retorna visão segmentada de funcionários no escopo autorizado, com total e distribuição por categoria",
+      parameters: {
+        type: "object",
+        properties: {
+          company_id: { type: ["string", "null"] },
+          month: { type: ["string", "null"], description: "YYYY-MM" },
+          active_only: { type: ["boolean", "null"], description: "Se true, considera apenas funcionários ativos" },
+          role: { type: ["string", "null"], description: "Filtro textual de cargo" },
+          gender: { type: ["string", "null"], description: "Filtro textual de gênero" },
+          group_by: {
+            type: ["string", "null"],
+            enum: ["position", "department", "gender", "unidade", "none", null],
+            description: "Campo de segmentação principal",
+          },
+          limit: { type: ["number", "null"], description: "Quantidade máxima de itens na segmentação" },
         },
       },
     },
@@ -127,6 +152,50 @@ function normalizeRoleAliases(rawRole?: string | null) {
   }
 
   return [normalized];
+}
+
+function applyEmployeeFilters(params: {
+  rows: any[];
+  activeOnly: boolean;
+  roleAliases: string[];
+  genderAliases: string[];
+}) {
+  return params.rows.filter((row: any) => {
+    if (params.activeOnly && row.is_active !== true) {
+      return false;
+    }
+
+    if (params.roleAliases.length) {
+      const position = String(row.position || "").toLowerCase();
+      const matchesRole = params.roleAliases.some((alias) => position.includes(alias));
+      if (!matchesRole) {
+        return false;
+      }
+    }
+
+    if (params.genderAliases.length) {
+      const gender = String(row.gender || "").toLowerCase();
+      const matchesGender = params.genderAliases.some((alias) => gender.includes(alias));
+      if (!matchesGender) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+function topBreakdown(rows: any[], field: "position" | "department" | "gender" | "unidade", limit: number) {
+  const bucket = new Map<string, number>();
+  for (const row of rows) {
+    const key = String(row?.[field] || "Não informado").trim() || "Não informado";
+    bucket.set(key, (bucket.get(key) || 0) + 1);
+  }
+
+  return Array.from(bucket.entries())
+    .map(([label, total]) => ({ label, total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, limit);
 }
 
 async function resolveAllowedCompanyIds(supabaseAdmin: any, userId: string, requestedCompanyId?: string | null) {
@@ -210,28 +279,11 @@ async function executeGlobalTool(params: {
       const { data, error } = await query;
       if (error) throw error;
 
-      const filtered = (data || []).filter((row: any) => {
-        if (activeOnly && row.is_active !== true) {
-          return false;
-        }
-
-        if (roleAliases.length) {
-          const position = String(row.position || "").toLowerCase();
-          const matchesRole = roleAliases.some((alias) => position.includes(alias));
-          if (!matchesRole) {
-            return false;
-          }
-        }
-
-        if (genderAliases.length) {
-          const gender = String(row.gender || "").toLowerCase();
-          const matchesGender = genderAliases.some((alias) => gender.includes(alias));
-          if (!matchesGender) {
-            return false;
-          }
-        }
-
-        return true;
+      const filtered = applyEmployeeFilters({
+        rows: data || [],
+        activeOnly,
+        roleAliases,
+        genderAliases,
       });
 
       return {
@@ -242,6 +294,54 @@ async function executeGlobalTool(params: {
         gender: args.gender || null,
         month: args.month || null,
         total: filtered.length,
+      };
+    }
+
+    case "employee_segment_overview": {
+      if (!adminPermission.can_view) {
+        throw new AgentError("PERMISSION_DENIED", "Sem permissão para consultar dados de funcionários.", 403);
+      }
+
+      const activeOnly = args.active_only !== false;
+      const roleAliases = normalizeRoleAliases(args.role);
+      const genderAliases = normalizeGenderAliases(args.gender);
+      const groupBy = ["position", "department", "gender", "unidade"].includes(args.group_by)
+        ? args.group_by
+        : "position";
+      const limit = Math.max(1, Math.min(Number(args.limit || 5), 20));
+
+      let query = supabaseAdmin
+        .from("external_employees")
+        .select("id, position, department, gender, unidade, is_active, created_at")
+        .in("company_id", targetCompanies);
+
+      const range = monthRange(args.month);
+      if (range) {
+        query = query.gte("created_at", range.start).lt("created_at", range.end);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const filtered = applyEmployeeFilters({
+        rows: data || [],
+        activeOnly,
+        roleAliases,
+        genderAliases,
+      });
+
+      const breakdown = topBreakdown(filtered, groupBy, limit);
+
+      return {
+        metric: "employees_segment",
+        companies: targetCompanies,
+        active_only: activeOnly,
+        role: args.role || null,
+        gender: args.gender || null,
+        month: args.month || null,
+        group_by: groupBy,
+        total: filtered.length,
+        breakdown,
       };
     }
 
@@ -353,10 +453,22 @@ async function runGlobalAgent(supabaseAdmin: any, userId: string, body: AIGatewa
         "Quando company_id não for informado, considere todas as empresas permitidas ao usuário. " +
         "Para perguntas de funcionários, assuma active_only=true por padrão e só peça mês se o usuário realmente pedir período. " +
         "Não peça empresa/período extra quando a pergunta já permite resposta agregada no escopo autorizado. " +
-        "Não misture métricas: se o usuário perguntar sobre funcionários, não traga reuniões/auditorias.",
+        "Não misture métricas: se o usuário perguntar sobre funcionários, não traga reuniões/auditorias. " +
+        "Use employee_segment_overview quando a pergunta envolver recortes (ex.: gerentes mulheres, por departamento, por unidade).",
     },
-    { role: "user", content: body.message.trim() },
   ];
+
+  const contextMessages = (body.contextMessages || [])
+    .filter((item) => item?.content && ["user", "assistant"].includes(item.role))
+    .slice(-4)
+    .map((item) => ({
+      role: item.role,
+      content: String(item.content).trim(),
+    }))
+    .filter((item) => item.content.length > 0);
+
+  messages.push(...contextMessages);
+  messages.push({ role: "user", content: body.message.trim() });
 
   for (let iteration = 0; iteration < 5; iteration++) {
     const completionResult = await createChatCompletionWithProviderFallback({

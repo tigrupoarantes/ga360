@@ -23,6 +23,11 @@ interface LocalChatMessage {
   content: string;
 }
 
+interface ConversationContextMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 interface AgentMessage {
   id: string;
   role: "user" | "assistant" | "tool";
@@ -87,6 +92,7 @@ async function callAssistantEndpoint(params: {
   companyId?: string | null;
   module: "metas" | "global";
   prompt: string;
+  contextMessages?: ConversationContextMessage[];
 }) {
   const payload: Record<string, unknown> = {
     message: params.prompt,
@@ -95,6 +101,10 @@ async function callAssistantEndpoint(params: {
 
   if (params.companyId) {
     payload.companyId = params.companyId;
+  }
+
+  if (params.contextMessages?.length) {
+    payload.contextMessages = params.contextMessages;
   }
 
   const response = await fetch(`${EXTERNAL_SUPABASE_CONFIG.url}/functions/v1/${params.endpoint}`, {
@@ -168,7 +178,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
   const sortedMessages = useMemo(() => messagesQuery.data || [], [messagesQuery.data]);
 
   const sendMutation = useMutation({
-    mutationFn: async (prompt: string) => {
+    mutationFn: async ({ prompt, contextMessages }: { prompt: string; contextMessages: ConversationContextMessage[] }) => {
       if (!prompt.trim()) throw new Error("Digite uma mensagem");
       const module: "metas" | "global" = companyId ? "metas" : "global";
 
@@ -182,6 +192,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
         companyId,
         module,
         prompt: prompt.trim(),
+        contextMessages,
       });
 
       if (!response.ok && module === "metas" && companyId && (response.status === 404 || response.status === 500)) {
@@ -191,6 +202,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
           companyId,
           module,
           prompt: prompt.trim(),
+          contextMessages,
         });
       }
 
@@ -203,7 +215,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
       const data = (await response.json()) as { success?: boolean; reply?: string; error?: string };
       return data;
     },
-    onMutate: (prompt) => {
+    onMutate: ({ prompt }) => {
       const userPrompt = prompt.trim();
       setLocalMessages((previous) => [
         ...previous,
@@ -214,7 +226,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
         },
       ]);
       setInput("");
-      return { prompt };
+      return { prompt: userPrompt };
     },
     onSuccess: (data) => {
       const assistantReply = data.reply || "Não consegui gerar resposta no momento.";
@@ -271,7 +283,18 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
 
   const sendCurrentInput = () => {
     if (!sendMutation.isPending && input.trim()) {
-      sendMutation.mutate(input);
+      const contextMessages = renderedMessages
+        .filter((message) => message.role === "user" || message.role === "assistant")
+        .slice(-4)
+        .map((message) => ({
+          role: message.role as "user" | "assistant",
+          content: message.content,
+        }));
+
+      sendMutation.mutate({
+        prompt: input,
+        contextMessages,
+      });
     }
   };
 
