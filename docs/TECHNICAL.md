@@ -615,6 +615,14 @@ supabase functions deploy <nome-da-funcao>
 
 ## 13. Plano Técnico de Implantação — Portal de Metas + Agente IA
 
+### 13.0 Status atual (checkpoint)
+
+- **Data de referência:** 2026-02-26
+- **Fase concluída:** F1 — Base de dados + Segurança
+- **Fase em execução:** F2 — CRUD operacional (sem IA)
+- **Pendências para concluir F2:** fechamento de atividades, atualização de progresso com histórico na UI e padronização com React Query (`useQuery`/`useMutation`) com invalidação por `queryKey`.
+- **Fases ainda não iniciadas:** F3 e F4
+
 ### 13.1 Estratégia de entrega (fases)
 
 Para reduzir risco de regressão no app em produção, a implantação do módulo `metas` deve ocorrer em quatro fases incrementais.
