@@ -44,8 +44,14 @@ interface MeetingRoom {
 
 export function MeetingRoomsList() {
   const { toast } = useToast();
-  const { role, checkPermission } = useAuth();
-  // ...
+  const { checkPermission } = useAuth();
+
+  const [rooms, setRooms] = useState<MeetingRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedRoom, setSelectedRoom] = useState<MeetingRoom | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [roomToDelete, setRoomToDelete] = useState<MeetingRoom | null>(null);
 
   // Verificar se pode deletar
   const canDelete = checkPermission('meetings', 'delete');
@@ -336,7 +342,9 @@ export function MeetingRoomsList() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {filteredRooms.map((room) => {
-          const platform = (room.platform || "teams") as MeetingPlatform;
+          const platform = ["teams", "zoom", "google_meet"].includes(String(room.platform))
+            ? (room.platform as MeetingPlatform)
+            : "teams";
           const platformInfo = platformConfig[platform];
 
           return (
