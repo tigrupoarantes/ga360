@@ -101,7 +101,7 @@ export function DatalakeConnectionsList() {
     }
 
     try {
-      const { error } = await supabase.functions.invoke("dab-proxy", {
+      const firstAttempt = await supabase.functions.invoke("dab-proxy", {
         body: {
           path: "funcionarios",
           query: { $first: 1 },
@@ -109,13 +109,25 @@ export function DatalakeConnectionsList() {
         },
       });
 
-      if (error) {
-        const status = error.context?.status;
+      let invokeError = firstAttempt.error;
+
+      if (invokeError) {
+        const fallbackAttempt = await supabase.functions.invoke("dab-proxy", {
+          body: {
+            path: "funcionarios",
+            connectionId: connection.id,
+          },
+        });
+        invokeError = fallbackAttempt.error;
+      }
+
+      if (invokeError) {
+        const status = invokeError.context?.status;
         let detailsMessage = '';
 
         try {
-          if (error.context) {
-            const details = await error.context.json();
+          if (invokeError.context) {
+            const details = await invokeError.context.json();
             detailsMessage = details?.details?.error || details?.details?.message || details?.error || '';
           }
         } catch {
@@ -126,7 +138,7 @@ export function DatalakeConnectionsList() {
           ok: false,
           message: status
             ? `${`HTTP ${status}`}${detailsMessage ? ` - ${detailsMessage}` : ''}`
-            : (error.message || 'Erro na conexão'),
+            : (invokeError.message || 'Erro na conexão'),
         };
       }
 

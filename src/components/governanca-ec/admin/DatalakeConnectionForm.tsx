@@ -216,7 +216,7 @@ export function DatalakeConnectionForm({
     setTestResult(null);
 
     try {
-      const { error } = await supabase.functions.invoke('dab-proxy', {
+      const firstAttempt = await supabase.functions.invoke('dab-proxy', {
         body: {
           path: 'funcionarios',
           query: { $first: 1 },
@@ -224,7 +224,19 @@ export function DatalakeConnectionForm({
         },
       });
 
-      if (error) throw error;
+      let invokeError = firstAttempt.error;
+
+      if (invokeError) {
+        const fallbackAttempt = await supabase.functions.invoke('dab-proxy', {
+          body: {
+            path: 'funcionarios',
+            connectionId: connection.id,
+          },
+        });
+        invokeError = fallbackAttempt.error;
+      }
+
+      if (invokeError) throw invokeError;
 
       setTestResult('success');
       setLastTestedAt(new Date().toLocaleString('pt-BR'));
