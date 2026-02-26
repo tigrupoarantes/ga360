@@ -15,6 +15,9 @@ interface OpenAIConfig {
   api_key: string;
   default_model: string;
   transcription_model: string;
+  goal_provider: 'openai' | 'gemini';
+  gemini_api_key: string;
+  gemini_model: string;
 }
 
 const DEFAULT_CONFIG: OpenAIConfig = {
@@ -22,6 +25,9 @@ const DEFAULT_CONFIG: OpenAIConfig = {
   api_key: '',
   default_model: 'gpt-4o',
   transcription_model: 'whisper-1',
+  goal_provider: 'openai',
+  gemini_api_key: '',
+  gemini_model: 'gemini-2.0-flash-lite',
 };
 
 const CHAT_MODELS = [
@@ -38,6 +44,12 @@ const CHAT_MODELS = [
 
 const TRANSCRIPTION_MODELS = [
   { value: 'whisper-1', label: 'Whisper-1 (Padrão)' },
+];
+
+const GEMINI_MODELS = [
+  { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite (Mais Econômico)' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Balanceado)' },
+  { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Compatível)' },
 ];
 
 export function OpenAIConfigSection() {
@@ -79,8 +91,18 @@ export function OpenAIConfigSection() {
   };
 
   const saveConfig = async () => {
-    if (config.enabled && !config.api_key) {
-      toast.error('API Key é obrigatória quando a integração está habilitada');
+    if (config.enabled && !config.api_key && !config.gemini_api_key) {
+      toast.error('Informe ao menos uma API Key (OpenAI ou Gemini) para habilitar IA');
+      return;
+    }
+
+    if (config.goal_provider === 'openai' && config.enabled && !config.api_key) {
+      toast.error('API Key OpenAI é obrigatória quando o copiloto está em OpenAI');
+      return;
+    }
+
+    if (config.goal_provider === 'gemini' && config.enabled && !config.gemini_api_key) {
+      toast.error('API Key Gemini é obrigatória quando o copiloto está em Gemini');
       return;
     }
 
@@ -118,7 +140,7 @@ export function OpenAIConfigSection() {
         if (error) throw error;
       }
 
-      toast.success('Configuração da OpenAI salva com sucesso');
+      toast.success('Configuração de IA salva com sucesso');
     } catch (error) {
       console.error('Error saving OpenAI config:', error);
       toast.error('Erro ao salvar configuração');
@@ -128,8 +150,11 @@ export function OpenAIConfigSection() {
   };
 
   const testConnection = async () => {
-    if (!config.api_key) {
-      toast.error('Insira a API Key antes de testar');
+    const provider = config.goal_provider;
+    const selectedApiKey = provider === 'gemini' ? config.gemini_api_key : config.api_key;
+
+    if (!selectedApiKey) {
+      toast.error('Insira a API Key do provedor selecionado antes de testar');
       return;
     }
 
@@ -138,22 +163,26 @@ export function OpenAIConfigSection() {
 
     try {
       const { data, error } = await supabase.functions.invoke('test-openai-connection', {
-        body: { apiKey: config.api_key },
+        body: {
+          provider,
+          apiKey: selectedApiKey,
+          model: provider === 'gemini' ? config.gemini_model : config.default_model,
+        },
       });
 
       if (error) throw error;
 
       if (data?.success) {
         setTestResult('success');
-        toast.success('Conexão com a OpenAI estabelecida com sucesso!');
+        toast.success(`Conexão com ${provider === 'gemini' ? 'Gemini' : 'OpenAI'} estabelecida com sucesso!`);
       } else {
         setTestResult('error');
-        toast.error(data?.error || 'Falha ao conectar com a OpenAI');
+        toast.error(data?.error || 'Falha ao conectar com o provedor selecionado');
       }
     } catch (error) {
       console.error('Error testing OpenAI connection:', error);
       setTestResult('error');
-      toast.error('Erro ao testar conexão com a OpenAI');
+      toast.error('Erro ao testar conexão com IA');
     } finally {
       setTesting(false);
     }
@@ -182,9 +211,9 @@ export function OpenAIConfigSection() {
           <Bot className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold">Integração OpenAI</h3>
+          <h3 className="text-lg font-semibold">Integração de IA</h3>
           <p className="text-sm text-muted-foreground">
-            Configure sua API Key da OpenAI para usar recursos de IA
+            Configure OpenAI e Gemini e escolha o provedor do copiloto de metas
           </p>
         </div>
       </div>
@@ -193,7 +222,7 @@ export function OpenAIConfigSection() {
         <div className="space-y-0.5">
           <Label htmlFor="openai-enabled" className="font-medium">Habilitar OpenAI</Label>
           <p className="text-xs text-muted-foreground">
-            Ative para usar sua própria API Key da OpenAI
+            Ative para usar recursos de IA no sistema
           </p>
         </div>
         <Switch
@@ -204,6 +233,26 @@ export function OpenAIConfigSection() {
       </div>
 
       <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="goal-provider">Provedor do Copiloto de Metas</Label>
+          <Select
+            value={config.goal_provider}
+            onValueChange={(value) => setConfig({ ...config, goal_provider: value as OpenAIConfig['goal_provider'] })}
+            disabled={!config.enabled}
+          >
+            <SelectTrigger id="goal-provider">
+              <SelectValue placeholder="Selecione um provedor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="openai">OpenAI</SelectItem>
+              <SelectItem value="gemini">Gemini (Google)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Define qual IA será usada no copiloto da tela de metas
+          </p>
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="api-key">
             API Key OpenAI <span className="text-destructive">*</span>
@@ -247,6 +296,49 @@ export function OpenAIConfigSection() {
           </p>
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="gemini-api-key">
+            API Key Gemini {config.goal_provider === 'gemini' && <span className="text-destructive">*</span>}
+          </Label>
+          <div className="relative">
+            <Input
+              id="gemini-api-key"
+              type={showApiKey ? 'text' : 'password'}
+              value={showApiKey ? config.gemini_api_key : maskApiKey(config.gemini_api_key)}
+              onChange={(e) => setConfig({ ...config, gemini_api_key: e.target.value })}
+              placeholder="AIza..."
+              className="pr-10"
+              disabled={!config.enabled}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+              onClick={() => setShowApiKey(!showApiKey)}
+              disabled={!config.enabled}
+            >
+              {showApiKey ? (
+                <EyeOff className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Eye className="h-4 w-4 text-muted-foreground" />
+              )}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            Obtenha sua API key em{' '}
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline inline-flex items-center gap-1"
+            >
+              aistudio.google.com
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </p>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="default-model">Modelo Padrão (Chat)</Label>
@@ -268,6 +360,29 @@ export function OpenAIConfigSection() {
             </Select>
             <p className="text-xs text-muted-foreground">
               Usado para geração de relatórios e ATAs
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gemini-model">Modelo Gemini (Copiloto)</Label>
+            <Select
+              value={config.gemini_model}
+              onValueChange={(value) => setConfig({ ...config, gemini_model: value })}
+              disabled={!config.enabled}
+            >
+              <SelectTrigger id="gemini-model">
+                <SelectValue placeholder="Selecione um modelo" />
+              </SelectTrigger>
+              <SelectContent>
+                {GEMINI_MODELS.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    {model.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Usado quando o copiloto de metas estiver configurado para Gemini
             </p>
           </div>
 
@@ -300,7 +415,7 @@ export function OpenAIConfigSection() {
         <Button
           variant="outline"
           onClick={testConnection}
-          disabled={!config.enabled || !config.api_key || testing}
+          disabled={!config.enabled || testing}
         >
           {testing ? (
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -321,8 +436,8 @@ export function OpenAIConfigSection() {
       <div className="flex items-start gap-2 p-3 bg-warning/10 border border-warning/30 rounded-lg">
         <span className="text-warning">⚠️</span>
         <p className="text-xs text-warning-foreground">
-          A API Key será armazenada de forma segura e usada apenas nas funções de IA do sistema
-          (relatórios, ATAs, transcrição). Você será cobrado diretamente pela OpenAI pelo uso.
+          As chaves serão armazenadas de forma segura e usadas apenas nas funções de IA do sistema.
+          O provedor ativo do copiloto de metas pode ser alternado a qualquer momento.
         </p>
       </div>
     </Card>

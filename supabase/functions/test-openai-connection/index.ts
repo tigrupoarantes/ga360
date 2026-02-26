@@ -11,7 +11,8 @@ serve(async (req) => {
   }
 
   try {
-    const { apiKey } = await req.json();
+    const { apiKey, provider = "openai" } = await req.json();
+    const selectedProvider = provider === "gemini" ? "gemini" : "openai";
 
     if (!apiKey) {
       return new Response(
@@ -20,23 +21,37 @@ serve(async (req) => {
       );
     }
 
-    // Test the API key by making a simple models list request
-    const response = await fetch("https://api.openai.com/v1/models", {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-      },
-    });
+    let response: Response;
+
+    if (selectedProvider === "gemini") {
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, {
+        method: "GET",
+      });
+    } else {
+      response = await fetch("https://api.openai.com/v1/models", {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+        },
+      });
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       const errorMessage = errorData.error?.message || `Erro HTTP ${response.status}`;
       
-      console.error("OpenAI API error:", response.status, errorMessage);
+      console.error("IA provider error:", { provider: selectedProvider, status: response.status, errorMessage });
       
       if (response.status === 401) {
         return new Response(
           JSON.stringify({ success: false, error: "API Key inválida ou expirada" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (response.status === 403) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Acesso negado pela API (verifique projeto/permissões)" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -55,13 +70,16 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const modelCount = data.data?.length || 0;
+    const modelCount = selectedProvider === "gemini"
+      ? (data.models?.length || 0)
+      : (data.data?.length || 0);
 
-    console.log(`OpenAI connection test successful. Found ${modelCount} models.`);
+    console.log(`IA connection test successful for ${selectedProvider}. Found ${modelCount} models.`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
+        provider: selectedProvider,
         message: "Conexão estabelecida com sucesso",
         modelsAvailable: modelCount,
       }),

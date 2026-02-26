@@ -385,6 +385,7 @@ Verificação: `checkPermission(module, action)` no `AuthContext`.
 | `transcribe-meeting` | POST | Transcrição de reunião (batch) |
 | `generate-ata` | POST | Gera ATA inteligente via LLM |
 | `generate-report` | POST | Gera relatório via OpenAI |
+| `goal-assistant` | POST | Agente IA do Portal de Metas com function calling |
 | `generate-stock-audit-report` | POST | Gera relatório de auditoria de estoque |
 | `test-openai-connection` | POST | Testa conexão com OpenAI |
 | `test-smtp-connection` | POST | Testa conexão SMTP |
@@ -618,10 +619,9 @@ supabase functions deploy <nome-da-funcao>
 ### 13.0 Status atual (checkpoint)
 
 - **Data de referência:** 2026-02-26
-- **Fase concluída:** F1 — Base de dados + Segurança
-- **Fase em execução:** F2 — CRUD operacional (sem IA)
-- **Pendências para concluir F2:** fechamento de atividades, atualização de progresso com histórico na UI e padronização com React Query (`useQuery`/`useMutation`) com invalidação por `queryKey`.
-- **Fases ainda não iniciadas:** F3 e F4
+- **Fases concluídas:** F1 — Base de dados + Segurança; F2 — CRUD operacional (sem IA); F3 — Agente IA
+- **Fase em execução:** F4 — Integrações e fechamento
+- **Pendências imediatas:** integração de gamificação, widget de metas no dashboard executivo e consultas de auditoria operacional.
 
 ### 13.1 Estratégia de entrega (fases)
 

@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
+  Bot,
   CalendarDays,
   Loader2,
   Pencil,
@@ -33,6 +34,7 @@ import { supabase } from "@/integrations/supabase/external-client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCompany } from "@/contexts/CompanyContext";
+import { GoalAgentPanel } from "@/components/metas/GoalAgentPanel";
 
 interface Goal {
   id: string;
@@ -175,6 +177,7 @@ export default function Metas() {
   const [activityDescription, setActivityDescription] = useState("");
   const [activityWeight, setActivityWeight] = useState("1");
   const [activityDueDate, setActivityDueDate] = useState("");
+  const [agentOpen, setAgentOpen] = useState(false);
 
   const goalsKey = ["metas", "goals", selectedCompanyId] as const;
   const areasKey = ["metas", "areas", selectedCompanyId] as const;
@@ -543,12 +546,24 @@ export default function Metas() {
             <p className="text-muted-foreground mt-1">Gestão operacional do portal de metas (Fase 2)</p>
           </div>
 
-          {canCreate && (
-            <Button onClick={openCreateGoalDialog} className="gap-2" disabled={!selectedCompanyId}>
-              <Plus className="h-4 w-4" />
-              Nova Meta
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => setAgentOpen(true)}
+              title="Abrir assistente de IA"
+            >
+              <Bot className="h-4 w-4" />
             </Button>
-          )}
+
+            {canCreate && (
+              <Button onClick={openCreateGoalDialog} className="gap-2" disabled={!selectedCompanyId}>
+                <Plus className="h-4 w-4" />
+                Nova Meta
+              </Button>
+            )}
+          </div>
         </div>
 
         {!selectedCompanyId && (
@@ -882,6 +897,17 @@ export default function Metas() {
           </div>
         </div>
       </div>
+
+      <GoalAgentPanel
+        companyId={selectedCompanyId}
+        open={agentOpen}
+        onOpenChange={setAgentOpen}
+        onMutationComplete={() => {
+          queryClient.invalidateQueries({ queryKey: goalsKey });
+          queryClient.invalidateQueries({ queryKey: activitiesKey });
+          queryClient.invalidateQueries({ queryKey: updatesKey });
+        }}
+      />
 
       <Dialog
         open={goalDialogOpen}
