@@ -231,7 +231,22 @@ export function DatalakeConnectionForm({
       toast.success('Conexão ativa');
     } catch (error: any) {
       setTestResult('error');
-      toast.error(error?.context?.status ? `Falha na conexão (HTTP ${error.context.status})` : 'Falha ao testar conexão');
+      let detailsMessage = '';
+      try {
+        if (error?.context) {
+          const details = await error.context.json();
+          detailsMessage = details?.details?.error || details?.details?.message || details?.error || '';
+        }
+      } catch {
+        detailsMessage = '';
+      }
+
+      const status = error?.context?.status;
+      toast.error(
+        status
+          ? `Falha na conexão (HTTP ${status})${detailsMessage ? ` - ${detailsMessage}` : ''}`
+          : (error?.message || 'Falha ao testar conexão'),
+      );
     } finally {
       setTesting(false);
     }

@@ -123,6 +123,7 @@ function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[]
     endpoints.push(normalized);
     endpoints.push(`api/${normalized}`);
   } else {
+    endpoints.push(normalized);
     endpoints.push(`api/${normalized}`);
     endpoints.push(`v1/api/${normalized}`);
     endpoints.push(`v1/${normalized}`);
