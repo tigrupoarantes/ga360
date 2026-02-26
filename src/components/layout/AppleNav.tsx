@@ -21,7 +21,8 @@ import {
   Crosshair,
   Target,
   Building,
-  Bug
+  Bug,
+  Bot
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,6 +40,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { BugReportDialog } from "@/components/feedback/BugReportDialog";
+import { GoalAgentPanel } from "@/components/metas/GoalAgentPanel";
+import { useCompany } from "@/contexts/CompanyContext";
 
 
 type NavItem = {
@@ -73,9 +76,11 @@ export function AppleNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile, role, signOut } = useAuth();
+  const { selectedCompanyId } = useCompany();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isBugDialogOpen, setIsBugDialogOpen] = useState(false);
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
 
   // Check if any child route is active
   const isChildActive = (children?: NavItem['children']) => {
@@ -194,6 +199,17 @@ export function AppleNav() {
                 onClick={() => setIsSearchOpen(!isSearchOpen)}
               >
                 <Search className="h-4 w-4" />
+              </Button>
+
+              {/* Global AI Assistant Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full"
+                onClick={() => setIsAIAssistantOpen(true)}
+                title="Assistente de IA"
+              >
+                <Bot className="h-4 w-4" />
               </Button>
 
               {/* Bug Report Button */}
@@ -388,6 +404,7 @@ export function AppleNav() {
       )}
       {/* Bug Report Dialog */}
       <BugReportDialog open={isBugDialogOpen} onOpenChange={setIsBugDialogOpen} />
+      <GoalAgentPanel companyId={selectedCompanyId} open={isAIAssistantOpen} onOpenChange={setIsAIAssistantOpen} />
     </>
   );
 }

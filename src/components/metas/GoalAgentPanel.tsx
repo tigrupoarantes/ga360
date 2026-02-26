@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, MessageSquare, Send, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -125,6 +125,7 @@ async function getValidAccessToken() {
 
 export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComplete }: GoalAgentPanelProps) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [input, setInput] = useState("");
   const [agentStep, setAgentStep] = useState<"idle" | "auth" | "request" | "processing">("idle");
 
@@ -193,6 +194,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
     },
     onSuccess: () => {
       messagesQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["metas"] });
       onMutationComplete?.();
       setAgentStep("idle");
     },
