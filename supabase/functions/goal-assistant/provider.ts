@@ -132,7 +132,7 @@ function mapProviderFailure(params: {
   );
 }
 
-async function createChatCompletionWithFallback(params: ProviderRuntimeConfig & { messages: any[] }) {
+async function createChatCompletionWithFallback(params: ProviderRuntimeConfig & { messages: any[]; tools?: unknown[] }) {
   const modelCandidates = buildModelCandidates(params.provider, params.model);
   let lastError: AgentError | null = null;
 
@@ -146,7 +146,7 @@ async function createChatCompletionWithFallback(params: ProviderRuntimeConfig & 
       body: JSON.stringify({
         model: candidateModel,
         messages: params.messages,
-        tools: TOOL_DEFINITIONS,
+        tools: params.tools || TOOL_DEFINITIONS,
         tool_choice: "auto",
         temperature: 0.2,
       }),
@@ -200,11 +200,13 @@ export async function createChatCompletionWithProviderFallback(params: {
   primary: ProviderRuntimeConfig;
   fallback: ProviderRuntimeConfig | null;
   messages: any[];
+  tools?: unknown[];
 }) {
   try {
     return await createChatCompletionWithFallback({
       ...params.primary,
       messages: params.messages,
+      tools: params.tools,
     });
   } catch (primaryError) {
     if (!params.fallback || !shouldAttemptProviderFallback(primaryError)) {
@@ -220,6 +222,7 @@ export async function createChatCompletionWithProviderFallback(params: {
     return await createChatCompletionWithFallback({
       ...params.fallback,
       messages: params.messages,
+      tools: params.tools,
     });
   }
 }

@@ -17,6 +17,12 @@ interface GoalAgentPanelProps {
   onMutationComplete?: () => void;
 }
 
+interface LocalChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
 interface AgentMessage {
   id: string;
   role: "user" | "assistant" | "tool";
@@ -78,9 +84,19 @@ async function parseFunctionError(response: Response) {
 async function callAssistantEndpoint(params: {
   endpoint: "ai-gateway" | "goal-assistant";
   accessToken: string;
-  companyId: string;
+  companyId?: string | null;
+  module: "metas" | "global";
   prompt: string;
 }) {
+  const payload: Record<string, unknown> = {
+    message: params.prompt,
+    module: params.module,
+  };
+
+  if (params.companyId) {
+    payload.companyId = params.companyId;
+  }
+
   const response = await fetch(`${EXTERNAL_SUPABASE_CONFIG.url}/functions/v1/${params.endpoint}`, {
     method: "POST",
     headers: {
@@ -88,11 +104,7 @@ async function callAssistantEndpoint(params: {
       apikey: EXTERNAL_SUPABASE_CONFIG.anonKey,
       Authorization: `Bearer ${params.accessToken}`,
     },
-    body: JSON.stringify({
-      companyId: params.companyId,
-      message: params.prompt,
-      module: "metas",
-    }),
+    body: JSON.stringify(payload),
   });
 
   return response;
@@ -127,12 +139,13 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
+  const [localMessages, setLocalMessages] = useState<LocalChatMessage[]>([]);
   const [agentStep, setAgentStep] = useState<"idle" | "auth" | "request" | "processing">("idle");
 
   const quickPrompts = [
-    "Crie uma meta de crescimento de vendas de 10% para o próximo mês.",
-    "Liste minhas metas ativas com prazo mais próximo.",
-    "Atualize o progresso da meta de faturamento para 65%.",
+    "Quantos funcionários ativos temos neste mês?",
+    "Quantas reuniões ocorreram hoje?",
+    "Quantas auditorias foram registradas no mês atual?",
   ];
 
   const messagesQuery = useQuery({
@@ -156,8 +169,8 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
 
   const sendMutation = useMutation({
     mutationFn: async (prompt: string) => {
-      if (!companyId) throw new Error("Selecione uma empresa");
       if (!prompt.trim()) throw new Error("Digite uma mensagem");
+      const module: "metas" | "global" = companyId ? "metas" : "global";
 
       setAgentStep("auth");
       const accessToken = await getValidAccessToken();
@@ -167,14 +180,16 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
         endpoint: "ai-gateway",
         accessToken,
         companyId,
+        module,
         prompt: prompt.trim(),
       });
 
-      if (!response.ok && (response.status === 404 || response.status === 500)) {
+      if (!response.ok && module === "metas" && companyId && (response.status === 404 || response.status === 500)) {
         response = await callAssistantEndpoint({
           endpoint: "goal-assistant",
           accessToken,
           companyId,
+          module,
           prompt: prompt.trim(),
         });
       }
@@ -189,12 +204,34 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
       return data;
     },
     onMutate: (prompt) => {
+      const userPrompt = prompt.trim();
+      setLocalMessages((previous) => [
+        ...previous,
+        {
+          id: `local-user-${Date.now()}`,
+          role: "user",
+          content: userPrompt,
+        },
+      ]);
       setInput("");
       return { prompt };
     },
-    onSuccess: () => {
-      messagesQuery.refetch();
-      queryClient.invalidateQueries({ queryKey: ["metas"] });
+    onSuccess: (data) => {
+      const assistantReply = data.reply || "Não consegui gerar resposta no momento.";
+      setLocalMessages((previous) => [
+        ...previous,
+        {
+          id: `local-assistant-${Date.now()}`,
+          role: "assistant",
+          content: assistantReply,
+        },
+      ]);
+
+      if (companyId) {
+        messagesQuery.refetch();
+        queryClient.invalidateQueries({ queryKey: ["metas"] });
+      }
+
       onMutationComplete?.();
       setAgentStep("idle");
     },
@@ -213,8 +250,24 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
   });
 
   useEffect(() => {
-    if (!companyId) setInput("");
+    if (companyId) {
+      setLocalMessages([]);
+    }
   }, [companyId]);
+
+  const renderedMessages = companyId
+    ? sortedMessages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        tool_name: message.tool_name,
+      }))
+    : localMessages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        tool_name: null,
+      }));
 
   const sendCurrentInput = () => {
     if (!sendMutation.isPending && input.trim()) {
@@ -232,30 +285,25 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
                 <Sparkles className="h-4 w-4 text-primary" />
               </div>
               <div>
-                <SheetTitle className="text-sm">Copiloto de Metas</SheetTitle>
-                <p className="text-[11px] text-muted-foreground">Assistente IA operacional</p>
+                <SheetTitle className="text-sm">Copiloto GA360</SheetTitle>
+                <p className="text-[11px] text-muted-foreground">Assistente IA global</p>
               </div>
             </div>
             <Badge variant="outline">Pronto</Badge>
           </SheetHeader>
 
-          {!companyId ? (
-            <div className="flex-1 text-sm text-muted-foreground flex items-center justify-center text-center px-3">
-              Selecione uma empresa para habilitar o assistente de metas.
-            </div>
-          ) : (
-            <>
+          <>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <MessageSquare className="h-3.5 w-3.5" />
-                Converse em linguagem natural para criar, atualizar ou consultar metas.
+                Converse em linguagem natural para consultar dados e operar o GA360.
               </div>
 
               <div className="flex-1 overflow-y-auto border rounded-md p-2.5 space-y-2 bg-muted/20">
-                {messagesQuery.isLoading ? (
+                {companyId && messagesQuery.isLoading ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground text-sm gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" /> Carregando histórico...
                   </div>
-                ) : sortedMessages.length === 0 ? (
+                ) : renderedMessages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm text-center px-2 gap-3">
                     <p>Comece com um comando rápido:</p>
                     <div className="w-full space-y-2">
@@ -275,7 +323,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
                     </div>
                   </div>
                 ) : (
-                  sortedMessages.map((message) => (
+                  renderedMessages.map((message) => (
                     <div
                       key={message.id}
                       className={`rounded-md px-2.5 py-2 text-xs whitespace-pre-wrap ${
@@ -331,8 +379,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
                     : "Processando solicitação do agente..."}
                 </p>
               )}
-            </>
-          )}
+          </>
         </Card>
       </SheetContent>
     </Sheet>
