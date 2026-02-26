@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.verbas-secure-query]
 verify_jwt = true
+
+[functions.sync-verbas]
+verify_jwt = false

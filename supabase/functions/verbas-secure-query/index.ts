@@ -17,6 +17,64 @@ interface VerbasSecureQueryRequest {
   pageSize?: number;
 }
 
+function normalizeErrorMessage(error: any) {
+  return String(error?.message || error?.error_description || error?.details || "").toLowerCase();
+}
+
+function isMissingViewError(error: any) {
+  const message = normalizeErrorMessage(error);
+  return (
+    message.includes("does not exist") ||
+    message.includes("relation") ||
+    message.includes("could not find the table")
+  ) && message.includes("vw_pagamento_verba_pivot_mensal");
+}
+
+function isSchemaExposureError(error: any) {
+  const message = normalizeErrorMessage(error);
+  return message.includes("schema") && message.includes("must be one of the following");
+}
+
+function buildVerbasQuery(
+  supabaseAdmin: any,
+  schemaName: "public" | "gold",
+  allowedCompanyIds: string[],
+  body: VerbasSecureQueryRequest,
+  from: number,
+  to: number,
+) {
+  let queryBase =
+    schemaName === "gold"
+      ? supabaseAdmin.schema("gold").from("vw_pagamento_verba_pivot_mensal")
+      : supabaseAdmin.from("vw_pagamento_verba_pivot_mensal");
+
+  let query = queryBase
+    .select("*", { count: "exact" })
+    .in("company_id", allowedCompanyIds)
+    .order("ano", { ascending: false })
+    .order("razao_social", { ascending: true })
+    .order("nome_funcionario", { ascending: true })
+    .range(from, to);
+
+  if (body.ano) {
+    query = query.eq("ano", Number(body.ano));
+  }
+
+  if (body.cpf?.trim()) {
+    query = query.ilike("cpf", `%${body.cpf.trim()}%`);
+  }
+
+  if (body.nome?.trim()) {
+    query = query.ilike("nome_funcionario", `%${body.nome.trim()}%`);
+  }
+
+  if (body.tipoVerba?.trim()) {
+    query = query.eq("tipo_verba", body.tipoVerba.trim().toUpperCase());
+  }
+
+  return query;
+}
+
 function maskCpf(cpf: string | null | undefined) {
   const digits = String(cpf || "").replace(/\D/g, "");
   if (digits.length < 4) return "***.***.***-**";
@@ -206,34 +264,28 @@ serve(async (req: Request) => {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    let query = supabaseAdmin
-      .schema("gold")
-      .from("vw_pagamento_verba_pivot_mensal")
-      .select("*", { count: "exact" })
-      .in("company_id", allowedCompanyIds)
-      .order("ano", { ascending: false })
-      .order("razao_social", { ascending: true })
-      .order("nome_funcionario", { ascending: true })
-      .range(from, to);
+    let result = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to);
 
-    if (body.ano) {
-      query = query.eq("ano", Number(body.ano));
+    if (result.error && (isMissingViewError(result.error) || isSchemaExposureError(result.error))) {
+      result = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to);
     }
 
-    if (body.cpf?.trim()) {
-      query = query.ilike("cpf", `%${body.cpf.trim()}%`);
-    }
+    const { data, error, count } = result;
+    if (error) {
+      if (isMissingViewError(error)) {
+        throw new Error(
+          "Dependência VERBAS não encontrada no banco (view vw_pagamento_verba_pivot_mensal). Execute as migrations de VERBAS no projeto remoto.",
+        );
+      }
 
-    if (body.nome?.trim()) {
-      query = query.ilike("nome_funcionario", `%${body.nome.trim()}%`);
-    }
+      if (isSchemaExposureError(error)) {
+        throw new Error(
+          "Schema gold não está exposto na API. Configure o schema em API Settings ou mantenha a view espelho em public.",
+        );
+      }
 
-    if (body.tipoVerba?.trim()) {
-      query = query.eq("tipo_verba", body.tipoVerba.trim().toUpperCase());
+      throw error;
     }
-
-    const { data, error, count } = await query;
-    if (error) throw error;
 
     const rows = data || [];
     const securedRows = hasFullAccess ? rows.map((row: any) => ({ ...row, masked: false })) : rows.map(maskRow);

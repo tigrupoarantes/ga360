@@ -44,6 +44,7 @@ import StockAuditExecution from "./pages/StockAuditExecution";
 import QLPPage from "./pages/QLPPage";
 import ControlePJ from "./pages/ControlePJ";
 import ControlePJDetail from "./pages/ControlePJDetail";
+import VerbasPage from "./pages/Verbas";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -299,6 +300,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <ControlePJDetail />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/pessoas-cultura/verbas"
+                  element={
+                    <ProtectedRoute>
+                      <VerbasPage />
                     </ProtectedRoute>
                   }
                 />

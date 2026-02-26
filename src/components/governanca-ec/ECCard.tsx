@@ -111,6 +111,13 @@ export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps
       navigate('/governanca-ec/pessoas-cultura/controle-pj');
       return;
     }
+
+    // Special handling for VERBAS card
+    const isVerbasCard = titleLower === 'verbas' || titleLower.includes('verbas');
+    if (isVerbasCard) {
+      navigate('/governanca-ec/pessoas-cultura/verbas');
+      return;
+    }
     
     navigate(`/governanca-ec/${areaSlug}/${card.id}`);
   };
