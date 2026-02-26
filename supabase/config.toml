@@ -73,4 +73,4 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.dab-proxy]
-verify_jwt = true
+verify_jwt = false
