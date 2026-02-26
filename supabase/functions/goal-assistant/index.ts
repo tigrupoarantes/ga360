@@ -24,6 +24,31 @@ interface OpenAIApiErrorPayload {
   };
 }
 
+type AgentErrorCode =
+  | "AUTH_INVALID"
+  | "INPUT_INVALID"
+  | "PERMISSION_DENIED"
+  | "TENANT_ACCESS_DENIED"
+  | "CONFIG_MISSING"
+  | "PROVIDER_AUTH"
+  | "PROVIDER_QUOTA"
+  | "PROVIDER_RATE_LIMIT"
+  | "PROVIDER_UNAVAILABLE"
+  | "PROVIDER_MODEL_NOT_FOUND"
+  | "PROVIDER_REQUEST_FAILED"
+  | "INTERNAL_ERROR";
+
+class AgentError extends Error {
+  code: AgentErrorCode;
+  status: number;
+
+  constructor(code: AgentErrorCode, message: string, status = 500) {
+    super(message);
+    this.code = code;
+    this.status = status;
+  }
+}
+
 type AgentRole = "user" | "assistant" | "tool";
 
 type ToolName =
@@ -184,9 +209,38 @@ const TOOL_DEFINITIONS = [
   },
 ];
 
+interface ProviderRuntimeConfig {
+  provider: "openai" | "gemini";
+  apiKey: string;
+  model: string;
+  endpoint: string;
+}
+
+function buildProviderConfig(provider: "openai" | "gemini", aiConfig: AIProviderConfig | null): ProviderRuntimeConfig | null {
+  if (provider === "openai") {
+    const apiKey = aiConfig?.api_key || Deno.env.get("OPENAI_API_KEY");
+    if (!apiKey) return null;
+    return {
+      provider: "openai",
+      apiKey,
+      model: aiConfig?.default_model || "gpt-4o-mini",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+    };
+  }
+
+  const geminiKey = aiConfig?.gemini_api_key || Deno.env.get("GEMINI_API_KEY");
+  if (!geminiKey) return null;
+  return {
+    provider: "gemini",
+    apiKey: geminiKey,
+    model: aiConfig?.gemini_model || "gemini-2.0-flash-lite",
+    endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+  };
+}
+
 async function getAIProviderConfig(
   supabaseAdmin: any
-): Promise<{ provider: "openai" | "gemini"; apiKey: string; model: string; endpoint: string }> {
+): Promise<{ primary: ProviderRuntimeConfig; fallback: ProviderRuntimeConfig | null }> {
   const { data: settings } = await supabaseAdmin
     .from("system_settings")
     .select("value")
@@ -206,49 +260,19 @@ async function getAIProviderConfig(
       ? "gemini"
       : "openai";
 
-  if (selectedProvider === "gemini") {
-    const geminiKey = aiConfig?.gemini_api_key || Deno.env.get("GEMINI_API_KEY");
-    if (!geminiKey) {
-      throw new Error("Gemini não está configurado para o copiloto de metas.");
-    }
+  const primary = buildProviderConfig(selectedProvider, aiConfig);
+  const secondaryProvider = selectedProvider === "openai" ? "gemini" : "openai";
+  const fallback = buildProviderConfig(secondaryProvider, aiConfig);
 
-    return {
-      provider: "gemini",
-      apiKey: geminiKey,
-      model: aiConfig?.gemini_model || "gemini-2.0-flash-lite",
-      endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    };
+  if (!primary && !fallback) {
+    throw new AgentError("CONFIG_MISSING", "Nenhum provedor de IA configurado (OpenAI/Gemini).", 500);
   }
 
-  if (aiConfig?.enabled && aiConfig?.api_key) {
-    return {
-      provider: "openai",
-      apiKey: aiConfig.api_key,
-      model: aiConfig.default_model || "gpt-4o",
-      endpoint: "https://api.openai.com/v1/chat/completions",
-    };
+  if (!primary && fallback) {
+    return { primary: fallback, fallback: null };
   }
 
-  if (aiConfig?.enabled && aiConfig?.gemini_api_key) {
-    return {
-      provider: "gemini",
-      apiKey: aiConfig.gemini_api_key,
-      model: aiConfig.gemini_model || "gemini-2.0-flash-lite",
-      endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    };
-  }
-
-  const envApiKey = Deno.env.get("OPENAI_API_KEY");
-  if (envApiKey) {
-    return {
-      provider: "openai",
-      apiKey: envApiKey,
-      model: "gpt-4o",
-      endpoint: "https://api.openai.com/v1/chat/completions",
-    };
-  }
-
-  throw new Error("Nenhum provedor de IA configurado (OpenAI/Gemini).");
+  return { primary: primary as ProviderRuntimeConfig, fallback };
 }
 
 function buildModelCandidates(provider: "openai" | "gemini", configuredModel: string) {
@@ -261,18 +285,67 @@ function buildModelCandidates(provider: "openai" | "gemini", configuredModel: st
   return [...new Set(candidates)];
 }
 
-async function createChatCompletionWithFallback(params: {
+function mapProviderFailure(params: {
   provider: "openai" | "gemini";
-  apiKey: string;
+  status: number;
+  message: string;
+  apiCode?: string;
   model: string;
-  endpoint: string;
-  messages: any[];
-}) {
+}): AgentError {
+  const providerName = params.provider === "gemini" ? "Gemini" : "OpenAI";
+  const lowerMessage = params.message.toLowerCase();
+
+  if (params.status === 401 || params.status === 403) {
+    return new AgentError(
+      "PROVIDER_AUTH",
+      `${providerName} rejeitou a autenticação. Verifique a API key configurada.`,
+      502
+    );
+  }
+
+  if (params.status === 429) {
+    const code = lowerMessage.includes("quota") ? "PROVIDER_QUOTA" : "PROVIDER_RATE_LIMIT";
+    const message =
+      code === "PROVIDER_QUOTA"
+        ? `${providerName} sem créditos/cota disponível no momento.`
+        : `${providerName} com limite de requisições no momento. Tente novamente em instantes.`;
+    return new AgentError(code, message, 429);
+  }
+
+  if (
+    params.status === 400 ||
+    params.status === 404 ||
+    params.apiCode === "model_not_found" ||
+    lowerMessage.includes("model")
+  ) {
+    return new AgentError(
+      "PROVIDER_MODEL_NOT_FOUND",
+      `${providerName} não encontrou modelo compatível (${params.model}).`,
+      502
+    );
+  }
+
+  if (params.status >= 500) {
+    return new AgentError(
+      "PROVIDER_UNAVAILABLE",
+      `${providerName} indisponível no momento. Tente novamente em instantes.`,
+      503
+    );
+  }
+
+  return new AgentError(
+    "PROVIDER_REQUEST_FAILED",
+    `${providerName} falhou ao processar a solicitação: ${params.message}`,
+    502
+  );
+}
+
+async function createChatCompletionWithFallback(params: ProviderRuntimeConfig & { messages: any[] }) {
   const modelCandidates = buildModelCandidates(params.provider, params.model);
-  let lastErrorMessage = "Falha ao consultar provedor de IA";
+  let lastError: AgentError | null = null;
 
   for (const candidateModel of modelCandidates) {
-    const openaiRes = await fetch(params.endpoint, {
+    const response = await fetch(params.endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${params.apiKey}`,
@@ -287,11 +360,11 @@ async function createChatCompletionWithFallback(params: {
       }),
     });
 
-    if (openaiRes.ok) {
-      return openaiRes.json();
+    if (response.ok) {
+      return { completion: await response.json(), usedProvider: params.provider, usedModel: candidateModel };
     }
 
-    const errorBodyText = await openaiRes.text();
+    const errorBodyText = await response.text();
     let parsedError: OpenAIApiErrorPayload | null = null;
     try {
       parsedError = JSON.parse(errorBodyText) as OpenAIApiErrorPayload;
@@ -299,29 +372,65 @@ async function createChatCompletionWithFallback(params: {
       parsedError = null;
     }
 
-    const apiMessage = parsedError?.error?.message || errorBodyText || `HTTP ${openaiRes.status}`;
-    const providerName = params.provider === "gemini" ? "Gemini" : "OpenAI";
-    lastErrorMessage = `${providerName} (${candidateModel}) retornou ${openaiRes.status}: ${apiMessage}`;
+    const apiMessage = parsedError?.error?.message || errorBodyText || `HTTP ${response.status}`;
+    const mappedError = mapProviderFailure({
+      provider: params.provider,
+      status: response.status,
+      message: apiMessage,
+      apiCode: parsedError?.error?.code,
+      model: candidateModel,
+    });
+    lastError = mappedError;
 
     const isRetryableModelError =
-      openaiRes.status === 400 ||
-      openaiRes.status === 404 ||
-      parsedError?.error?.code === "model_not_found" ||
-      (parsedError?.error?.message || "").toLowerCase().includes("model");
+      mappedError.code === "PROVIDER_MODEL_NOT_FOUND";
 
     if (isRetryableModelError && candidateModel !== modelCandidates[modelCandidates.length - 1]) {
       console.warn("Fallback de modelo IA acionado", {
         provider: params.provider,
         attempted_model: candidateModel,
-        status: openaiRes.status,
+        status: response.status,
       });
       continue;
     }
 
-    throw new Error(lastErrorMessage);
+    throw mappedError;
   }
 
-  throw new Error(lastErrorMessage);
+  throw lastError || new AgentError("PROVIDER_REQUEST_FAILED", "Falha ao consultar provedor de IA", 502);
+}
+
+function shouldAttemptProviderFallback(error: unknown) {
+  if (!(error instanceof AgentError)) return false;
+  return ["PROVIDER_QUOTA", "PROVIDER_RATE_LIMIT", "PROVIDER_UNAVAILABLE"].includes(error.code);
+}
+
+async function createChatCompletionWithProviderFallback(params: {
+  primary: ProviderRuntimeConfig;
+  fallback: ProviderRuntimeConfig | null;
+  messages: any[];
+}) {
+  try {
+    return await createChatCompletionWithFallback({
+      ...params.primary,
+      messages: params.messages,
+    });
+  } catch (primaryError) {
+    if (!params.fallback || !shouldAttemptProviderFallback(primaryError)) {
+      throw primaryError;
+    }
+
+    console.warn("Fallback entre providers acionado", {
+      from: params.primary.provider,
+      to: params.fallback.provider,
+      reason: primaryError instanceof AgentError ? primaryError.code : "UNKNOWN",
+    });
+
+    return await createChatCompletionWithFallback({
+      ...params.fallback,
+      messages: params.messages,
+    });
+  }
 }
 
 async function saveMessage(
@@ -361,7 +470,7 @@ async function assertCompanyAccess(supabaseAdmin: any, userId: string, companyId
   const hasSpecific = (data || []).some((row: any) => row.company_id === companyId);
 
   if (!allCompanies && !hasSpecific) {
-    throw new Error("Usuário sem acesso à empresa informada.");
+    throw new AgentError("TENANT_ACCESS_DENIED", "Usuário sem acesso à empresa informada.", 403);
   }
 }
 
@@ -623,7 +732,7 @@ serve(async (req: Request) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Não autorizado" }), {
+      return new Response(JSON.stringify({ error: "Não autorizado", code: "AUTH_INVALID" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -637,7 +746,7 @@ serve(async (req: Request) => {
 
     const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Token inválido" }), {
+      return new Response(JSON.stringify({ error: "Token inválido", code: "AUTH_INVALID" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -647,7 +756,7 @@ serve(async (req: Request) => {
     const body = (await req.json()) as RequestBody;
 
     if (!body.companyId || !body.message?.trim()) {
-      return new Response(JSON.stringify({ error: "companyId e message são obrigatórios" }), {
+      return new Response(JSON.stringify({ error: "companyId e message são obrigatórios", code: "INPUT_INVALID" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -657,13 +766,13 @@ serve(async (req: Request) => {
     const metasPermission = await getUserModulePermission(supabaseAdmin, userId, "metas");
 
     if (!metasPermission.can_view) {
-      return new Response(JSON.stringify({ error: "Usuário sem permissão de acesso ao módulo metas" }), {
+      return new Response(JSON.stringify({ error: "Usuário sem permissão de acesso ao módulo metas", code: "PERMISSION_DENIED" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { provider, apiKey, model, endpoint } = await getAIProviderConfig(supabaseAdmin);
+    const providerConfig = await getAIProviderConfig(supabaseAdmin);
 
     await saveMessage(supabaseAdmin, {
       companyId: body.companyId,
@@ -697,14 +806,12 @@ serve(async (req: Request) => {
     let finalAssistantText = "";
 
     for (let iteration = 0; iteration < 6; iteration++) {
-      const completion = await createChatCompletionWithFallback({
-        provider,
-        apiKey,
-        model,
-        endpoint,
+      const completionResult = await createChatCompletionWithProviderFallback({
+        primary: providerConfig.primary,
+        fallback: providerConfig.fallback,
         messages,
       });
-      const assistantMessage = completion?.choices?.[0]?.message;
+      const assistantMessage = completionResult?.completion?.choices?.[0]?.message;
 
       if (!assistantMessage) {
         throw new Error("Resposta inválida do assistente");
@@ -771,12 +878,19 @@ serve(async (req: Request) => {
     });
   } catch (error: any) {
     console.error("Erro em goal-assistant:", {
+      code: error?.code,
       message: error?.message,
       stack: error?.stack,
     });
-    return new Response(JSON.stringify({ error: error.message || "Erro interno" }), {
+
+    const mappedError =
+      error instanceof AgentError
+        ? error
+        : new AgentError("INTERNAL_ERROR", error?.message || "Erro interno", 500);
+
+    return new Response(JSON.stringify({ error: mappedError.message, code: mappedError.code }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
+      status: mappedError.status,
     });
   }
 });

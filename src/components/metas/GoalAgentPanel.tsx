@@ -25,35 +25,53 @@ interface AgentMessage {
   created_at: string;
 }
 
-async function getEdgeFunctionErrorMessage(error: unknown) {
-  if (!(error instanceof Error)) return "Erro desconhecido";
+type AgentErrorCode =
+  | "AUTH_INVALID"
+  | "INPUT_INVALID"
+  | "PERMISSION_DENIED"
+  | "TENANT_ACCESS_DENIED"
+  | "CONFIG_MISSING"
+  | "PROVIDER_AUTH"
+  | "PROVIDER_QUOTA"
+  | "PROVIDER_RATE_LIMIT"
+  | "PROVIDER_UNAVAILABLE"
+  | "PROVIDER_MODEL_NOT_FOUND"
+  | "PROVIDER_REQUEST_FAILED"
+  | "INTERNAL_ERROR";
 
-  const response = (error as Error & { context?: Response }).context;
-  if (!response) return error.message;
+function getFriendlyErrorMessage(code?: string, fallback?: string) {
+  const normalized = (code || "") as AgentErrorCode;
+  const mapping: Partial<Record<AgentErrorCode, string>> = {
+    AUTH_INVALID: "Sua sessão expirou. Faça login novamente para continuar.",
+    INPUT_INVALID: "A solicitação enviada está incompleta. Ajuste e tente novamente.",
+    PERMISSION_DENIED: "Você não tem permissão para executar esta ação em metas.",
+    TENANT_ACCESS_DENIED: "Você não tem acesso à empresa selecionada.",
+    CONFIG_MISSING: "Configuração de IA ausente. Verifique o provedor e a API key nas configurações.",
+    PROVIDER_AUTH: "Falha de autenticação no provedor de IA. Verifique a API key configurada.",
+    PROVIDER_QUOTA: "A cota/crédito do provedor de IA foi atingida. Ajuste o plano ou troque de provedor.",
+    PROVIDER_RATE_LIMIT: "O provedor de IA está com limite temporário. Tente novamente em alguns segundos.",
+    PROVIDER_UNAVAILABLE: "O provedor de IA está indisponível no momento. Tente novamente em instantes.",
+    PROVIDER_MODEL_NOT_FOUND: "O modelo configurado não está disponível. Ajuste o modelo nas configurações.",
+  };
 
-  try {
-    const payload = (await response.clone().json()) as { error?: string; message?: string };
-    const detailed = payload?.error || payload?.message;
-    if (detailed) return detailed;
-  } catch {
-    try {
-      const text = await response.clone().text();
-      if (text) return text;
-    } catch {
-      return error.message;
-    }
-  }
-
-  return error.message;
+  return mapping[normalized] || fallback || "Não foi possível processar sua solicitação no momento.";
 }
 
 async function parseFunctionError(response: Response) {
   try {
-    const payload = (await response.json()) as { error?: string; message?: string };
-    return payload.error || payload.message || `Falha na chamada (${response.status})`;
+    const payload = (await response.json()) as { error?: string; message?: string; code?: string };
+    return {
+      code: payload.code,
+      message:
+        getFriendlyErrorMessage(payload.code, payload.error || payload.message) ||
+        `Falha na chamada (${response.status})`,
+    };
   } catch {
     const fallbackText = await response.text().catch(() => "");
-    return fallbackText || `Falha na chamada (${response.status})`;
+    return {
+      code: undefined,
+      message: fallbackText || `Falha na chamada (${response.status})`,
+    };
   }
 }
 
@@ -85,6 +103,7 @@ async function getValidAccessToken() {
 export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComplete }: GoalAgentPanelProps) {
   const { toast } = useToast();
   const [input, setInput] = useState("");
+  const [agentStep, setAgentStep] = useState<"idle" | "auth" | "request" | "processing">("idle");
 
   const quickPrompts = [
     "Crie uma meta de crescimento de vendas de 10% para o próximo mês.",
@@ -116,8 +135,10 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
       if (!companyId) throw new Error("Selecione uma empresa");
       if (!prompt.trim()) throw new Error("Digite uma mensagem");
 
+      setAgentStep("auth");
       const accessToken = await getValidAccessToken();
 
+      setAgentStep("request");
       const response = await fetch(`${EXTERNAL_SUPABASE_CONFIG.url}/functions/v1/goal-assistant`, {
         method: "POST",
         headers: {
@@ -132,10 +153,11 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
       });
 
       if (!response.ok) {
-        const detailedMessage = await parseFunctionError(response);
-        throw new Error(detailedMessage);
+        const functionError = await parseFunctionError(response);
+        throw new Error(functionError.message);
       }
 
+      setAgentStep("processing");
       const data = (await response.json()) as { success?: boolean; reply?: string; error?: string };
       return data;
     },
@@ -146,6 +168,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
     onSuccess: () => {
       messagesQuery.refetch();
       onMutationComplete?.();
+      setAgentStep("idle");
     },
     onError: (error, _vars, context) => {
       const maybePrompt = context?.prompt;
@@ -157,6 +180,7 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
         description: error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive",
       });
+      setAgentStep("idle");
     },
   });
 
@@ -271,7 +295,13 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
               </div>
 
               {sendMutation.isPending && (
-                <p className="text-[11px] text-muted-foreground">Processando solicitação do agente...</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {agentStep === "auth"
+                    ? "Validando sua sessão..."
+                    : agentStep === "request"
+                    ? "Conectando com o agente..."
+                    : "Processando solicitação do agente..."}
+                </p>
               )}
             </>
           )}
