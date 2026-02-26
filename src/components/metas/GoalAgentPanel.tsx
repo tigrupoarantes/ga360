@@ -75,6 +75,29 @@ async function parseFunctionError(response: Response) {
   }
 }
 
+async function callAssistantEndpoint(params: {
+  endpoint: "ai-gateway" | "goal-assistant";
+  accessToken: string;
+  companyId: string;
+  prompt: string;
+}) {
+  const response = await fetch(`${EXTERNAL_SUPABASE_CONFIG.url}/functions/v1/${params.endpoint}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: EXTERNAL_SUPABASE_CONFIG.anonKey,
+      Authorization: `Bearer ${params.accessToken}`,
+    },
+    body: JSON.stringify({
+      companyId: params.companyId,
+      message: params.prompt,
+      module: "metas",
+    }),
+  });
+
+  return response;
+}
+
 async function getValidAccessToken() {
   const nowInSeconds = Math.floor(Date.now() / 1000);
 
@@ -139,18 +162,21 @@ export function GoalAgentPanel({ companyId, open, onOpenChange, onMutationComple
       const accessToken = await getValidAccessToken();
 
       setAgentStep("request");
-      const response = await fetch(`${EXTERNAL_SUPABASE_CONFIG.url}/functions/v1/goal-assistant`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: EXTERNAL_SUPABASE_CONFIG.anonKey,
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          companyId,
-          message: prompt.trim(),
-        }),
+      let response = await callAssistantEndpoint({
+        endpoint: "ai-gateway",
+        accessToken,
+        companyId,
+        prompt: prompt.trim(),
       });
+
+      if (!response.ok && (response.status === 404 || response.status === 500)) {
+        response = await callAssistantEndpoint({
+          endpoint: "goal-assistant",
+          accessToken,
+          companyId,
+          prompt: prompt.trim(),
+        });
+      }
 
       if (!response.ok) {
         const functionError = await parseFunctionError(response);

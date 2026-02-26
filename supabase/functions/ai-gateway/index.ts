@@ -1,13 +1,17 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-import { AgentError, RequestBody } from "./config.ts";
-import { runMetasAgent } from "./core.ts";
+import { AgentError, RequestBody } from "../goal-assistant/config.ts";
+import { runMetasAgent } from "../goal-assistant/core.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+interface AIGatewayRequest extends RequestBody {
+  module?: "metas";
+}
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -38,7 +42,7 @@ serve(async (req: Request) => {
     }
 
     const userId = userData.user.id;
-    const body = (await req.json()) as RequestBody;
+    const body = (await req.json()) as AIGatewayRequest;
 
     if (!body.companyId || !body.message?.trim()) {
       return new Response(JSON.stringify({ error: "companyId e message são obrigatórios", code: "INPUT_INVALID" }), {
@@ -47,13 +51,22 @@ serve(async (req: Request) => {
       });
     }
 
-    const result = await runMetasAgent(supabaseAdmin, userId, body);
-    return new Response(JSON.stringify(result.payload), {
+    const targetModule = body.module || "metas";
+
+    if (targetModule === "metas") {
+      const result = await runMetasAgent(supabaseAdmin, userId, body);
+      return new Response(JSON.stringify(result.payload), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: result.status,
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Módulo de IA não suportado no gateway", code: "INPUT_INVALID" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: result.status,
+      status: 400,
     });
   } catch (error: any) {
-    console.error("Erro em goal-assistant:", {
+    console.error("Erro em ai-gateway:", {
       code: error?.code,
       message: error?.message,
       stack: error?.stack,
