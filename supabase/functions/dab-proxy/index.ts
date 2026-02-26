@@ -111,8 +111,29 @@ function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[]
   const normalizedPathname = baseUrlObject.pathname.replace(/\/+$/, "").toLowerCase();
 
   if (normalized === "self") {
-    applyQueryParams(baseUrlObject, payload.query);
-    return [baseUrlObject.toString()];
+    const candidates = new Set<string>();
+
+    const directUrl = new URL(baseUrlObject.toString());
+    applyQueryParams(directUrl, payload.query);
+    candidates.add(directUrl.toString());
+
+    const directHealthUrl = new URL(baseUrlObject.toString());
+    directHealthUrl.pathname = `${directHealthUrl.pathname.replace(/\/+$/, "")}/health`;
+    applyQueryParams(directHealthUrl, payload.query);
+    candidates.add(directHealthUrl.toString());
+
+    const parentPath = baseUrlObject.pathname.replace(/\/+$/, "").split("/").slice(0, -1).join("/") || "/";
+    const parentUrl = new URL(baseUrlObject.toString());
+    parentUrl.pathname = parentPath;
+    applyQueryParams(parentUrl, payload.query);
+    candidates.add(parentUrl.toString());
+
+    const parentHealthUrl = new URL(baseUrlObject.toString());
+    parentHealthUrl.pathname = `${parentPath.replace(/\/+$/, "")}/health`;
+    applyQueryParams(parentHealthUrl, payload.query);
+    candidates.add(parentHealthUrl.toString());
+
+    return [...candidates];
   }
 
   if (normalizedPathname.endsWith("/funcionarios")) {
