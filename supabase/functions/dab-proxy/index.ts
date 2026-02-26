@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const ALLOWED_PATHS = new Set(["funcionarios"]);
+const ALLOWED_PATHS = new Set(["funcionarios", "self"]);
 
 interface DabProxyRequest {
   path?: string;
@@ -109,6 +109,11 @@ function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[]
 
   const baseUrlObject = new URL(base);
   const normalizedPathname = baseUrlObject.pathname.replace(/\/+$/, "").toLowerCase();
+
+  if (normalized === "self") {
+    applyQueryParams(baseUrlObject, payload.query);
+    return [baseUrlObject.toString()];
+  }
 
   if (normalizedPathname.endsWith("/funcionarios")) {
     applyQueryParams(baseUrlObject, payload.query);

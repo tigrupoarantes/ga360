@@ -52,6 +52,25 @@ interface DatalakeConnectionFormProps {
   connection?: any;
 }
 
+function getProbePayload(connection: any) {
+  const baseUrl = String(connection?.base_url || "").toLowerCase();
+  const name = String(connection?.name || "").toLowerCase();
+  const isEmployeesEndpoint = baseUrl.includes("funcionarios") || name.includes("funcion");
+
+  if (isEmployeesEndpoint) {
+    return {
+      path: 'funcionarios',
+      query: { $first: 1 },
+      connectionId: connection.id,
+    };
+  }
+
+  return {
+    path: 'self',
+    connectionId: connection.id,
+  };
+}
+
 export function DatalakeConnectionForm({ 
   open, 
   onOpenChange, 
@@ -216,22 +235,21 @@ export function DatalakeConnectionForm({
     setTestResult(null);
 
     try {
+      const probePayload = getProbePayload(connection);
+
       const firstAttempt = await supabase.functions.invoke('dab-proxy', {
-        body: {
-          path: 'funcionarios',
-          query: { $first: 1 },
-          connectionId: connection.id,
-        },
+        body: probePayload,
       });
 
       let invokeError = firstAttempt.error;
 
       if (invokeError) {
+        const fallbackPayload = probePayload.path === 'funcionarios'
+          ? { path: 'funcionarios', connectionId: connection.id }
+          : probePayload;
+
         const fallbackAttempt = await supabase.functions.invoke('dab-proxy', {
-          body: {
-            path: 'funcionarios',
-            connectionId: connection.id,
-          },
+          body: fallbackPayload,
         });
         invokeError = fallbackAttempt.error;
       }
