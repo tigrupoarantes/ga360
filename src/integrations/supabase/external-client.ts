@@ -1,6 +1,6 @@
 // Cliente Supabase Externo
 // Este arquivo cria o cliente usando as credenciais do Supabase externo,
-// independente do arquivo .env gerenciado pelo Lovable Cloud
+// independente de configurações em arquivo .env
 
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';

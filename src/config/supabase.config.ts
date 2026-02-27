@@ -1,5 +1,5 @@
 // Configuração do Supabase Externo
-// Este arquivo contém as credenciais hardcoded para garantir independência do .env gerenciado pelo Lovable Cloud
+// Este arquivo contém as credenciais hardcoded para garantir independência do arquivo .env
 
 export const EXTERNAL_SUPABASE_CONFIG = {
   url: "https://zveqhxaiwghexfobjaek.supabase.co",

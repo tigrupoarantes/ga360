@@ -107,10 +107,9 @@ const handler = async (req: Request): Promise<Response> => {
       minute: "2-digit",
     });
 
-    const baseUrl = Deno.env.get("SUPABASE_URL")?.replace(
-      "https://",
-      "https://app."
-    ).replace(".supabase.co", ".lovable.app");
+    const configuredPublicUrl = Deno.env.get("PUBLIC_SITE_URL");
+    const appUrl = Deno.env.get("APP_URL");
+    const baseUrl = (configuredPublicUrl || appUrl || "http://localhost:5173").replace(/\/$/, "");
 
     const emailPromises = participants.map(async (participant: any) => {
       const email = emailMap.get(participant.user_id);

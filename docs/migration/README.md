@@ -1,6 +1,6 @@
-# Migração GA 360 - Lovable Cloud → Supabase Externo
+# Migração GA 360 - Backend Anterior → Supabase Externo
 
-Este diretório contém todos os arquivos necessários para migrar o backend do GA 360 do Lovable Cloud para seu próprio projeto Supabase.
+Este diretório contém todos os arquivos necessários para migrar o backend do GA 360 de um backend gerenciado para seu próprio projeto Supabase.
 
 ## 📁 Arquivos
 
@@ -34,7 +34,6 @@ Após executar os scripts SQL, configure os seguintes secrets no Dashboard do Su
 | `SMTP_PASSWORD` | Senha do servidor SMTP para envio de emails |
 | `SYNC_API_KEY` | Chave para autenticação na API de sincronização do ERP |
 | `RESEND_API_KEY` | Chave da API Resend (opcional) |
-| `LOVABLE_API_KEY` | Chave para funcionalidades de IA do Lovable |
 
 ## 📦 Deploy das Edge Functions
 
@@ -83,7 +82,7 @@ supabase functions deploy
 
 ## 🔄 Atualizar Credenciais no Frontend
 
-Após a migração, atualize o arquivo `.env` do projeto Lovable:
+Após a migração, atualize o arquivo `.env` do projeto:
 
 ```env
 VITE_SUPABASE_PROJECT_ID="seu_project_id"
@@ -93,7 +92,7 @@ VITE_SUPABASE_URL="https://seu_project_id.supabase.co"
 
 ## 📊 Exportar Dados
 
-Para exportar os dados do Lovable Cloud, você pode usar queries SELECT no SQL Editor:
+Para exportar os dados do ambiente anterior, você pode usar queries SELECT no SQL Editor:
 
 ```sql
 -- Exemplo: Exportar empresas

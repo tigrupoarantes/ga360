@@ -1,6 +1,6 @@
 -- ============================================================================
 -- GA 360 - QUERIES DE EXPORTAÇÃO DE DADOS
--- Execute cada query no SQL Editor do projeto ANTIGO (Lovable Cloud)
+-- Execute cada query no SQL Editor do projeto ANTIGO
 -- Copie o resultado e execute no SQL Editor do projeto NOVO (Supabase externo)
 -- ============================================================================
 

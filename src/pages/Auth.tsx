@@ -11,7 +11,14 @@ import { z } from 'zod';
 import { Loader2, UserPlus, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TwoFactorAuth from '@/components/auth/TwoFactorAuth';
-import logoBadge from '@/assets/logo-crescer-badge.png';
+import logoBadgeFallback from '@/assets/logo-crescer-badge.png';
+
+const fivecomLogoModules = import.meta.glob('../assets/logo-fivecom.{jpg,jpeg,png,webp}', {
+  eager: true,
+  import: 'default',
+}) as Record<string, string>;
+
+const fivecomLogo = Object.values(fivecomLogoModules)[0] || logoBadgeFallback;
 
 const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }),
@@ -241,8 +248,8 @@ export default function Auth() {
         )}>
           <div className="mb-6 animate-float">
             <img 
-              src={logoBadge} 
-              alt="CRESCER+ & MELHOR" 
+              src={fivecomLogo} 
+              alt="FIVECOM" 
               className="h-40 w-auto mx-auto drop-shadow-2xl"
             />
           </div>

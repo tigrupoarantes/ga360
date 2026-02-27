@@ -27,7 +27,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/external-client";
-import logoIcon from "@/assets/logo-crescer-icon.png";
+import logoIconFallback from "@/assets/logo-crescer-icon.png";
+
+const fivecomLogoModules = import.meta.glob('../../assets/logo-fivecom.{jpg,jpeg,png,webp}', {
+  eager: true,
+  import: 'default',
+}) as Record<string, string>;
+
+const fivecomLogo = Object.values(fivecomLogoModules)[0] || logoIconFallback;
 
 type NavItem = {
   name: string;
@@ -126,12 +133,12 @@ export function Sidebar() {
         {/* Logo */}
         <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
           <img
-            src={logoIcon}
-            alt="CRESCER+"
+            src={fivecomLogo}
+            alt="FIVECOM"
             className="h-10 w-10 object-contain"
           />
           <div>
-            <h1 className="text-lg font-bold text-sidebar-foreground">CRESCER+</h1>
+            <h1 className="text-lg font-bold text-sidebar-foreground">FIVECOM</h1>
             <p className="text-xs text-sidebar-foreground/70">Gestão Estratégica</p>
           </div>
         </div>

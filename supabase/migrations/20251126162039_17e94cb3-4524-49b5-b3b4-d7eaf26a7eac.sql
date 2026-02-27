@@ -11,7 +11,7 @@
 
 -- Por segurança, este usuário deve ser criado via Supabase Dashboard ou Admin API
 -- Instruções:
--- 1. Acessar o Lovable Cloud Backend
+-- 1. Acessar o Supabase Dashboard
 -- 2. Ir em Authentication -> Users
 -- 3. Clicar em "Add user"
 -- 4. Preencher:
