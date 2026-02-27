@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { BackButton } from "@/components/ui/back-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,9 +8,18 @@ import { DatalakeConnectionsList } from "@/components/governanca-ec/admin/Datala
 import { DatalakeQueriesList } from "@/components/governanca-ec/admin/DatalakeQueriesList";
 import { DatalakeBindingsList } from "@/components/governanca-ec/admin/DatalakeBindingsList";
 import { DatalakeLogsViewer } from "@/components/governanca-ec/admin/DatalakeLogsViewer";
+import { useSearchParams } from "react-router-dom";
 
 export default function AdminDatalake() {
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("connections");
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (["connections", "queries", "bindings", "logs"].includes(String(tab))) {
+      setActiveTab(String(tab));
+    }
+  }, [searchParams]);
 
   return (
     <MainLayout>

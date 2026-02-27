@@ -5,7 +5,7 @@ import { useCardPermissions } from "@/hooks/useCardPermissions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/external-client";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ShieldAlert, Search, EyeOff, Eye } from "lucide-react";
+import { ShieldAlert, Search, EyeOff, Eye, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,17 @@ interface VerbasResponse {
   page: number;
   pageSize: number;
   total: number;
+  sync_warning?: string;
+  sync_error?: string;
+  sync_result?: {
+    received?: number;
+    processed?: number;
+    failed?: number;
+    upserted?: number;
+    duration_ms?: number;
+    source_system?: string;
+    failure_reasons?: Array<{ reason?: string; count?: number }>;
+  };
   rows: VerbasRow[];
 }
 
@@ -102,6 +113,9 @@ export default function VerbasPage() {
   const [tipoVerba, setTipoVerba] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("25");
+  const [syncing, setSyncing] = useState(false);
+  const [syncSummary, setSyncSummary] = useState<VerbasResponse["sync_result"] | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const { data: verbasCard, isLoading: cardLoading } = useQuery({
     queryKey: ["ec-verbas-card"],
@@ -127,6 +141,7 @@ export default function VerbasPage() {
         ...(cpf.trim() ? { cpf: cpf.trim() } : {}),
         ...(nome.trim() ? { nome: nome.trim() } : {}),
         ...(tipoVerba !== "all" ? { tipoVerba } : {}),
+        autoSyncWhenEmpty: false,
         page,
         pageSize: Number(pageSize),
       };
@@ -152,6 +167,95 @@ export default function VerbasPage() {
     },
     enabled: !permissionsLoading && !cardLoading && !!verbasCard && hasCardPermission(verbasCard.id, "view"),
   });
+
+  const handleSyncVerbas = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncSummary(null);
+
+    try {
+      const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      const targetYear = Number(ano);
+
+      const aggregate = {
+        received: 0,
+        processed: 0,
+        failed: 0,
+        upserted: 0,
+        duration_ms: 0,
+        failure_reasons: new Map<string, number>(),
+      };
+
+      for (const month of months) {
+        setSyncError(`Sincronizando ${month}/12...`);
+
+        const body = {
+          ...(selectedCompanyId ? { companyId: selectedCompanyId } : {}),
+          ...(Number.isFinite(targetYear) ? { ano: targetYear } : {}),
+          autoSyncWhenEmpty: false,
+          syncNow: true,
+          syncMonth: month,
+          syncMaxPages: 25,
+          page: 1,
+          pageSize: Number(pageSize),
+        };
+
+        const { data: response, error: invokeError } = await supabase.functions.invoke("verbas-secure-query", {
+          body,
+        });
+
+        if (invokeError) {
+          let details = invokeError.message;
+          try {
+            if (invokeError.context) {
+              const json = await invokeError.context.json();
+              details = json?.error || json?.message || details;
+            }
+          } catch {
+            // noop
+          }
+          throw new Error(`Mês ${month}: ${details || "Falha ao sincronizar verbas"}`);
+        }
+
+        const typedResponse = (response || {}) as VerbasResponse;
+        const result = typedResponse.sync_result;
+
+        aggregate.received += result?.received ?? 0;
+        aggregate.processed += result?.processed ?? 0;
+        aggregate.failed += result?.failed ?? 0;
+        aggregate.upserted += result?.upserted ?? 0;
+        aggregate.duration_ms += result?.duration_ms ?? 0;
+
+        for (const reason of result?.failure_reasons || []) {
+          const key = reason.reason || "erro";
+          aggregate.failure_reasons.set(key, (aggregate.failure_reasons.get(key) || 0) + (reason.count ?? 0));
+        }
+
+        if (typedResponse.sync_error) {
+          throw new Error(`Mês ${month}: ${typedResponse.sync_error}`);
+        }
+      }
+
+      setSyncSummary({
+        received: aggregate.received,
+        processed: aggregate.processed,
+        failed: aggregate.failed,
+        upserted: aggregate.upserted,
+        duration_ms: aggregate.duration_ms,
+        failure_reasons: [...aggregate.failure_reasons.entries()]
+          .map(([reason, count]) => ({ reason, count }))
+          .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+          .slice(0, 10),
+      });
+      setSyncError(null);
+      setPage(1);
+      await refetch();
+    } catch (err) {
+      setSyncError((err as Error).message || "Erro ao sincronizar verbas");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const totalPages = useMemo(() => {
     const total = data?.total || 0;
@@ -237,6 +341,19 @@ export default function VerbasPage() {
                 Buscar
               </Button>
 
+              <Button variant="outline" onClick={handleSyncVerbas} disabled={syncing}>
+                {syncing ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Sincronizar verbas
+              </Button>
+
+              <Button variant="outline" onClick={() => navigate("/admin/datalake?tab=logs")}>
+                Ver logs da sincronização
+              </Button>
+
               {data?.access && (
                 <Badge variant={data.access === "full" ? "default" : "secondary"} className="ml-auto">
                   {data.access === "full" ? (
@@ -295,7 +412,26 @@ export default function VerbasPage() {
                 </Table>
 
                 <div className="p-4 border-t flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">Total: {data?.total || 0} registros</p>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Total: {data?.total || 0} registros</p>
+                    {syncSummary && (
+                      <>
+                        <p className="text-xs text-muted-foreground">
+                          Sincronização: {syncSummary.upserted ?? 0} gravados/alterados, {syncSummary.processed ?? 0} processados, {syncSummary.failed ?? 0} falhas.
+                        </p>
+                        {!!syncSummary.failure_reasons?.length && (
+                          <p className="text-xs text-muted-foreground">
+                            Principais falhas: {syncSummary.failure_reasons.slice(0, 3).map((item) => `${item.reason || "erro"} (${item.count ?? 0})`).join(" • ")}
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {syncError && (
+                      <p className="text-xs text-destructive">
+                        Status da sincronização: {syncError}
+                      </p>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     <Select value={pageSize} onValueChange={(value) => { setPageSize(value); setPage(1); }}>
                       <SelectTrigger className="w-24">

@@ -15,6 +15,10 @@ interface VerbasSecureQueryRequest {
   tipoVerba?: string;
   page?: number;
   pageSize?: number;
+  autoSyncWhenEmpty?: boolean;
+  syncNow?: boolean;
+  syncMaxPages?: number;
+  syncMonth?: number;
 }
 
 function normalizeErrorMessage(error: any) {
@@ -73,6 +77,56 @@ function buildVerbasQuery(
   }
 
   return query;
+}
+
+async function runSyncVerbasIfConfigured(
+  supabaseUrl: string,
+  syncApiKey: string | null,
+  serviceRoleKey: string | null,
+  syncMaxPages?: number,
+  syncMonth?: number,
+  syncYear?: number,
+) {
+  if (!syncApiKey && !serviceRoleKey) return;
+
+  const payload: Record<string, unknown> = {
+    load_from_datalake: true,
+    max_pages: Math.max(1, Math.min(100, Number(syncMaxPages || 25))),
+  };
+
+  if (syncMonth && syncMonth >= 1 && syncMonth <= 12) {
+    payload.target_month = syncMonth;
+  }
+
+  if (syncYear && syncYear >= 2000) {
+    payload.target_year = syncYear;
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (syncApiKey) {
+    headers["x-api-key"] = syncApiKey;
+  }
+
+  if (!syncApiKey && serviceRoleKey) {
+    headers.Authorization = `Bearer ${serviceRoleKey}`;
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/sync-verbas`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Falha ao sincronizar verbas via datalake: ${response.status} ${text}`);
+  }
+
+  const json = await response.json().catch(() => ({}));
+  return json;
 }
 
 function maskCpf(cpf: string | null | undefined) {
@@ -263,6 +317,35 @@ serve(async (req: Request) => {
     const pageSize = Math.min(200, Math.max(1, Number(body.pageSize || 50)));
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
+    const autoSyncWhenEmpty = body.autoSyncWhenEmpty !== false;
+    const syncNow = body.syncNow === true;
+    let syncResult: Record<string, unknown> | undefined;
+    let syncError: string | undefined;
+
+    if (syncNow) {
+      if (!hasFullAccess) {
+        return new Response(JSON.stringify({ error: "Sem permissão para sincronizar VERBAS.", code: "PERMISSION_DENIED" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const syncApiKey = Deno.env.get("SYNC_API_KEY");
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+      try {
+        syncResult = await runSyncVerbasIfConfigured(
+          supabaseUrl,
+          syncApiKey,
+          serviceRoleKey,
+          body.syncMaxPages,
+          body.syncMonth,
+          body.ano,
+        );
+      } catch (syncErr) {
+        syncError = String(syncErr);
+      }
+    }
 
     let result = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to);
 
@@ -287,7 +370,49 @@ serve(async (req: Request) => {
       throw error;
     }
 
-    const rows = data || [];
+    let syncWarning: string | undefined;
+    if ((count || 0) === 0 && autoSyncWhenEmpty && page === 1 && !syncNow) {
+      const syncApiKey = Deno.env.get("SYNC_API_KEY");
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+      try {
+        syncResult = await runSyncVerbasIfConfigured(
+          supabaseUrl,
+          syncApiKey,
+          serviceRoleKey,
+          body.syncMaxPages,
+          body.syncMonth,
+          body.ano,
+        );
+        let retry = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to);
+
+        if (retry.error && (isMissingViewError(retry.error) || isSchemaExposureError(retry.error))) {
+          retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to);
+        }
+
+        if (!retry.error) {
+          result = retry;
+        }
+      } catch (syncError) {
+        syncWarning = String(syncError);
+        console.warn("Auto-sync de verbas não executado:", syncWarning);
+      }
+    }
+
+    if (syncNow && !syncError) {
+      let retry = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to);
+
+      if (retry.error && (isMissingViewError(retry.error) || isSchemaExposureError(retry.error))) {
+        retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to);
+      }
+
+      if (!retry.error) {
+        result = retry;
+      }
+    }
+
+    const rows = result.data || [];
+    const total = result.count || 0;
     const securedRows = hasFullAccess ? rows.map((row: any) => ({ ...row, masked: false })) : rows.map(maskRow);
 
     return new Response(
@@ -296,7 +421,10 @@ serve(async (req: Request) => {
         access: hasFullAccess ? "full" : "masked",
         page,
         pageSize,
-        total: count || 0,
+        total,
+        sync_warning: syncWarning,
+        sync_result: syncResult,
+        sync_error: syncError,
         rows: securedRows,
       }),
       {
