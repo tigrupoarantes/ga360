@@ -27,10 +27,14 @@ interface VerbaRecord {
 
 interface SyncRequest {
   source_system?: string;
+  company_id?: string;
   company_external_id?: string;
+  department?: string;
+  position?: string;
   records?: VerbaRecord[];
   events?: VerbaRecord[];
   load_from_datalake?: boolean;
+  replace_scope?: boolean;
   query_id?: string;
   connection_id?: string;
   endpoint_path?: string;
@@ -68,6 +72,14 @@ function normalizeCnpj(value?: string | null) {
 function normalizeCpf(value?: string | null) {
   const digits = normalizeDigits(value);
   return digits.length === 11 ? digits : null;
+}
+
+function normalizeText(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function parseNumber(value: unknown) {
@@ -945,7 +957,7 @@ serve(async (req) => {
 
     const { data: externalEmployees, error: externalEmployeesError } = await supabase
       .from("external_employees")
-      .select("company_id, cpf, full_name, is_active")
+      .select("company_id, cpf, full_name, is_active, department, position")
       .not("cpf", "is", null)
       .neq("cpf", "")
       .not("company_id", "is", null);
@@ -954,7 +966,7 @@ serve(async (req) => {
       throw new Error(`Failed to load external_employees: ${externalEmployeesError.message}`);
     }
 
-    const employeesByCpf = new Map<string, Array<{ company_id: string; full_name: string | null; is_active: boolean | null }>>();
+    const employeesByCpf = new Map<string, Array<{ company_id: string; full_name: string | null; is_active: boolean | null; department: string | null; position: string | null }>>();
     for (const employee of externalEmployees || []) {
       const normalizedCpf = normalizeCpf(employee.cpf);
       if (!normalizedCpf || !employee.company_id) continue;
@@ -964,6 +976,8 @@ serve(async (req) => {
         company_id: employee.company_id,
         full_name: employee.full_name || null,
         is_active: employee.is_active ?? null,
+        department: employee.department || null,
+        position: employee.position || null,
       });
       employeesByCpf.set(normalizedCpf, list);
     }
@@ -1020,11 +1034,31 @@ serve(async (req) => {
 
         if (!companyId) throw new Error("Empresa não encontrada (company_id/company_external_id/CPF)");
 
+        if (body.company_id && companyId !== body.company_id) {
+          throw new Error("Empresa fora do filtro selecionado");
+        }
+
         if (!employeeMatch && employeesForCpf.length) {
           employeeMatch =
             employeesForCpf.find((employee) => employee.company_id === companyId && employee.is_active !== false) ||
             employeesForCpf.find((employee) => employee.company_id === companyId) ||
             null;
+        }
+
+        const requiredDepartment = normalizeText(body.department);
+        if (requiredDepartment) {
+          const employeeDepartment = normalizeText(employeeMatch?.department || null);
+          if (!employeeDepartment || !employeeDepartment.includes(requiredDepartment)) {
+            throw new Error("Departamento fora do filtro selecionado");
+          }
+        }
+
+        const requiredPosition = normalizeText(body.position);
+        if (requiredPosition) {
+          const employeePosition = normalizeText(employeeMatch?.position || null);
+          if (!employeePosition || !employeePosition.includes(requiredPosition)) {
+            throw new Error("Cargo fora do filtro selecionado");
+          }
         }
 
         const resolvedCompany = companyById.get(companyId) || mappedCompany || fallbackCompany || null;
@@ -1051,11 +1085,42 @@ serve(async (req) => {
     }
 
     const dedupedUpsertRows = mergeUpsertRows(upsertRows);
+    const scopeYear = body.target_year ? Number(body.target_year) : null;
+    const scopeMonth = body.target_month ? Number(body.target_month) : null;
+    const replaceScope = body.replace_scope !== false;
 
-    if (dedupedUpsertRows.length > 0) {
+    const rowsToPersist = dedupedUpsertRows.filter((row) => {
+      if (scopeYear && Number(row.ano) !== scopeYear) return false;
+      if (scopeMonth && Number(row.mes) !== scopeMonth) return false;
+      if (body.company_id && String(row.company_id || "") !== body.company_id) return false;
+      return true;
+    });
+
+    if (replaceScope && scopeYear) {
+      const scopedCompanies = [...new Set(rowsToPersist.map((row) => String(row.company_id || "")).filter(Boolean))];
+
+      if (scopedCompanies.length > 0) {
+        let deleteScopeQuery = supabase
+          .from("payroll_verba_events")
+          .delete()
+          .in("company_id", scopedCompanies)
+          .eq("ano", scopeYear);
+
+        if (scopeMonth) {
+          deleteScopeQuery = deleteScopeQuery.eq("mes", scopeMonth);
+        }
+
+        const { error: deleteScopeError } = await deleteScopeQuery;
+        if (deleteScopeError) {
+          throw new Error(`Failed to reconcile payroll rows (delete scope): ${deleteScopeError.message}`);
+        }
+      }
+    }
+
+    if (rowsToPersist.length > 0) {
       const { error: upsertError } = await supabase
         .from("payroll_verba_events")
-        .upsert(dedupedUpsertRows, {
+        .upsert(rowsToPersist, {
           onConflict: "company_id,cpf,ano,mes,cod_evento",
           ignoreDuplicates: false,
         });
@@ -1085,16 +1150,23 @@ serve(async (req) => {
       errorMessage: failed > 0 ? `Falhas: ${failed}. ${summarizedFailure}` : null,
       params: {
         source_system: sourceSystem,
+        company_id: body.company_id || null,
+        department: body.department || null,
+        position: body.position || null,
         target_month: body.target_month || null,
         target_year: body.target_year || null,
         max_pages: body.max_pages || null,
+        replace_scope: replaceScope,
       },
       snapshot: {
         received: records.length,
         processed,
         failed,
-        upserted: dedupedUpsertRows.length,
+        upserted: rowsToPersist.length,
         deduplicated: upsertRows.length - dedupedUpsertRows.length,
+        replace_scope: replaceScope,
+        scope_year: scopeYear,
+        scope_month: scopeMonth,
         failure_reasons: failureReasons,
       },
     });
@@ -1106,7 +1178,7 @@ serve(async (req) => {
         received: records.length,
         processed,
         failed,
-        upserted: dedupedUpsertRows.length,
+        upserted: rowsToPersist.length,
         deduplicated: upsertRows.length - dedupedUpsertRows.length,
         duration_ms: Date.now() - startedAt,
         datalake: datalakeMeta,

@@ -13,12 +13,52 @@ interface VerbasSecureQueryRequest {
   cpf?: string;
   nome?: string;
   tipoVerba?: string;
+  department?: string;
+  unit?: string;
+  position?: string;
+  accountingGroup?: string;
   page?: number;
   pageSize?: number;
   autoSyncWhenEmpty?: boolean;
   syncNow?: boolean;
   syncMaxPages?: number;
   syncMonth?: number;
+}
+
+const ACCOUNTING_CODE_TO_NAME: Record<string, string> = {
+  "9": "CHOK AGRO",
+  "3": "CHOK DISTRIBUIDORA",
+  "4": "BROKER J. ARANTES",
+  "5": "LOJAS CHOKDOCE",
+  "8": "ESCRITORIO CENTRAL",
+  "11": "G4 DISTRIBUIDORA",
+};
+
+function normalizeLabel(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeDigits(value: unknown) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function resolveAccountingGroupLabel(employee: any) {
+  const metadataCode = normalizeDigits(employee?.metadata?.cod_contabilizacao);
+  if (metadataCode && ACCOUNTING_CODE_TO_NAME[metadataCode]) {
+    return ACCOUNTING_CODE_TO_NAME[metadataCode];
+  }
+
+  const accountingGroup = String(employee?.accounting_group || "").trim();
+  if (accountingGroup) return accountingGroup;
+
+  const metadataLabel = String(employee?.metadata?.contabilizacao || "").trim();
+  if (metadataLabel) return metadataLabel;
+
+  return "Sem Grupo de Contabilização";
 }
 
 function normalizeErrorMessage(error: any) {
@@ -86,6 +126,10 @@ async function runSyncVerbasIfConfigured(
   syncMaxPages?: number,
   syncMonth?: number,
   syncYear?: number,
+  companyId?: string,
+  department?: string,
+  position?: string,
+  replaceScope?: boolean,
 ) {
   if (!syncApiKey && !serviceRoleKey) return;
 
@@ -101,6 +145,20 @@ async function runSyncVerbasIfConfigured(
   if (syncYear && syncYear >= 2000) {
     payload.target_year = syncYear;
   }
+
+  if (companyId) {
+    payload.company_id = companyId;
+  }
+
+  if (department) {
+    payload.department = department;
+  }
+
+  if (position) {
+    payload.position = position;
+  }
+
+  payload.replace_scope = replaceScope !== false;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -341,6 +399,10 @@ serve(async (req: Request) => {
           body.syncMaxPages,
           body.syncMonth,
           body.ano,
+          body.companyId,
+          body.department,
+          body.position,
+          true,
         );
       } catch (syncErr) {
         syncError = String(syncErr);
@@ -383,6 +445,10 @@ serve(async (req: Request) => {
           body.syncMaxPages,
           body.syncMonth,
           body.ano,
+          body.companyId,
+          body.department,
+          body.position,
+          true,
         );
         let retry = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to);
 
@@ -413,7 +479,81 @@ serve(async (req: Request) => {
 
     const rows = result.data || [];
     const total = result.count || 0;
-    const securedRows = hasFullAccess ? rows.map((row: any) => ({ ...row, masked: false })) : rows.map(maskRow);
+
+    const companyIds = [...new Set(rows.map((row: any) => row.company_id).filter(Boolean))];
+    const cpfs = [...new Set(rows.map((row: any) => normalizeDigits(row.cpf)).filter((value: string) => value.length === 11))];
+
+    const employeeByCompanyCpf = new Map<string, any>();
+
+    if (companyIds.length > 0 && cpfs.length > 0) {
+      const { data: externalEmployees, error: externalEmployeesError } = await supabaseAdmin
+        .from("external_employees")
+        .select("company_id, cpf, full_name, department, unidade, position, accounting_group, is_active, metadata")
+        .in("company_id", companyIds)
+        .in("cpf", cpfs);
+
+      if (externalEmployeesError) {
+        throw externalEmployeesError;
+      }
+
+      for (const employee of externalEmployees || []) {
+        const key = `${employee.company_id || ""}|${normalizeDigits(employee.cpf)}`;
+        const existing = employeeByCompanyCpf.get(key);
+        if (!existing) {
+          employeeByCompanyCpf.set(key, employee);
+          continue;
+        }
+
+        if (existing?.is_active !== true && employee?.is_active === true) {
+          employeeByCompanyCpf.set(key, employee);
+        }
+      }
+    }
+
+    const enrichedRows = rows.map((row: any) => {
+      const key = `${row.company_id || ""}|${normalizeDigits(row.cpf)}`;
+      const employee = employeeByCompanyCpf.get(key);
+      const accountingGroup = resolveAccountingGroupLabel(employee);
+
+      return {
+        ...row,
+        employee_department: employee?.department || null,
+        employee_unit: employee?.unidade || null,
+        employee_position: employee?.position || null,
+        employee_accounting_group: accountingGroup,
+        compare_group_key: `${row.company_id || ""}|${String(employee?.position || "SEM_CARGO").trim().toUpperCase()}`,
+      };
+    });
+
+    const filteredRows = enrichedRows.filter((row: any) => {
+      if (body.department?.trim()) {
+        if (!normalizeLabel(row.employee_department).includes(normalizeLabel(body.department))) {
+          return false;
+        }
+      }
+
+      if (body.unit?.trim()) {
+        if (!normalizeLabel(row.employee_unit).includes(normalizeLabel(body.unit))) {
+          return false;
+        }
+      }
+
+      if (body.position?.trim()) {
+        if (!normalizeLabel(row.employee_position).includes(normalizeLabel(body.position))) {
+          return false;
+        }
+      }
+
+      if (body.accountingGroup?.trim()) {
+        if (!normalizeLabel(row.employee_accounting_group).includes(normalizeLabel(body.accountingGroup))) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    const securedRows = hasFullAccess ? filteredRows.map((row: any) => ({ ...row, masked: false })) : filteredRows.map(maskRow);
 
     return new Response(
       JSON.stringify({
@@ -421,7 +561,7 @@ serve(async (req: Request) => {
         access: hasFullAccess ? "full" : "masked",
         page,
         pageSize,
-        total,
+        total: filteredRows.length,
         sync_warning: syncWarning,
         sync_result: syncResult,
         sync_error: syncError,
