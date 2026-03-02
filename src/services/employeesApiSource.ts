@@ -626,6 +626,7 @@ export async function fetchEmployeesFromDab(
   const visitedNextLinks = new Set<string>();
   let retriedWithoutConnection = false;
   let usedOffsetFallback = false;
+  let retriedWithDefaultConnection = false;
 
   onProgress?.({
     stage: "fetching",
@@ -719,6 +720,7 @@ export async function fetchEmployeesFromDab(
           .filter((value): value is string => Boolean(value)),
       );
 
+      let totalAddedByFallback = 0;
       for (let fallbackPage = 2; fallbackPage <= MAX_PAGES; fallbackPage++) {
         const rows = await fetchPageByOffsetWithFallback(pageSize, fallbackPage, connectionId);
         if (!rows.length) {
@@ -734,6 +736,8 @@ export async function fetchEmployeesFromDab(
           added += 1;
         }
 
+        totalAddedByFallback += added;
+
         // Se nenhuma linha nova entrou, endpoint não aceitou paginação por offset.
         if (added === 0) {
           break;
@@ -745,6 +749,28 @@ export async function fetchEmployeesFromDab(
           page: fallbackPage,
           totalFetched: employees.length,
         });
+      }
+
+      // Se continuou travado no primeiro bloco (ex.: conexão selecionada parcial),
+      // refaz fluxo com a conexão padrão do proxy (sem connectionId explícito).
+      if (totalAddedByFallback === 0 && connectionId && !retriedWithDefaultConnection) {
+        retriedWithDefaultConnection = true;
+        connectionId = undefined;
+        nextLink = undefined;
+        pageCount = 0;
+        usedOffsetFallback = false;
+        retriedWithoutConnection = false;
+        visitedNextLinks.clear();
+        employees.length = 0;
+
+        onProgress?.({
+          stage: "fallback-pagination",
+          message: "Conexão atual parece limitada. Repetindo sincronização com conexão padrão do proxy...",
+          page: 1,
+          totalFetched: 0,
+        });
+
+        continue;
       }
 
       break;
