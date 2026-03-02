@@ -91,6 +91,35 @@ function applyQueryParams(url: URL, query?: Record<string, string | number | boo
   }
 }
 
+function extractNextLinkFromHeaders(headers: Headers): string | undefined {
+  const directCandidates = [
+    headers.get("x-next-link"),
+    headers.get("x-next-page"),
+    headers.get("next"),
+    headers.get("x-pagination-next"),
+    headers.get("odata-nextlink"),
+  ];
+
+  for (const candidate of directCandidates) {
+    if (candidate && candidate.trim()) return candidate.trim();
+  }
+
+  const linkHeader = headers.get("link");
+  if (linkHeader) {
+    const relNextMatch = linkHeader.match(/<([^>]+)>\s*;\s*rel="?next"?/i);
+    if (relNextMatch?.[1]) {
+      return relNextMatch[1].trim();
+    }
+
+    const firstUrlMatch = linkHeader.match(/<([^>]+)>/);
+    if (firstUrlMatch?.[1]) {
+      return firstUrlMatch[1].trim();
+    }
+  }
+
+  return undefined;
+}
+
 function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[] {
   const sanitizedBaseUrl = sanitizeBaseUrl(baseUrl);
   const base = sanitizedBaseUrl.endsWith("/") ? sanitizedBaseUrl : `${sanitizedBaseUrl}/`;
@@ -346,7 +375,32 @@ serve(async (req) => {
       const body = text ? JSON.parse(text) : {};
 
       if (response.ok) {
-        return new Response(JSON.stringify(body), {
+        const headerNextLink = extractNextLinkFromHeaders(response.headers);
+        let normalizedBody: any = body;
+
+        if (Array.isArray(body)) {
+          normalizedBody = {
+            data: body,
+            ...(headerNextLink ? { nextLink: headerNextLink } : {}),
+          };
+        } else if (body && typeof body === "object") {
+          const hasAnyNext =
+            body.nextLink ||
+            body.next ||
+            body.next_link ||
+            body.nextlink ||
+            body["@odata.nextLink"] ||
+            body["@odata.nextlink"];
+
+          if (!hasAnyNext && headerNextLink) {
+            normalizedBody = {
+              ...body,
+              nextLink: headerNextLink,
+            };
+          }
+        }
+
+        return new Response(JSON.stringify(normalizedBody), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
