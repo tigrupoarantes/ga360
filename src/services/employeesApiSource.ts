@@ -8,6 +8,22 @@ const ENABLE_EMPLOYEE_DEACTIVATION = false;
 const ENABLE_FULL_REFRESH_REPLACE = true;
 const INSERT_BATCH_SIZE = 500;
 
+export interface EmployeesSyncProgress {
+  stage:
+    | "starting"
+    | "fetching"
+    | "fallback-pagination"
+    | "preparing"
+    | "clearing"
+    | "inserting"
+    | "finishing";
+  message: string;
+  page?: number;
+  totalFetched?: number;
+  inserted?: number;
+  totalToInsert?: number;
+}
+
 type ExternalEmployeeInsert = Database["public"]["Tables"]["external_employees"]["Insert"];
 
 export interface DabEmployee {
@@ -504,7 +520,10 @@ async function fetchPageByOffsetWithFallback(
   return [];
 }
 
-export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promise<DabEmployee[]> {
+export async function fetchEmployeesFromDab(
+  pageSize = DEFAULT_PAGE_SIZE,
+  onProgress?: (progress: EmployeesSyncProgress) => void,
+): Promise<DabEmployee[]> {
   const employees: DabEmployee[] = [];
   let connectionId = await resolveEmployeesConnectionId();
   let nextLink: string | undefined;
@@ -512,6 +531,13 @@ export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promi
   const visitedNextLinks = new Set<string>();
   let retriedWithoutConnection = false;
   let usedOffsetFallback = false;
+
+  onProgress?.({
+    stage: "fetching",
+    message: "Conectando na API de funcionários...",
+    page: 0,
+    totalFetched: 0,
+  });
 
   do {
     let response: DabPageResponse;
@@ -537,6 +563,13 @@ export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promi
     employees.push(...pageData);
     nextLink = extractNextLink(response);
 
+    onProgress?.({
+      stage: "fetching",
+      message: `Lendo página ${pageCount + 1} da API... (${employees.length} funcionários acumulados)`,
+      page: pageCount + 1,
+      totalFetched: employees.length,
+    });
+
     if (nextLink) {
       if (visitedNextLinks.has(nextLink)) {
         throw new Error("Loop de paginação detectado no endpoint de funcionários");
@@ -553,6 +586,13 @@ export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promi
     // Alguns backends retornam 100 itens sem nextLink. Fallback por offset/página.
     if (!nextLink && pageData.length >= pageSize && !usedOffsetFallback) {
       usedOffsetFallback = true;
+
+      onProgress?.({
+        stage: "fallback-pagination",
+        message: "API sem nextLink. Tentando paginação alternativa por offset/página...",
+        page: 1,
+        totalFetched: employees.length,
+      });
 
       const seenIds = new Set<string>(
         employees
@@ -579,6 +619,13 @@ export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promi
         if (added === 0) {
           break;
         }
+
+        onProgress?.({
+          stage: "fallback-pagination",
+          message: `Paginação alternativa: página ${fallbackPage} (${employees.length} funcionários acumulados)`,
+          page: fallbackPage,
+          totalFetched: employees.length,
+        });
       }
 
       break;
@@ -588,11 +635,26 @@ export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promi
   return employees;
 }
 
-export async function syncEmployeesFromDab(): Promise<{ inserted: number; updated: number; deactivated: number; totalFetched: number }> {
+export async function syncEmployeesFromDab(
+  options?: { onProgress?: (progress: EmployeesSyncProgress) => void },
+): Promise<{ inserted: number; updated: number; deactivated: number; totalFetched: number }> {
+  const onProgress = options?.onProgress;
+
+  onProgress?.({
+    stage: "starting",
+    message: "Iniciando sincronização de funcionários...",
+  });
+
   const [fetchedEmployees, companyLookup] = await Promise.all([
-    fetchEmployeesFromDab(DEFAULT_PAGE_SIZE),
+    fetchEmployeesFromDab(DEFAULT_PAGE_SIZE, onProgress),
     fetchCompaniesLookup(),
   ]);
+
+  onProgress?.({
+    stage: "preparing",
+    message: `Preparando payload de ${fetchedEmployees.length} funcionários...`,
+    totalFetched: fetchedEmployees.length,
+  });
 
   if (ENABLE_FULL_REFRESH_REPLACE) {
     if (!Array.isArray(fetchedEmployees) || fetchedEmployees.length === 0) {
@@ -651,6 +713,13 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
 
     const payloadRows: ExternalEmployeeInsert[] = [...uniquePayloadByKey.values()];
 
+    onProgress?.({
+      stage: "clearing",
+      message: "Limpando base atual para carga completa...",
+      totalFetched: fetchedEmployees.length,
+      totalToInsert: payloadRows.length,
+    });
+
     const { error: clearError } = await supabase
       .from("external_employees")
       .delete()
@@ -661,6 +730,13 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
     }
 
     let inserted = 0;
+    onProgress?.({
+      stage: "inserting",
+      message: `Inserindo ${payloadRows.length} funcionários em lotes...`,
+      totalFetched: fetchedEmployees.length,
+      inserted,
+      totalToInsert: payloadRows.length,
+    });
 
     for (let index = 0; index < payloadRows.length; index += INSERT_BATCH_SIZE) {
       const batch = payloadRows.slice(index, index + INSERT_BATCH_SIZE);
@@ -672,7 +748,22 @@ export async function syncEmployeesFromDab(): Promise<{ inserted: number; update
       }
 
       inserted += batch.length;
+      onProgress?.({
+        stage: "inserting",
+        message: `Inserindo lotes... ${inserted}/${payloadRows.length}`,
+        totalFetched: fetchedEmployees.length,
+        inserted,
+        totalToInsert: payloadRows.length,
+      });
     }
+
+    onProgress?.({
+      stage: "finishing",
+      message: `Concluído: ${inserted} inseridos (${fetchedEmployees.length} lidos da API).`,
+      totalFetched: fetchedEmployees.length,
+      inserted,
+      totalToInsert: payloadRows.length,
+    });
 
     return {
       inserted,

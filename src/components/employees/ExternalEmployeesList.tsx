@@ -85,6 +85,7 @@ export function ExternalEmployeesList() {
   const { role, hasAllCompaniesAccess } = useAuth();
   const [loading, setLoading] = useState(true);
   const [syncingApi, setSyncingApi] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [employees, setEmployees] = useState<ExternalEmployee[]>([]);
   // ... (keep state variables same) ...
   const [filteredEmployees, setFilteredEmployees] = useState<ExternalEmployee[]>([]);
@@ -416,13 +417,19 @@ export function ExternalEmployeesList() {
 
   const handleApiSync = async () => {
     setSyncingApi(true);
+    setSyncStatus("Iniciando sincronização...");
     try {
-      const result = await syncEmployeesFromDab();
+      const result = await syncEmployeesFromDab({
+        onProgress: (progress) => {
+          setSyncStatus(progress.message);
+        },
+      });
       toast.success(`Sincronização concluída: ${result.totalFetched} lidos, ${result.inserted} novos, ${result.updated} atualizados, ${result.deactivated} inativados.`);
       await fetchEmployees();
       if (canViewAllCompanies) {
         await fetchConvertibleCount();
       }
+      setSyncStatus(`Concluído: ${result.totalFetched} lidos, ${result.inserted} inseridos/atualizados.`);
     } catch (error: any) {
       const status = error?.context?.status ?? error?.status;
       const details = error?.details || error?.message;
@@ -441,6 +448,7 @@ export function ExternalEmployeesList() {
       } else {
         toast.error(details ? `Erro ao sincronizar funcionários via API: ${details}` : 'Erro ao sincronizar funcionários via API.');
       }
+      setSyncStatus(details ? `Erro: ${details}` : "Erro na sincronização.");
       console.error('[employees_api_sync_failed]', { status, message: error?.message, details });
     } finally {
       setSyncingApi(false);
@@ -457,9 +465,11 @@ export function ExternalEmployeesList() {
               Funcionários Externos
             </CardTitle>
             <CardDescription>
-              {lastSync
-                ? `Última sincronização: ${formatDistanceToNow(new Date(lastSync), { addSuffix: true, locale: ptBR })}`
-                : 'Aguardando sincronização'
+              {syncingApi
+                ? (syncStatus || 'Sincronizando funcionários...')
+                : (lastSync
+                  ? `Última sincronização: ${formatDistanceToNow(new Date(lastSync), { addSuffix: true, locale: ptBR })}`
+                  : 'Aguardando sincronização')
               }
             </CardDescription>
           </div>
