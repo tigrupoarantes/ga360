@@ -462,15 +462,31 @@ function extractNextLink(response: DabPageResponse): string | undefined {
 
 export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promise<DabEmployee[]> {
   const employees: DabEmployee[] = [];
-  const connectionId = await resolveEmployeesConnectionId();
+  let connectionId = await resolveEmployeesConnectionId();
   let nextLink: string | undefined;
   let pageCount = 0;
   const visitedNextLinks = new Set<string>();
+  let retriedWithoutConnection = false;
 
   do {
-    const response = nextLink
-      ? await callDabProxy({ nextLink, ...(connectionId ? { connectionId } : {}) })
-      : await fetchFirstPageWithFallback(pageSize, connectionId);
+    let response: DabPageResponse;
+    try {
+      response = nextLink
+        ? await callDabProxy({ nextLink, ...(connectionId ? { connectionId } : {}) })
+        : await fetchFirstPageWithFallback(pageSize, connectionId);
+    } catch (error: any) {
+      const status = error?.status;
+      if (status === 404 && connectionId && !retriedWithoutConnection) {
+        retriedWithoutConnection = true;
+        connectionId = undefined;
+        nextLink = undefined;
+        pageCount = 0;
+        visitedNextLinks.clear();
+        trackEmployeesApiError(status, "retry_without_connection_id", error?.details || error?.message);
+        continue;
+      }
+      throw error;
+    }
 
     const pageData = extractPageEmployees(response);
     employees.push(...pageData);

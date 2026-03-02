@@ -431,7 +431,11 @@ export function ExternalEmployeesList() {
       } else if (status === 403) {
         toast.error('Acesso negado ao endpoint configurado no proxy.');
       } else if (status === 404) {
-        toast.error('Endpoint de funcionários não encontrado no backend.');
+        toast.error(
+          details
+            ? `Endpoint/função de funcionários não encontrado: ${details}`
+            : 'Endpoint/função de funcionários não encontrado no backend (verifique dab-proxy e URL da conexão API).'
+        );
       } else if (status === 502 || status === 504) {
         toast.error('Backend temporariamente indisponível. Tente novamente em instantes.');
       } else {

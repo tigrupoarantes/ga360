@@ -396,40 +396,66 @@ export default function VerbasPage() {
     ],
     queryFn: async () => {
       const yearsToQuery = selectedYears.length ? selectedYears : [String(currentYear)];
+      const serverPageSize = 200;
+      const maxPagesPerYear = 200;
 
       const responses = await Promise.all(
         yearsToQuery.map(async (year) => {
-          const body: Record<string, unknown> = {
-            ano: Number(year),
-            autoSyncWhenEmpty: false,
-            page: 1,
-            pageSize: 1000,
-          };
-          // Only restrict by company when user explicitly selects one
-          if (companyFilter !== "all") body.companyId = companyFilter;
-          if (cpf.trim()) body.cpf = cpf.trim();
-          if (nome.trim()) body.nome = nome.trim();
-          if (tipoVerba !== "all") body.tipoVerba = tipoVerba;
-          if (departmentFilter !== "all") body.department = departmentFilter;
-          if (positionFilter !== "all") body.position = positionFilter;
+          const allRows: VerbasRow[] = [];
+          let responseAccess: VerbasAccess = "masked";
+          let page = 1;
 
-          const { data: response, error: invokeError } = await supabase.functions.invoke(
-            "verbas-secure-query",
-            { body },
-          );
+          while (page <= maxPagesPerYear) {
+            const body: Record<string, unknown> = {
+              ano: Number(year),
+              autoSyncWhenEmpty: false,
+              page,
+              pageSize: serverPageSize,
+            };
+            // Only restrict by company when user explicitly selects one
+            if (companyFilter !== "all") body.companyId = companyFilter;
+            if (cpf.trim()) body.cpf = cpf.trim();
+            if (nome.trim()) body.nome = nome.trim();
+            if (tipoVerba !== "all") body.tipoVerba = tipoVerba;
+            if (departmentFilter !== "all") body.department = departmentFilter;
+            if (positionFilter !== "all") body.position = positionFilter;
 
-          if (invokeError) {
-            let details = invokeError.message;
-            try {
-              if (invokeError.context) {
-                const json = await invokeError.context.json();
-                details = json?.error || json?.message || details;
-              }
-            } catch { /* noop */ }
-            throw new Error(details || "Falha ao consultar verbas");
+            const { data: response, error: invokeError } = await supabase.functions.invoke(
+              "verbas-secure-query",
+              { body },
+            );
+
+            if (invokeError) {
+              let details = invokeError.message;
+              try {
+                if (invokeError.context) {
+                  const json = await invokeError.context.json();
+                  details = json?.error || json?.message || details;
+                }
+              } catch { /* noop */ }
+              throw new Error(details || "Falha ao consultar verbas");
+            }
+
+            const typed = (response || { rows: [], total: 0, page, pageSize: serverPageSize, access: "masked" }) as VerbasResponse;
+            responseAccess = typed.access === "full" ? "full" : responseAccess;
+            const currentRows = typed.rows || [];
+            allRows.push(...currentRows);
+
+            if (currentRows.length < serverPageSize) {
+              break;
+            }
+
+            page += 1;
           }
 
-          return (response || { rows: [], total: 0, page: 1, pageSize: 1000, access: "masked" }) as VerbasResponse;
+          return {
+            success: true,
+            access: responseAccess,
+            page: 1,
+            pageSize: serverPageSize,
+            total: allRows.length,
+            rows: allRows,
+          } as VerbasResponse;
         }),
       );
 
