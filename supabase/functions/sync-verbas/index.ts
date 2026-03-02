@@ -40,6 +40,7 @@ interface SyncRequest {
   endpoint_path?: string;
   query_params?: Record<string, string | number | boolean>;
   max_pages?: number;
+  all_pages?: boolean;
   target_month?: number;
   target_year?: number;
 }
@@ -758,7 +759,10 @@ async function loadRowsFromDatalake(
   if (apiKey) headers[authHeaderName] = apiKey;
   if (authHeader) headers.Authorization = authHeader;
 
-  const maxPages = Math.max(1, Math.min(100, Number(body.max_pages || 20)));
+  const allPages = body.all_pages === true;
+  const maxPages = allPages
+    ? 5000
+    : Math.max(1, Math.min(500, Number(body.max_pages || 20)));
   const targetMonth = body.target_month ? Number(body.target_month) : null;
   const targetYear = body.target_year ? Number(body.target_year) : null;
 
@@ -821,11 +825,21 @@ async function loadRowsFromDatalake(
   }
 
   const collected: VerbaRecord[] = [];
+  let pagesFetched = 0;
   collected.push(...firstPageRows.flatMap((row) => mapDatalakeRowToVerbaRecords(row, { targetMonth, targetYear })));
+  pagesFetched += 1;
 
   let currentUrl = firstPageNextLink ? new URL(firstPageNextLink, firstPageBaseUrl).toString() : "";
 
-  for (let page = 2; page <= maxPages && currentUrl; page++) {
+  for (let page = 2; currentUrl; page++) {
+    if (!allPages && page > maxPages) {
+      break;
+    }
+
+    if (allPages && page > 5000) {
+      throw new Error("Proteção de paginação acionada: all_pages excedeu 5000 páginas.");
+    }
+
     const { response, payload } = await fetchJsonWithRetry(currentUrl, headers, 3);
 
     if (!response.ok) {
@@ -834,6 +848,7 @@ async function loadRowsFromDatalake(
 
     const rows = extractRowsFromDatalakeBody(payload);
     collected.push(...rows.flatMap((row) => mapDatalakeRowToVerbaRecords(row, { targetMonth, targetYear })));
+    pagesFetched += 1;
 
     const nextLink = extractNextLink(payload);
     currentUrl = nextLink ? new URL(nextLink, currentUrl).toString() : "";
@@ -850,6 +865,8 @@ async function loadRowsFromDatalake(
       endpoint_path: chosenEndpointPath,
       target_month: targetMonth,
       target_year: targetYear,
+      all_pages: allPages,
+      pages_fetched: pagesFetched,
     },
   };
 }

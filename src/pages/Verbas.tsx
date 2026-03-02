@@ -447,7 +447,11 @@ export default function VerbasPage() {
     refetchOnWindowFocus: false,
   });
 
-  const runSync = async (months: number[], modeLabel: string) => {
+  const runSync = async (
+    months: number[],
+    modeLabel: string,
+    options?: { includeFilters?: boolean; allPages?: boolean; maxPages?: number },
+  ) => {
     setSyncing(true);
     setSyncError(null);
     setSyncSummary(null);
@@ -466,18 +470,25 @@ export default function VerbasPage() {
         for (const month of months) {
           setSyncError(`${modeLabel}: sincronizando ${month}/12 de ${year}...`);
 
+          const includeFilters = options?.includeFilters !== false;
+          const allPages = options?.allPages === true;
+
           const body: Record<string, unknown> = {
-            ...(companyFilter !== "all" ? { companyId: companyFilter } : {}),
             ano: year,
             autoSyncWhenEmpty: false,
             syncNow: true,
             syncMonth: month,
-            syncMaxPages: 25,
+            syncAllPages: allPages,
+            syncMaxPages: allPages ? 5000 : (options?.maxPages ?? 25),
             page: 1,
             pageSize: 1000,
           };
-          if (departmentFilter !== "all") body.department = departmentFilter;
-          if (positionFilter !== "all") body.position = positionFilter;
+
+          if (includeFilters) {
+            if (companyFilter !== "all") body.companyId = companyFilter;
+            if (departmentFilter !== "all") body.department = departmentFilter;
+            if (positionFilter !== "all") body.position = positionFilter;
+          }
 
           const { data: response, error: invokeError } = await supabase.functions.invoke(
             "verbas-secure-query",
@@ -532,11 +543,22 @@ export default function VerbasPage() {
     }
   };
 
-  const handleSyncVerbas = () => runSync([1,2,3,4,5,6,7,8,9,10,11,12], "Sincronização anual");
+  const handleSyncVerbas = () => runSync(
+    [1,2,3,4,5,6,7,8,9,10,11,12],
+    "Sincronização anual",
+    { includeFilters: true, allPages: false, maxPages: 100 },
+  );
+
+  const handleInitialBootstrap = () => runSync(
+    [1,2,3,4,5,6,7,8,9,10,11,12],
+    "Carga inicial completa",
+    { includeFilters: false, allPages: true, maxPages: 5000 },
+  );
+
   const handleMonthlyClose = () => {
     const m = Number(closingMonth);
     if (!Number.isFinite(m) || m < 1 || m > 12) { setSyncError("Mês inválido."); return; }
-    runSync([m], "Fechamento mensal");
+    runSync([m], "Fechamento mensal", { includeFilters: true, allPages: false, maxPages: 25 });
   };
 
   // ── Filter options derived from loaded rows ───────────────────────────────
@@ -845,9 +867,13 @@ export default function VerbasPage() {
               <CardContent className="p-4 space-y-3">
                 <p className="text-sm font-semibold text-muted-foreground">Operações de Sincronização</p>
                 <div className="flex flex-wrap gap-3 items-end">
+                  <Button variant="secondary" onClick={handleInitialBootstrap} disabled={syncing}>
+                    {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    Carga inicial completa (todas empresas)
+                  </Button>
                   <Button variant="outline" onClick={handleSyncVerbas} disabled={syncing}>
                     {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                    Sincronização anual completa
+                    Sincronização anual (com filtros)
                   </Button>
                   <div className="flex items-end gap-2">
                     <div className="space-y-1">

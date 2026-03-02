@@ -22,6 +22,7 @@ interface VerbasSecureQueryRequest {
   autoSyncWhenEmpty?: boolean;
   syncNow?: boolean;
   syncMaxPages?: number;
+  syncAllPages?: boolean;
   syncMonth?: number;
 }
 
@@ -124,6 +125,7 @@ async function runSyncVerbasIfConfigured(
   syncApiKey: string | null,
   serviceRoleKey: string | null,
   syncMaxPages?: number,
+  syncAllPages?: boolean,
   syncMonth?: number,
   syncYear?: number,
   companyId?: string,
@@ -133,9 +135,14 @@ async function runSyncVerbasIfConfigured(
 ) {
   if (!syncApiKey && !serviceRoleKey) return;
 
+  const allPages = syncAllPages === true;
+
   const payload: Record<string, unknown> = {
     load_from_datalake: true,
-    max_pages: Math.max(1, Math.min(100, Number(syncMaxPages || 25))),
+    all_pages: allPages,
+    max_pages: allPages
+      ? 5000
+      : Math.max(1, Math.min(500, Number(syncMaxPages || 25))),
   };
 
   if (syncMonth && syncMonth >= 1 && syncMonth <= 12) {
@@ -397,6 +404,7 @@ serve(async (req: Request) => {
           syncApiKey,
           serviceRoleKey,
           body.syncMaxPages,
+          body.syncAllPages,
           body.syncMonth,
           body.ano,
           body.companyId,
@@ -443,6 +451,7 @@ serve(async (req: Request) => {
           syncApiKey,
           serviceRoleKey,
           body.syncMaxPages,
+          body.syncAllPages,
           body.syncMonth,
           body.ano,
           body.companyId,
