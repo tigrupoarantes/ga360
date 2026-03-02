@@ -384,11 +384,17 @@ async function resolveEmployeesConnectionId(): Promise<string | undefined> {
   throw new Error(`Nenhuma conexão API ativa respondeu ao endpoint de funcionários. ${lastErrorMessage}`);
 }
 
-async function fetchFirstPageWithFallback(pageSize: number, connectionId?: string): Promise<DabPageResponse> {
+async function fetchFirstPageWithFallback(
+  pageSize: number,
+  connectionId?: string,
+  options?: { preferExplicitLimit?: boolean },
+): Promise<DabPageResponse> {
   const candidateSizes = [...new Set([pageSize, 50, 20, 10, 1].filter((value) => value > 0))];
   const candidateQueries: Array<Record<string, string | number> | undefined> = [];
 
-  candidateQueries.push(undefined);
+  if (!options?.preferExplicitLimit) {
+    candidateQueries.push(undefined);
+  }
 
   for (const size of candidateSizes) {
     candidateQueries.push({ $first: size });
@@ -396,6 +402,9 @@ async function fetchFirstPageWithFallback(pageSize: number, connectionId?: strin
     candidateQueries.push({ $top: size });
     candidateQueries.push({ top: size });
     candidateQueries.push({ limit: size });
+    candidateQueries.push({ pageSize: size });
+    candidateQueries.push({ per_page: size });
+    candidateQueries.push({ page_size: size });
   }
 
   let lastError: any = null;
@@ -583,8 +592,32 @@ export async function fetchEmployeesFromDab(
       throw new Error("Pagination limit exceeded while loading funcionarios from DAB");
     }
 
-    // Alguns backends retornam 100 itens sem nextLink. Fallback por offset/página.
+    // Alguns backends retornam 100 itens sem nextLink. Primeiro, tenta ampliar o limite por query.
     if (!nextLink && pageData.length >= pageSize && !usedOffsetFallback) {
+      const expandedPageSize = Math.max(pageSize * 20, 1000);
+      const expandedResponse = await fetchFirstPageWithFallback(expandedPageSize, connectionId, {
+        preferExplicitLimit: true,
+      }).catch(() => null);
+
+      const expandedRows = expandedResponse ? extractPageEmployees(expandedResponse) : [];
+      if (expandedRows.length > employees.length) {
+        employees.length = 0;
+        employees.push(...expandedRows);
+        nextLink = extractNextLink(expandedResponse as DabPageResponse);
+
+        onProgress?.({
+          stage: "fetching",
+          message: `API sem nextLink. Limite ampliado para ${employees.length} funcionários na primeira leitura.`,
+          page: pageCount,
+          totalFetched: employees.length,
+        });
+
+        if (nextLink) {
+          continue;
+        }
+      }
+
+      // Se ainda não houver nextLink, tenta fallback por offset/página.
       usedOffsetFallback = true;
 
       onProgress?.({
