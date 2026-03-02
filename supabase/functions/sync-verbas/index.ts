@@ -83,6 +83,13 @@ function normalizeText(value?: string | null) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function normalizeCompanyNameKey(value?: string | null) {
+  return normalizeText(value)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parseNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number") {
@@ -964,13 +971,21 @@ serve(async (req) => {
 
     const companyByExternalId = new Map<string, { id: string; name: string | null }>();
     const companyById = new Map<string, { id: string; name: string | null }>();
+    const companyByName = new Map<string, { id: string; name: string | null }>();
     for (const company of companies || []) {
       companyById.set(company.id, { id: company.id, name: company.name || null });
       const normalized = normalizeCnpj(company.external_id);
       if (normalized) {
         companyByExternalId.set(normalized, { id: company.id, name: company.name || null });
       }
+
+      const normalizedName = normalizeCompanyNameKey(company.name || null);
+      if (normalizedName) {
+        companyByName.set(normalizedName, { id: company.id, name: company.name || null });
+      }
     }
+
+    const companyNameEntries = [...companyByName.entries()];
 
     const { data: externalEmployees, error: externalEmployeesError } = await supabase
       .from("external_employees")
@@ -1029,10 +1044,35 @@ serve(async (req) => {
           ? companyByExternalId.get(normalizedExternalId)
           : null;
 
+        const normalizedCompanyNameFromRow = normalizeCompanyNameKey(item.razao_social || null);
+        const mappedCompanyByName = normalizedCompanyNameFromRow
+          ? companyByName.get(normalizedCompanyNameFromRow)
+          : null;
+
+        let mappedCompanyByNameFuzzy: { id: string; name: string | null } | null = null;
+        if (!mappedCompanyByName && normalizedCompanyNameFromRow) {
+          const fuzzyCandidates = companyNameEntries
+            .filter(([nameKey]) =>
+              nameKey.includes(normalizedCompanyNameFromRow) ||
+              normalizedCompanyNameFromRow.includes(nameKey),
+            )
+            .map(([, company]) => company);
+
+          if (fuzzyCandidates.length === 1) {
+            mappedCompanyByNameFuzzy = fuzzyCandidates[0];
+          }
+        }
+
         const employeesForCpf = employeesByCpf.get(cpf) || [];
 
         let employeeMatch = null as { company_id: string; full_name: string | null; is_active: boolean | null } | null;
-        let companyId = item.company_id || mappedCompany?.id || fallbackCompany?.id || null;
+        let companyId =
+          item.company_id ||
+          mappedCompany?.id ||
+          mappedCompanyByName?.id ||
+          mappedCompanyByNameFuzzy?.id ||
+          fallbackCompany?.id ||
+          null;
 
         if (!companyId && employeesForCpf.length === 1) {
           employeeMatch = employeesForCpf[0];
@@ -1049,7 +1089,11 @@ serve(async (req) => {
           }
         }
 
-        if (!companyId) throw new Error("Empresa não encontrada (company_id/company_external_id/CPF)");
+        if (!companyId) {
+          throw new Error(
+            `Empresa não encontrada (company_id/company_external_id/CPF/razao_social). CPF=${cpf}, razao_social=${String(item.razao_social || "").slice(0, 80)}`,
+          );
+        }
 
         if (body.company_id && companyId !== body.company_id) {
           throw new Error("Empresa fora do filtro selecionado");
@@ -1078,7 +1122,13 @@ serve(async (req) => {
           }
         }
 
-        const resolvedCompany = companyById.get(companyId) || mappedCompany || fallbackCompany || null;
+        const resolvedCompany =
+          companyById.get(companyId) ||
+          mappedCompany ||
+          mappedCompanyByName ||
+          mappedCompanyByNameFuzzy ||
+          fallbackCompany ||
+          null;
 
         upsertRows.push({
           company_id: companyId,
