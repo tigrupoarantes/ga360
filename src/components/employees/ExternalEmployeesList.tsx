@@ -130,9 +130,7 @@ export function ExternalEmployeesList() {
     setLoading(true);
 
     try {
-      let query = supabase
-        .from('external_employees')
-        .select(`
+      const selectClause = `
           *,
           profiles:linked_profile_id (
             id,
@@ -147,55 +145,53 @@ export function ExternalEmployeesList() {
             id,
             name
           )
-        `)
-        .eq('is_active', true) // Apenas funcionários ativos
-        .order('full_name', { ascending: true });
+        `;
 
-      if (useEmployeesApiAsPrimary) {
-        query = query.eq('source_system', 'dab_api');
-      }
+      const loadAllPages = async (forceDabApi: boolean) => {
+        const pageSize = 100;
+        const maxPages = 200;
+        const allRows: ExternalEmployee[] = [];
 
-      // Se não for admin/CEO, filtrar por empresa selecionada
-      if (!canViewAllCompanies && selectedCompanyId) {
-        query = query.eq('company_id', selectedCompanyId);
-      }
+        for (let page = 0; page < maxPages; page++) {
+          const from = page * pageSize;
+          const to = from + pageSize - 1;
 
-      const { data, error } = await query;
+          let query = supabase
+            .from('external_employees')
+            .select(selectClause)
+            .eq('is_active', true)
+            .order('full_name', { ascending: true })
+            .range(from, to);
 
-      if (error) throw error;
+          if (forceDabApi) {
+            query = query.eq('source_system', 'dab_api');
+          }
 
-      let resolvedData = data || [];
+          if (!canViewAllCompanies && selectedCompanyId) {
+            query = query.eq('company_id', selectedCompanyId);
+          }
 
-      if (resolvedData.length === 0 && useEmployeesApiAsPrimary) {
-        let fallbackQuery = supabase
-          .from('external_employees')
-          .select(`
-            *,
-            profiles:linked_profile_id (
-              id,
-              first_name,
-              last_name
-            ),
-            lider_direto:lider_direto_id (
-              id,
-              full_name
-            ),
-            companies:company_id (
-              id,
-              name
-            )
-          `)
-          .eq('source_system', 'dab_api')
-          .order('full_name', { ascending: true });
+          const { data, error } = await query;
+          if (error) throw error;
 
-        if (!canViewAllCompanies && selectedCompanyId) {
-          fallbackQuery = fallbackQuery.eq('company_id', selectedCompanyId);
+          const rows = (data || []) as ExternalEmployee[];
+          allRows.push(...rows);
+
+          if (rows.length < pageSize) {
+            break;
+          }
         }
 
-        const { data: fallbackData, error: fallbackError } = await fallbackQuery;
+        return allRows;
+      };
 
-        if (!fallbackError && fallbackData && fallbackData.length > 0) {
-          resolvedData = fallbackData as ExternalEmployee[];
+      let resolvedData = await loadAllPages(useEmployeesApiAsPrimary);
+
+      if (resolvedData.length === 0 && useEmployeesApiAsPrimary) {
+        const fallbackData = await loadAllPages(true);
+
+        if (fallbackData.length > 0) {
+          resolvedData = fallbackData;
           toast.warning('Exibindo funcionários em modo de recuperação. Execute uma nova sincronização.');
         }
       }
