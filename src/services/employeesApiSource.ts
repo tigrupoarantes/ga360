@@ -442,7 +442,15 @@ async function fetchFirstPageWithFallback(
 }
 
 function extractPageEmployees(response: DabPageResponse): DabEmployee[] {
-  const candidates = [response?.value, response?.data, response?.items, response?.results];
+  const candidates = [
+    response?.value,
+    response?.data,
+    response?.items,
+    response?.results,
+    (response as any)?.funcionarios,
+    (response as any)?.employees,
+    (response as any)?.rows,
+  ];
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) {
       return candidate;
@@ -451,11 +459,46 @@ function extractPageEmployees(response: DabPageResponse): DabEmployee[] {
 
   const nestedData = (response as any)?.data;
   if (nestedData && typeof nestedData === "object") {
-    const nestedCandidates = [nestedData.value, nestedData.items, nestedData.results];
+    const nestedCandidates = [
+      nestedData.value,
+      nestedData.items,
+      nestedData.results,
+      nestedData.funcionarios,
+      nestedData.employees,
+      nestedData.rows,
+      nestedData.data,
+    ];
     for (const candidate of nestedCandidates) {
       if (Array.isArray(candidate)) {
         return candidate;
       }
+    }
+  }
+
+  const root = response as any;
+  if (root && typeof root === "object") {
+    const queue: any[] = [root];
+    const seen = new Set<any>();
+    let depth = 0;
+
+    while (queue.length > 0 && depth < 4) {
+      const levelSize = queue.length;
+      for (let i = 0; i < levelSize; i++) {
+        const node = queue.shift();
+        if (!node || typeof node !== "object" || seen.has(node)) continue;
+        seen.add(node);
+
+        for (const [key, value] of Object.entries(node)) {
+          if (Array.isArray(value) && /^(value|data|items|results|funcionarios|employees|rows)$/i.test(key)) {
+            return value as DabEmployee[];
+          }
+
+          if (value && typeof value === "object") {
+            queue.push(value);
+          }
+        }
+      }
+      depth += 1;
     }
   }
 
@@ -473,12 +516,55 @@ function extractNextLink(response: DabPageResponse): string | undefined {
     (response as any)?.odataNextLink,
     (response as any)?.pagination?.nextLink,
     (response as any)?.pagination?.next,
+    (response as any)?.pagination?.next_page,
+    (response as any)?.pagination?.next_page_url,
+    (response as any)?.paging?.next,
+    (response as any)?.paging?.nextLink,
+    (response as any)?.links?.next,
+    (response as any)?.links?.nextLink,
+    (response as any)?.data?.next,
+    (response as any)?.data?.nextLink,
+    (response as any)?.data?.next_page,
+    (response as any)?.data?.next_page_url,
     (response as any)?.meta?.next,
   ];
 
   for (const link of links) {
     if (typeof link === "string" && link.trim()) {
       return link.trim();
+    }
+  }
+
+  const root = response as any;
+  if (root && typeof root === "object") {
+    const queue: any[] = [root];
+    const seen = new Set<any>();
+    let depth = 0;
+
+    while (queue.length > 0 && depth < 5) {
+      const levelSize = queue.length;
+      for (let i = 0; i < levelSize; i++) {
+        const node = queue.shift();
+        if (!node || typeof node !== "object" || seen.has(node)) continue;
+        seen.add(node);
+
+        for (const [key, value] of Object.entries(node)) {
+          if (typeof value === "string") {
+            const lowerKey = key.toLowerCase();
+            if (
+              lowerKey.includes("next") &&
+              (value.startsWith("http") || value.startsWith("/") || value.includes("skip") || value.includes("page"))
+            ) {
+              return value.trim();
+            }
+          }
+
+          if (value && typeof value === "object") {
+            queue.push(value);
+          }
+        }
+      }
+      depth += 1;
     }
   }
 
