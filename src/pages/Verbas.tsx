@@ -107,12 +107,19 @@ interface PositionNode {
   employees: EmployeeNode[];
 }
 
+interface AccountingGroupNode {
+  accountingGroup: string;
+  total: number;
+  employeeCount: number;
+  positionNodes: PositionNode[];
+}
+
 interface CompanyNode {
   companyId: string;
   razaoSocial: string;
   total: number;
   employeeCount: number;
-  positionNodes: PositionNode[];
+  accountingGroupNodes: AccountingGroupNode[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -155,6 +162,38 @@ function formatPercentage(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;
+}
+
+async function extractInvokeErrorDetails(invokeError: any): Promise<string> {
+  let details = String(invokeError?.message || "Falha ao executar função");
+
+  const context = invokeError?.context;
+  if (!context) return details;
+
+  try {
+    const contentType = String(context.headers?.get?.("content-type") || "").toLowerCase();
+    const text = await context.text().catch(() => "");
+    if (!text) return details;
+
+    if (contentType.includes("application/json")) {
+      try {
+        const json = JSON.parse(text);
+        return String(json?.error || json?.message || text || details);
+      } catch {
+        return text;
+      }
+    }
+
+    // Sometimes Supabase returns plain text or invalid JSON.
+    try {
+      const json = JSON.parse(text);
+      return String(json?.error || json?.message || text || details);
+    } catch {
+      return text;
+    }
+  } catch {
+    return details;
+  }
 }
 
 // ─── Delta badge (above/below role average) ───────────────────────────────────
@@ -396,8 +435,8 @@ export default function VerbasPage() {
     ],
     queryFn: async () => {
       const yearsToQuery = selectedYears.length ? selectedYears : [String(currentYear)];
-      const serverPageSize = 200;
-      const maxPagesPerYear = 200;
+      const serverPageSize = 1000;
+      const maxPagesPerYear = 60;
 
       const responses = await Promise.all(
         yearsToQuery.map(async (year) => {
@@ -426,13 +465,7 @@ export default function VerbasPage() {
             );
 
             if (invokeError) {
-              let details = invokeError.message;
-              try {
-                if (invokeError.context) {
-                  const json = await invokeError.context.json();
-                  details = json?.error || json?.message || details;
-                }
-              } catch { /* noop */ }
+              const details = await extractInvokeErrorDetails(invokeError);
               throw new Error(details || "Falha ao consultar verbas");
             }
 
@@ -463,7 +496,7 @@ export default function VerbasPage() {
         success: true,
         access: responses.some((r) => r.access === "full") ? "full" : "masked",
         page: 1,
-        pageSize: 1000,
+        pageSize: serverPageSize,
         total: responses.reduce((s, r) => s + (r.total || 0), 0),
         rows: responses.flatMap((r) => r.rows || []),
       } as VerbasResponse;
@@ -522,13 +555,7 @@ export default function VerbasPage() {
           );
 
           if (invokeError) {
-            let details = invokeError.message;
-            try {
-              if (invokeError.context) {
-                const json = await invokeError.context.json();
-                details = json?.error || json?.message || details;
-              }
-            } catch { /* noop */ }
+            const details = await extractInvokeErrorDetails(invokeError);
             throw new Error(`Ano ${year}, mês ${month}: ${details || "Falha ao sincronizar"}`);
           }
 
@@ -604,7 +631,7 @@ export default function VerbasPage() {
     };
   }, [data?.rows]);
 
-  // ── Hierarchy: EMPRESA → CARGO → FUNCIONÁRIO ─────────────────────────────
+  // ── Hierarchy: EMPRESA → GRUPO CONTÁBIL → CARGO → FUNCIONÁRIO ────────────
   const { companyNodes, kpi } = useMemo(() => {
     // Step 1: flatten rows into employee nodes
     const employeesMap = new Map<string, EmployeeNode>();
@@ -660,15 +687,33 @@ export default function VerbasPage() {
       emp.tipos.sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
     }
 
-    // Step 2: build EMPRESA → CARGO structure
-    const companiesMap = new Map<string, { razaoSocial: string; positionsMap: Map<string, EmployeeNode[]> }>();
+    // Step 2: build EMPRESA → GRUPO → CARGO structure
+    const companiesMap = new Map<
+      string,
+      {
+        razaoSocial: string;
+        positionsAllMap: Map<string, EmployeeNode[]>;
+        groupsMap: Map<string, Map<string, EmployeeNode[]>>;
+      }
+    >();
     for (const emp of employeesMap.values()) {
       if (!companiesMap.has(emp.companyId)) {
-        companiesMap.set(emp.companyId, { razaoSocial: emp.razaoSocial, positionsMap: new Map() });
+        companiesMap.set(emp.companyId, {
+          razaoSocial: emp.razaoSocial,
+          positionsAllMap: new Map(),
+          groupsMap: new Map(),
+        });
       }
       const co = companiesMap.get(emp.companyId)!;
-      if (!co.positionsMap.has(emp.position)) co.positionsMap.set(emp.position, []);
-      co.positionsMap.get(emp.position)!.push(emp);
+
+      if (!co.positionsAllMap.has(emp.position)) co.positionsAllMap.set(emp.position, []);
+      co.positionsAllMap.get(emp.position)!.push(emp);
+
+      const groupKey = emp.accountingGroup || "—";
+      if (!co.groupsMap.has(groupKey)) co.groupsMap.set(groupKey, new Map());
+      const gm = co.groupsMap.get(groupKey)!;
+      if (!gm.has(emp.position)) gm.set(emp.position, []);
+      gm.get(emp.position)!.push(emp);
     }
 
     // Step 3: compute benchmark avg per (company + position) and build final tree
@@ -677,28 +722,59 @@ export default function VerbasPage() {
     let totalEmployeesAll = 0;
 
     for (const [companyId, co] of companiesMap.entries()) {
-      const positionNodes: PositionNode[] = [];
+      const avgByPosition = new Map<string, number>();
+      for (const [position, emps] of co.positionsAllMap.entries()) {
+        const posTotal = emps.reduce((s, e) => s + e.total, 0);
+        avgByPosition.set(position, emps.length ? posTotal / emps.length : 0);
+      }
+
+      const accountingGroupNodes: AccountingGroupNode[] = [];
       let companyTotal = 0;
       const companyCpfs = new Set<string>();
 
-      for (const [position, emps] of co.positionsMap.entries()) {
-        const posTotal = emps.reduce((s, e) => s + e.total, 0);
-        const posAvg = emps.length ? posTotal / emps.length : 0;
-        // Inject benchmark avg into each employee
-        for (const e of emps) e.benchmarkAvg = posAvg;
-        positionNodes.push({
-          position,
-          total: posTotal,
-          employeeCount: emps.length,
-          avgPerEmployee: posAvg,
-          employees: [...emps].sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
+      for (const [accountingGroup, positionsMap] of co.groupsMap.entries()) {
+        const positionNodes: PositionNode[] = [];
+        let groupTotal = 0;
+        const groupCpfs = new Set<string>();
+
+        for (const [position, emps] of positionsMap.entries()) {
+          const posTotal = emps.reduce((s, e) => s + e.total, 0);
+          const posAvg = avgByPosition.get(position) ?? (emps.length ? posTotal / emps.length : 0);
+          for (const e of emps) {
+            e.benchmarkAvg = posAvg;
+            groupCpfs.add(e.cpf);
+            companyCpfs.add(e.cpf);
+          }
+
+          positionNodes.push({
+            position,
+            total: posTotal,
+            employeeCount: emps.length,
+            avgPerEmployee: posAvg,
+            employees: [...emps].sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
+          });
+          groupTotal += posTotal;
+        }
+
+        positionNodes.sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+        accountingGroupNodes.push({
+          accountingGroup,
+          total: groupTotal,
+          employeeCount: groupCpfs.size,
+          positionNodes,
         });
-        companyTotal += posTotal;
-        for (const e of emps) companyCpfs.add(e.cpf);
+
+        companyTotal += groupTotal;
       }
 
-      positionNodes.sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
-      nodes.push({ companyId, razaoSocial: co.razaoSocial, total: companyTotal, employeeCount: companyCpfs.size, positionNodes });
+      accountingGroupNodes.sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
+      nodes.push({
+        companyId,
+        razaoSocial: co.razaoSocial,
+        total: companyTotal,
+        employeeCount: companyCpfs.size,
+        accountingGroupNodes,
+      });
       totalMassa += companyTotal;
       totalEmployeesAll += companyCpfs.size;
     }
@@ -758,7 +834,7 @@ export default function VerbasPage() {
             <div>
               <h1 className="text-3xl font-bold text-foreground">VERBAS</h1>
               <p className="text-muted-foreground mt-0.5 text-sm">
-                Análise de remuneração por Empresa · Cargo · Colaborador
+                Análise de remuneração por Empresa · Grupo contábil · Cargo · Colaborador
               </p>
             </div>
           </div>
@@ -899,7 +975,7 @@ export default function VerbasPage() {
                   </Button>
                   <Button variant="outline" onClick={handleSyncVerbas} disabled={syncing}>
                     {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                    Sincronização anual (com filtros)
+                    Sincronização anual (12 meses, com filtros)
                   </Button>
                   <div className="flex items-end gap-2">
                     <div className="space-y-1">
@@ -913,10 +989,13 @@ export default function VerbasPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <Button variant="outline" onClick={handleMonthlyClose} disabled={syncing}>Fechamento mensal</Button>
+                    <Button variant="outline" onClick={handleMonthlyClose} disabled={syncing}>Fechamento mensal (1 mês)</Button>
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => navigate("/admin/datalake?tab=logs")}>Ver logs</Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Obs.: a sincronização anual ignora o mês de fechamento; para sincronizar apenas um mês, use “Fechamento mensal (1 mês)”.
+                </p>
                 {(syncError || syncSummary || syncChecklist.length > 0) && (
                   <div className="rounded-md bg-muted/50 p-3 space-y-1 text-xs">
                     {syncError && <p className="text-destructive">{syncError}</p>}
@@ -937,7 +1016,7 @@ export default function VerbasPage() {
           </CollapsibleContent>
         </Collapsible>
 
-        {/* ── Main hierarchy: EMPRESA → CARGO → FUNCIONÁRIO ─────────────── */}
+        {/* ── Main hierarchy: EMPRESA → GRUPO → CARGO → FUNCIONÁRIO ─────── */}
         <Card>
           <CardContent className="p-0">
             {isLoading ? (
@@ -966,7 +1045,7 @@ export default function VerbasPage() {
                         <div className="min-w-0 flex-1">
                           <p className="font-semibold text-base truncate">{company.razaoSocial}</p>
                           <p className="text-xs text-muted-foreground">
-                            {company.employeeCount} colaboradores · {company.positionNodes.length} cargos
+                            {company.employeeCount} colaboradores · {company.accountingGroupNodes.length} grupos contábeis
                           </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
@@ -983,17 +1062,17 @@ export default function VerbasPage() {
 
                     <AccordionContent className="px-0 pb-0">
 
-                      {/* Bar chart: distribuição por cargo */}
-                      {company.positionNodes.length > 1 && (
+                      {/* Bar chart: distribuição por grupo contábil */}
+                      {company.accountingGroupNodes.length > 1 && (
                         <div className="px-6 py-3 bg-muted/20 border-b">
-                          <p className="text-xs font-medium text-muted-foreground mb-2">Distribuição por cargo</p>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Distribuição por grupo contábil</p>
                           <div className="h-[110px]">
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart
-                                data={company.positionNodes.slice(0, 12).map((p) => ({
-                                  n: p.position.length > 16 ? p.position.slice(0, 14) + "…" : p.position,
-                                  t: p.total,
-                                  c: p.employeeCount,
+                                data={company.accountingGroupNodes.slice(0, 12).map((g) => ({
+                                  n: g.accountingGroup.length > 16 ? g.accountingGroup.slice(0, 14) + "…" : g.accountingGroup,
+                                  t: g.total,
+                                  c: g.employeeCount,
                                 }))}
                                 margin={{ top: 4, right: 8, left: 4, bottom: 4 }}
                               >
@@ -1005,7 +1084,7 @@ export default function VerbasPage() {
                                   formatter={(v, nm) => nm === "t" ? [formatCurrency(Number(v), true), "Massa"] : [v, "Colaboradores"]}
                                 />
                                 <Bar dataKey="t" radius={[4, 4, 0, 0]}>
-                                  {company.positionNodes.slice(0, 12).map((_, i) => (
+                                  {company.accountingGroupNodes.slice(0, 12).map((_, i) => (
                                     <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                                   ))}
                                 </Bar>
@@ -1015,70 +1094,104 @@ export default function VerbasPage() {
                         </div>
                       )}
 
-                      {/* ── NÍVEL 2: CARGO ─────────────────────────────────── */}
+                      {/* ── NÍVEL 2: GRUPO CONTÁBIL ────────────────────────── */}
                       <Accordion type="multiple" className="w-full">
-                        {company.positionNodes.map((posNode) => {
-                          const posKey = `${company.companyId}|${posNode.position}`;
-                          const posShare = company.total > 0 ? (posNode.total / company.total) * 100 : 0;
+                        {company.accountingGroupNodes.map((groupNode) => {
+                          const groupKey = `${company.companyId}|${groupNode.accountingGroup}`;
+                          const groupShare = company.total > 0 ? (groupNode.total / company.total) * 100 : 0;
+
                           return (
-                            <AccordionItem key={posKey} value={posKey} className="border-b last:border-b-0">
+                            <AccordionItem key={groupKey} value={groupKey} className="border-b last:border-b-0">
                               <AccordionTrigger className="hover:no-underline px-6 py-3 pl-16">
                                 <div className="flex flex-1 items-center gap-3 text-left mr-3">
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-950 shrink-0">
-                                    <Briefcase className="h-4 w-4 text-violet-600" />
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-950 shrink-0">
+                                    <DollarSign className="h-4 w-4 text-emerald-600" />
                                   </div>
                                   <div className="min-w-0 flex-1">
-                                    <p className="font-medium truncate">{posNode.position}</p>
+                                    <p className="font-medium truncate">{groupNode.accountingGroup}</p>
                                     <p className="text-xs text-muted-foreground">
-                                      {posNode.employeeCount} colaborador{posNode.employeeCount !== 1 ? "es" : ""}
+                                      {groupNode.employeeCount} colaborador{groupNode.employeeCount !== 1 ? "es" : ""} · {groupNode.positionNodes.length} cargos
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-3 shrink-0">
                                     <div className="text-right">
-                                      <p className="font-bold tabular-nums">{formatCurrency(posNode.total, true)}</p>
-                                      <p className="text-xs text-muted-foreground">{posShare.toFixed(1)}% da empresa</p>
+                                      <p className="font-bold tabular-nums">{formatCurrency(groupNode.total, true)}</p>
+                                      <p className="text-xs text-muted-foreground">{groupShare.toFixed(1)}% da empresa</p>
                                     </div>
-                                    <Badge variant="outline" className="tabular-nums text-xs">
-                                      Média: {formatCurrency(posNode.avgPerEmployee, true)}
-                                    </Badge>
                                   </div>
                                 </div>
                               </AccordionTrigger>
 
                               <AccordionContent className="px-0 pb-2">
-                                {/* ── NÍVEL 3: FUNCIONÁRIO ─────────────────── */}
+                                {/* ── NÍVEL 3: CARGO ─────────────────────── */}
                                 <Accordion type="multiple" className="w-full">
-                                  {posNode.employees.map((emp) => {
-                                    const empKey = `${posKey}|${emp.cpf}`;
-                                    const empShare = posNode.total > 0 ? (emp.total / posNode.total) * 100 : 0;
+                                  {groupNode.positionNodes.map((posNode) => {
+                                    const posKey = `${groupKey}|${posNode.position}`;
+                                    const posShare = groupNode.total > 0 ? (posNode.total / groupNode.total) * 100 : 0;
                                     return (
-                                      <AccordionItem key={emp.key} value={empKey} className="border-b last:border-b-0">
+                                      <AccordionItem key={posKey} value={posKey} className="border-b last:border-b-0">
                                         <AccordionTrigger className="hover:no-underline px-6 py-3 pl-[88px]">
                                           <div className="flex flex-1 items-center gap-3 text-left mr-3">
-                                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted shrink-0 text-xs font-bold text-muted-foreground">
-                                              {(emp.nome || "?").slice(0, 1).toUpperCase()}
+                                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-950 shrink-0">
+                                              <Briefcase className="h-4 w-4 text-violet-600" />
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                              <p className="font-medium text-sm truncate">{emp.nome}</p>
-                                              <p className="text-xs text-muted-foreground truncate">
-                                                CPF {emp.cpf} · {emp.department} · {emp.accountingGroup}
+                                              <p className="font-medium truncate">{posNode.position}</p>
+                                              <p className="text-xs text-muted-foreground">
+                                                {posNode.employeeCount} colaborador{posNode.employeeCount !== 1 ? "es" : ""}
                                               </p>
                                             </div>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                              <p className="font-semibold tabular-nums text-sm">{formatCurrency(emp.total, true)}</p>
-                                              <Badge variant="secondary" className="text-xs tabular-nums">
-                                                {empShare.toFixed(1)}% do cargo
+                                            <div className="flex items-center gap-3 shrink-0">
+                                              <div className="text-right">
+                                                <p className="font-bold tabular-nums">{formatCurrency(posNode.total, true)}</p>
+                                                <p className="text-xs text-muted-foreground">{posShare.toFixed(1)}% do grupo</p>
+                                              </div>
+                                              <Badge variant="outline" className="tabular-nums text-xs">
+                                                Média: {formatCurrency(posNode.avgPerEmployee, true)}
                                               </Badge>
-                                              <DeltaBadge value={emp.total} avg={emp.benchmarkAvg} />
                                             </div>
                                           </div>
                                         </AccordionTrigger>
-                                        <AccordionContent className="pl-[88px] pr-6 pb-4">
-                                          <EmployeeTiposAccordion
-                                            tipos={emp.tipos}
-                                            employeeKey={emp.key}
-                                            selectedYears={selectedYears}
-                                          />
+
+                                        <AccordionContent className="px-0 pb-2">
+                                          {/* ── NÍVEL 4: FUNCIONÁRIO ───── */}
+                                          <Accordion type="multiple" className="w-full">
+                                            {posNode.employees.map((emp) => {
+                                              const empKey = `${posKey}|${emp.cpf}`;
+                                              const empShare = posNode.total > 0 ? (emp.total / posNode.total) * 100 : 0;
+                                              return (
+                                                <AccordionItem key={emp.key} value={empKey} className="border-b last:border-b-0">
+                                                  <AccordionTrigger className="hover:no-underline px-6 py-3 pl-[112px]">
+                                                    <div className="flex flex-1 items-center gap-3 text-left mr-3">
+                                                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted shrink-0 text-xs font-bold text-muted-foreground">
+                                                        {(emp.nome || "?").slice(0, 1).toUpperCase()}
+                                                      </div>
+                                                      <div className="min-w-0 flex-1">
+                                                        <p className="font-medium text-sm truncate">{emp.nome}</p>
+                                                        <p className="text-xs text-muted-foreground truncate">
+                                                          CPF {emp.cpf} · {emp.department} · {emp.accountingGroup}
+                                                        </p>
+                                                      </div>
+                                                      <div className="flex items-center gap-2 shrink-0">
+                                                        <p className="font-semibold tabular-nums text-sm">{formatCurrency(emp.total, true)}</p>
+                                                        <Badge variant="secondary" className="text-xs tabular-nums">
+                                                          {empShare.toFixed(1)}% do cargo
+                                                        </Badge>
+                                                        <DeltaBadge value={emp.total} avg={emp.benchmarkAvg} />
+                                                      </div>
+                                                    </div>
+                                                  </AccordionTrigger>
+                                                  <AccordionContent className="pl-[112px] pr-6 pb-4">
+                                                    <EmployeeTiposAccordion
+                                                      tipos={emp.tipos}
+                                                      employeeKey={emp.key}
+                                                      selectedYears={selectedYears}
+                                                    />
+                                                  </AccordionContent>
+                                                </AccordionItem>
+                                              );
+                                            })}
+                                          </Accordion>
                                         </AccordionContent>
                                       </AccordionItem>
                                     );
@@ -1099,11 +1212,6 @@ export default function VerbasPage() {
               <div className="px-6 py-3 border-t flex items-center justify-between bg-muted/20">
                 <p className="text-xs text-muted-foreground">
                   {data?.total || 0} registros · {kpi.totalEmployees} colaboradores · {kpi.totalCompanies} empresa{kpi.totalCompanies !== 1 ? "s" : ""}
-                  {(data?.total || 0) >= 1000 && (
-                    <span className="ml-2 text-amber-600 font-medium">
-                      · 1.000 linhas carregadas — refine os filtros para ampliar a visão
-                    </span>
-                  )}
                 </p>
                 <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
                   {isFetching ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}

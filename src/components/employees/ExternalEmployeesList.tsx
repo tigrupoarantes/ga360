@@ -415,7 +415,13 @@ export function ExternalEmployeesList() {
     setSyncingApi(true);
     setSyncStatus("Iniciando sincronização...");
     try {
+      const fallbackCompanyId =
+        selectedCompanyId ||
+        (companyFilter !== "all" ? companyFilter : null) ||
+        (companies.length > 0 ? companies[0].id : null);
+
       const result = await syncEmployeesFromDab({
+        companyId: fallbackCompanyId,
         onProgress: (progress) => {
           setSyncStatus(progress.message);
         },

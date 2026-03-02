@@ -84,10 +84,32 @@ function normalizeText(value?: string | null) {
 }
 
 function normalizeCompanyNameKey(value?: string | null) {
-  return normalizeText(value)
+  const normalized = normalizeText(value)
+    // Common upstream pattern: "RAZAO SOCIAL (6)" / "RAZAO SOCIAL - 6"
+    // Strip trailing parenthetical / numeric codes to improve matching.
+    .replace(/\(\s*\d+\s*\)\s*$/g, " ")
+    .replace(/[-–—]\s*\d+\s*$/g, " ")
+    .replace(/\s+\d+\s*$/g, " ")
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  return normalized;
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  if (chunkSize <= 0) return [items];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+function getCompetenciaAsOfIso(ano: number, mes: number): string {
+  // End-of-month UTC (month is 1..12). Using day=0 returns last day of previous month.
+  const asOf = new Date(Date.UTC(ano, mes, 0, 23, 59, 59, 999));
+  return asOf.toISOString();
 }
 
 function parseNumber(value: unknown) {
@@ -383,7 +405,17 @@ async function fetchJsonWithRetry(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const response = await fetch(url, { method: "GET", headers });
     const text = await response.text();
-    const payload = text ? JSON.parse(text) : {};
+    let payload: any = {};
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch (error) {
+        throw new Error(
+          `Upstream retornou JSON inválido em ${url}: ${String((error as Error)?.message || error)} | ` +
+          `preview=${JSON.stringify(String(text).slice(0, 4000))}`,
+        );
+      }
+    }
 
     lastResponse = response;
     lastPayload = payload;
@@ -789,7 +821,16 @@ async function loadRowsFromDatalake(
     const candidateUrls = buildDatalakeUrls(connection.base_url, candidate, body.query_params);
 
     for (const candidateUrl of candidateUrls) {
-      const { response, payload } = await fetchJsonWithRetry(candidateUrl, headers, 3);
+      let response: Response;
+      let payload: any;
+      try {
+        ({ response, payload } = await fetchJsonWithRetry(candidateUrl, headers, 3));
+      } catch (error) {
+        if (!firstEndpointError) {
+          firstEndpointError = `Endpoint '${candidate}' (${candidateUrl}) retornou payload inválido: ${String((error as Error)?.message || error)}`;
+        }
+        continue;
+      }
 
       if (!response.ok) {
         if (response.status === 404 || response.status === 405 || isImplicitPrimaryKeyError(payload)) {
@@ -961,12 +1002,32 @@ serve(async (req) => {
       );
     }
 
-    const { data: companies, error: companiesError } = await supabase
-      .from("companies")
-      .select("id, external_id, name");
+    let companies: any[] = [];
+    {
+      const firstAttempt = await supabase
+        .from("companies")
+        .select("id, external_id, name, razao_social");
 
-    if (companiesError) {
-      throw new Error(`Failed to load companies: ${companiesError.message}`);
+      if (!firstAttempt.error) {
+        companies = firstAttempt.data || [];
+      } else {
+        const msg = String(firstAttempt.error.message || "");
+        const missingRazao = msg.toLowerCase().includes("column") && msg.toLowerCase().includes("razao_social");
+        if (!missingRazao) {
+          throw new Error(`Failed to load companies: ${firstAttempt.error.message}`);
+        }
+
+        // Backward compatible: some remote DBs don't have companies.razao_social yet.
+        const fallbackAttempt = await supabase
+          .from("companies")
+          .select("id, external_id, name");
+
+        if (fallbackAttempt.error) {
+          throw new Error(`Failed to load companies: ${fallbackAttempt.error.message}`);
+        }
+
+        companies = fallbackAttempt.data || [];
+      }
     }
 
     const companyByExternalId = new Map<string, { id: string; name: string | null }>();
@@ -980,38 +1041,132 @@ serve(async (req) => {
       }
 
       const normalizedName = normalizeCompanyNameKey(company.name || null);
-      if (normalizedName) {
-        companyByName.set(normalizedName, { id: company.id, name: company.name || null });
-      }
+      if (normalizedName) companyByName.set(normalizedName, { id: company.id, name: company.name || null });
+
+      const normalizedRazao = normalizeCompanyNameKey((company as any).razao_social || null);
+      if (normalizedRazao) companyByName.set(normalizedRazao, { id: company.id, name: company.name || null });
     }
 
     const companyNameEntries = [...companyByName.entries()];
 
-    const { data: externalEmployees, error: externalEmployeesError } = await supabase
-      .from("external_employees")
-      .select("company_id, cpf, full_name, is_active, department, position")
-      .not("cpf", "is", null)
-      .neq("cpf", "")
-      .not("company_id", "is", null);
+    const scopeYear = body.target_year ? Number(body.target_year) : null;
+    const scopeMonth = body.target_month ? Number(body.target_month) : null;
+    const canUseEmployeeSnapshots = Boolean(scopeYear && scopeMonth);
+    const scopeAsOfIso = canUseEmployeeSnapshots ? getCompetenciaAsOfIso(scopeYear!, scopeMonth!) : null;
 
-    if (externalEmployeesError) {
-      throw new Error(`Failed to load external_employees: ${externalEmployeesError.message}`);
-    }
+    const cpfsInPayload = Array.from(
+      new Set(
+        records
+          .map((record) => normalizeCpf(record.cpf))
+          .filter(Boolean) as string[],
+      ),
+    );
 
-    const employeesByCpf = new Map<string, Array<{ company_id: string; full_name: string | null; is_active: boolean | null; department: string | null; position: string | null }>>();
-    for (const employee of externalEmployees || []) {
-      const normalizedCpf = normalizeCpf(employee.cpf);
-      if (!normalizedCpf || !employee.company_id) continue;
+    const employeesByCpf = new Map<
+      string,
+      Array<{
+        company_id: string;
+        full_name: string | null;
+        is_active: boolean | null;
+        department: string | null;
+        position: string | null;
+        unidade: string | null;
+        accounting_group: string | null;
+        contract_company_id: string | null;
+        accounting_company_id: string | null;
+      }>
+    >();
 
-      const list = employeesByCpf.get(normalizedCpf) || [];
-      list.push({
-        company_id: employee.company_id,
-        full_name: employee.full_name || null,
-        is_active: employee.is_active ?? null,
-        department: employee.department || null,
-        position: employee.position || null,
-      });
-      employeesByCpf.set(normalizedCpf, list);
+    if (cpfsInPayload.length > 0) {
+      const rowsToIndex: any[] = [];
+
+      if (canUseEmployeeSnapshots && scopeAsOfIso) {
+        for (const cpfChunk of chunkArray(cpfsInPayload, 500)) {
+          const { data: snapshotRows, error: snapshotError } = await supabase
+            .from("external_employee_snapshots")
+            .select(
+              "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+            )
+            .in("cpf", cpfChunk)
+            .not("cpf", "is", null)
+            .neq("cpf", "")
+            .not("company_id", "is", null)
+            .lte("valid_from", scopeAsOfIso)
+            .or(`valid_to.is.null,valid_to.gt.${scopeAsOfIso}`);
+
+          if (snapshotError) {
+            throw new Error(`Failed to load external_employee_snapshots: ${snapshotError.message}`);
+          }
+
+          rowsToIndex.push(...(snapshotRows || []));
+        }
+
+        // Fallback: if snapshots are missing for some CPFs (e.g., backfill not applied yet),
+        // load from external_employees so we can still resolve company_id by CPF.
+        const snapshotCpfSet = new Set(
+          (rowsToIndex || [])
+            .map((row) => normalizeCpf(row?.cpf))
+            .filter(Boolean) as string[],
+        );
+        const missingCpfs = cpfsInPayload.filter((cpf) => !snapshotCpfSet.has(cpf));
+
+        if (missingCpfs.length > 0) {
+          for (const cpfChunk of chunkArray(missingCpfs, 500)) {
+            const { data: externalEmployees, error: externalEmployeesError } = await supabase
+              .from("external_employees")
+              .select(
+                "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+              )
+              .in("cpf", cpfChunk)
+              .not("cpf", "is", null)
+              .neq("cpf", "")
+              .not("company_id", "is", null);
+
+            if (externalEmployeesError) {
+              throw new Error(`Failed to load external_employees fallback: ${externalEmployeesError.message}`);
+            }
+
+            rowsToIndex.push(...(externalEmployees || []));
+          }
+        }
+      } else {
+        for (const cpfChunk of chunkArray(cpfsInPayload, 500)) {
+          const { data: externalEmployees, error: externalEmployeesError } = await supabase
+            .from("external_employees")
+            .select(
+              "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+            )
+            .in("cpf", cpfChunk)
+            .not("cpf", "is", null)
+            .neq("cpf", "")
+            .not("company_id", "is", null);
+
+          if (externalEmployeesError) {
+            throw new Error(`Failed to load external_employees: ${externalEmployeesError.message}`);
+          }
+
+          rowsToIndex.push(...(externalEmployees || []));
+        }
+      }
+
+      for (const employee of rowsToIndex) {
+        const normalizedCpf = normalizeCpf(employee.cpf);
+        if (!normalizedCpf || !employee.company_id) continue;
+
+        const list = employeesByCpf.get(normalizedCpf) || [];
+        list.push({
+          company_id: employee.company_id,
+          full_name: employee.full_name || null,
+          is_active: employee.is_active ?? null,
+          department: employee.department || null,
+          position: employee.position || null,
+          unidade: employee.unidade || null,
+          accounting_group: employee.accounting_group || null,
+          contract_company_id: employee.contract_company_id || null,
+          accounting_company_id: employee.accounting_company_id || null,
+        });
+        employeesByCpf.set(normalizedCpf, list);
+      }
     }
 
     const fallbackExternalId = normalizeCnpj(body.company_external_id || null);
@@ -1065,7 +1220,17 @@ serve(async (req) => {
 
         const employeesForCpf = employeesByCpf.get(cpf) || [];
 
-        let employeeMatch = null as { company_id: string; full_name: string | null; is_active: boolean | null } | null;
+        let employeeMatch = null as {
+          company_id: string;
+          full_name: string | null;
+          is_active: boolean | null;
+          department: string | null;
+          position: string | null;
+          unidade: string | null;
+          accounting_group: string | null;
+          contract_company_id: string | null;
+          accounting_company_id: string | null;
+        } | null;
         let companyId =
           item.company_id ||
           mappedCompany?.id ||
@@ -1130,11 +1295,20 @@ serve(async (req) => {
           fallbackCompany ||
           null;
 
+        const employeeSnapshotAtIso = getCompetenciaAsOfIso(Number(ano), Number(mes));
+
         upsertRows.push({
           company_id: companyId,
           razao_social: item.razao_social || resolvedCompany?.name || "SEM_RAZAO_SOCIAL",
           cpf,
           nome_funcionario: (item.nome_funcionario || item.nome || employeeMatch?.full_name || "NOME_NAO_INFORMADO").trim(),
+          employee_department: employeeMatch?.department || null,
+          employee_position: employeeMatch?.position || null,
+          employee_unidade: employeeMatch?.unidade || null,
+          employee_accounting_group: employeeMatch?.accounting_group || null,
+          employee_contract_company_id: employeeMatch?.contract_company_id || null,
+          employee_accounting_company_id: employeeMatch?.accounting_company_id || null,
+          employee_snapshot_at: employeeSnapshotAtIso,
           ano: Number(ano),
           mes: Number(mes),
           cod_evento: Number(codEvento),
@@ -1152,8 +1326,6 @@ serve(async (req) => {
     }
 
     const dedupedUpsertRows = mergeUpsertRows(upsertRows);
-    const scopeYear = body.target_year ? Number(body.target_year) : null;
-    const scopeMonth = body.target_month ? Number(body.target_month) : null;
     const replaceScope = body.replace_scope !== false;
 
     const rowsToPersist = dedupedUpsertRows.filter((row) => {

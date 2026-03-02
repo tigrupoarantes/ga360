@@ -172,7 +172,7 @@ export function AppleNav() {
                 )
               ))}
 
-              <RoleGuard permission={{ module: 'admin' }}>
+              <RoleGuard roles={["super_admin", "ceo", "diretor"]} permission={{ module: 'admin' }}>
                 <NavLink
                   to="/admin"
                   className={({ isActive }) =>

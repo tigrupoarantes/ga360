@@ -177,6 +177,15 @@ interface CompanyStats {
   failed: number;
 }
 
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  if (chunkSize <= 0) return [items];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -204,6 +213,7 @@ serve(async (req) => {
     const body: SyncRequest = await req.json();
     const sourceSystem = body.source_system || 'gestao_ativos';
     const globalCompanyExternalId = body.company_external_id;
+    const syncTimestamp = new Date().toISOString();
     
     console.log(`[sync-employees] Received ${body.employees?.length || 0} records from ${sourceSystem}`);
     console.log(`[sync-employees] Global company_external_id: ${globalCompanyExternalId || 'not provided'}`);
@@ -366,7 +376,7 @@ serve(async (req) => {
           hire_date: emp.hire_date || null,
           is_active: isActive,
           metadata: emp.metadata || null,
-          synced_at: new Date().toISOString(),
+          synced_at: syncTimestamp,
           // Campos CNH
           cnh_numero: cnhNumero || null,
           cnh_categoria: cnhCategoria || null,
@@ -486,21 +496,27 @@ serve(async (req) => {
       const toDeactivate = (activeInDb || []).filter(e => !payloadExternalIds.has(e.external_id));
 
       if (toDeactivate.length > 0) {
-        const idsToDeactivate = toDeactivate.map(e => e.id);
-        const { error: deactivateError } = await supabase
-          .from('external_employees')
-          .update({ is_active: false, updated_at: new Date().toISOString() })
-          .in('id', idsToDeactivate);
+        const deactivateChunks = chunkArray(toDeactivate, 250);
+        for (const chunk of deactivateChunks) {
+          const idsToDeactivate = chunk.map(e => e.id);
 
-        if (deactivateError) {
-          console.error(`[sync-employees] Error deactivating employees for company ${companyId}:`, deactivateError);
-        } else {
-          totalDeactivated += toDeactivate.length;
-          // Registrar por CNPJ para a resposta
-          const cnpjForCompany = [...companyMap.entries()].find(([_, id]) => id === companyId)?.[0] || companyId;
-          deactivatedByCompany[cnpjForCompany] = toDeactivate.length;
-          console.log(`[sync-employees] Deactivated ${toDeactivate.length} employees for company ${companyId}`);
+          const { error: deactivateError } = await supabase
+            .from('external_employees')
+            .update({ is_active: false, updated_at: new Date().toISOString(), synced_at: syncTimestamp })
+            .in('id', idsToDeactivate);
+
+          if (deactivateError) {
+            console.error(`[sync-employees] Error deactivating employees for company ${companyId}:`, deactivateError);
+            continue;
+          }
+
+          totalDeactivated += chunk.length;
         }
+
+        // Registrar por CNPJ para a resposta (mantém compatibilidade do output)
+        const cnpjForCompany = [...companyMap.entries()].find(([_, id]) => id === companyId)?.[0] || companyId;
+        deactivatedByCompany[cnpjForCompany] = (deactivatedByCompany[cnpjForCompany] || 0) + toDeactivate.length;
+        console.log(`[sync-employees] Deactivated ${toDeactivate.length} employees for company ${companyId}`);
       }
     }
 

@@ -170,7 +170,10 @@ const App = () => (
                 <Route
                   path="/admin"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <Admin />
                     </ProtectedRoute>
                   }
@@ -178,7 +181,10 @@ const App = () => (
                 <Route
                   path="/admin/estrutura"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminOrganization />
                     </ProtectedRoute>
                   }
@@ -186,7 +192,10 @@ const App = () => (
                 <Route
                   path="/admin/areas"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminAreas />
                     </ProtectedRoute>
                   }
@@ -194,7 +203,10 @@ const App = () => (
                 <Route
                   path="/admin/users"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminUsers />
                     </ProtectedRoute>
                   }
@@ -202,7 +214,10 @@ const App = () => (
                 <Route
                   path="/admin/empresas"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminCompanies />
                     </ProtectedRoute>
                   }
@@ -210,7 +225,10 @@ const App = () => (
                 <Route
                   path="/admin/permissions"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminPermissions />
                     </ProtectedRoute>
                   }
@@ -218,7 +236,10 @@ const App = () => (
                 <Route
                   path="/admin/settings"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminSettings />
                     </ProtectedRoute>
                   }
@@ -226,7 +247,10 @@ const App = () => (
                 <Route
                   path="/admin/employees"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminEmployees />
                     </ProtectedRoute>
                   }
@@ -234,7 +258,10 @@ const App = () => (
                 <Route
                   path="/admin/governanca-ec"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminGovernancaEC />
                     </ProtectedRoute>
                   }
@@ -242,7 +269,10 @@ const App = () => (
                 <Route
                   path="/admin/datalake"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminDatalake />
                     </ProtectedRoute>
                   }
@@ -250,7 +280,10 @@ const App = () => (
                 <Route
                   path="/admin/bugs"
                   element={
-                    <ProtectedRoute requiredPermission={{ module: 'admin', action: 'view' }}>
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                      requiredPermission={{ module: 'admin', action: 'view' }}
+                    >
                       <AdminBugReports />
                     </ProtectedRoute>
                   }

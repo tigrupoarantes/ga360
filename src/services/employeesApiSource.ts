@@ -5,7 +5,9 @@ const SOURCE_SYSTEM = "dab_api";
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGES = 200;
 const ENABLE_EMPLOYEE_DEACTIVATION = false;
-const ENABLE_FULL_REFRESH_REPLACE = true;
+// IMPORTANTE: Não usar delete+insert para sincronização completa.
+// Isso destruiria o histórico (snapshots) e poderia distorcer análises históricas.
+const ENABLE_FULL_REFRESH_REPLACE = false;
 const INSERT_BATCH_SIZE = 500;
 
 export interface EmployeesSyncProgress {
@@ -22,6 +24,16 @@ export interface EmployeesSyncProgress {
   totalFetched?: number;
   inserted?: number;
   totalToInsert?: number;
+}
+
+interface EmployeesFetchDiagnostics {
+  connectionId: string | null;
+  pagesFetched: number;
+  usedOffsetFallback: boolean;
+  retriedWithoutConnection: boolean;
+  retriedWithDefaultConnection: boolean;
+  hadNextLink: boolean;
+  firstPageCount: number;
 }
 
 type ExternalEmployeeInsert = Database["public"]["Tables"]["external_employees"]["Insert"];
@@ -288,7 +300,17 @@ function resolveAccountingCompanyId(employee: DabEmployee, lookup: CompanyLookup
   return null;
 }
 
-async function callDabProxy(payload: { path?: string; query?: Record<string, string | number>; nextLink?: string; connectionId?: string }) {
+async function callDabProxy(payload: {
+  path?: string;
+  query?: Record<string, string | number>;
+  nextLink?: string;
+  connectionId?: string;
+  allPages?: boolean;
+  maxPages?: number;
+  logSync?: boolean;
+  syncType?: string;
+  companyId?: string | null;
+}) {
   const { data, error } = await supabase.functions.invoke("dab-proxy", {
     body: payload,
   });
@@ -319,6 +341,7 @@ async function callDabProxy(payload: { path?: string; query?: Record<string, str
     const payloadContext = {
       path: payload.path,
       hasNextLink: Boolean(payload.nextLink),
+      allPages: payload.allPages === true,
       queryKeys: payload.query ? Object.keys(payload.query) : [],
       connectionId: payload.connectionId || null,
     };
@@ -582,9 +605,16 @@ async function fetchPageByOffsetWithFallback(
     { first: pageSize, skip: offset },
     { $top: pageSize, $skip: offset },
     { top: pageSize, skip: offset },
+    { take: pageSize, skip: offset },
+    { maxResultCount: pageSize, skipCount: offset },
     { limit: pageSize, offset },
     { page: pageIndex, pageSize },
+    { pageNumber: pageIndex, pageSize },
     { page: pageIndex, per_page: pageSize },
+    { page: pageIndex, page_size: pageSize },
+    { start: offset, count: pageSize },
+    { pagina: pageIndex, pageSize },
+    { pagina: pageIndex, tamanhoPagina: pageSize },
   ];
 
   let lastError: any = null;
@@ -618,7 +648,8 @@ async function fetchPageByOffsetWithFallback(
 export async function fetchEmployeesFromDab(
   pageSize = DEFAULT_PAGE_SIZE,
   onProgress?: (progress: EmployeesSyncProgress) => void,
-): Promise<DabEmployee[]> {
+  options?: { companyId?: string | null },
+): Promise<{ employees: DabEmployee[]; diagnostics: EmployeesFetchDiagnostics }> {
   const employees: DabEmployee[] = [];
   let connectionId = await resolveEmployeesConnectionId();
   let nextLink: string | undefined;
@@ -627,6 +658,8 @@ export async function fetchEmployeesFromDab(
   let retriedWithoutConnection = false;
   let usedOffsetFallback = false;
   let retriedWithDefaultConnection = false;
+  let hadNextLink = false;
+  let firstPageCount = 0;
 
   onProgress?.({
     stage: "fetching",
@@ -634,6 +667,51 @@ export async function fetchEmployeesFromDab(
     page: 0,
     totalFetched: 0,
   });
+
+  try {
+    const aggregated = await callDabProxy({
+      path: "funcionarios",
+      allPages: true,
+      maxPages: MAX_PAGES,
+      connectionId,
+      logSync: true,
+      syncType: "employees_api",
+      companyId: options?.companyId || null,
+    });
+
+    const aggregatedRows = extractPageEmployees(aggregated);
+    const aggregatedMeta = (aggregated && typeof aggregated === "object" ? (aggregated as Record<string, unknown>).meta : {}) as Record<string, unknown>;
+    const aggregatedPages = Number(aggregatedMeta.pages_fetched || 0);
+    const aggregatedHadNext = Boolean(aggregatedMeta.had_next_link);
+
+    if (aggregatedRows.length > 0) {
+      onProgress?.({
+        stage: "fetching",
+        message: `Proxy allPages retornou ${aggregatedRows.length} funcionários em ${aggregatedPages || 1} página(s).`,
+        page: aggregatedPages || 1,
+        totalFetched: aggregatedRows.length,
+      });
+
+      // If it still looks like a single capped page (commonly 100 rows), don't trust it;
+      // fall back to the legacy pagination flow.
+      if (!(aggregatedRows.length === pageSize && aggregatedPages <= 1)) {
+        return {
+          employees: aggregatedRows,
+          diagnostics: {
+            connectionId: connectionId || null,
+            pagesFetched: aggregatedPages || 1,
+            usedOffsetFallback: false,
+            retriedWithoutConnection: false,
+            retriedWithDefaultConnection: false,
+            hadNextLink: aggregatedHadNext,
+            firstPageCount: aggregatedPages > 1 ? Math.min(pageSize, aggregatedRows.length) : aggregatedRows.length,
+          },
+        };
+      }
+    }
+  } catch (error) {
+    trackEmployeesApiError(undefined, "all_pages_proxy_failed_fallback_to_legacy", String(error));
+  }
 
   do {
     let response: DabPageResponse;
@@ -656,8 +734,12 @@ export async function fetchEmployeesFromDab(
     }
 
     const pageData = extractPageEmployees(response);
+    if (pageCount === 0) {
+      firstPageCount = pageData.length;
+    }
     employees.push(...pageData);
     nextLink = extractNextLink(response);
+    if (nextLink) hadNextLink = true;
 
     onProgress?.({
       stage: "fetching",
@@ -777,11 +859,88 @@ export async function fetchEmployeesFromDab(
     }
   } while (nextLink);
 
-  return employees;
+  return {
+    employees,
+    diagnostics: {
+      connectionId: connectionId || null,
+      pagesFetched: pageCount,
+      usedOffsetFallback,
+      retriedWithoutConnection,
+      retriedWithDefaultConnection,
+      hadNextLink,
+      firstPageCount,
+    },
+  };
+}
+
+async function startEmployeesSyncLog(args: {
+  companyId: string | null;
+  recordsReceived: number;
+  diagnostics?: Record<string, unknown>;
+}): Promise<string | null> {
+  if (!args.companyId) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from("sync_logs")
+      .insert({
+        company_id: args.companyId,
+        sync_type: "employees_api",
+        records_received: args.recordsReceived,
+        status: "running",
+        started_at: new Date().toISOString(),
+        errors: args.diagnostics || null,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      trackEmployeesApiError(undefined, "sync_log_start_failed", error.message);
+      return null;
+    }
+
+    return data?.id || null;
+  } catch (error) {
+    trackEmployeesApiError(undefined, "sync_log_start_exception", String(error));
+    return null;
+  }
+}
+
+async function finishEmployeesSyncLog(args: {
+  syncLogId: string | null;
+  status: "success" | "partial" | "error";
+  created: number;
+  updated: number;
+  failed: number;
+  recordsReceived: number;
+  errors?: unknown;
+}) {
+  if (!args.syncLogId) return;
+
+  try {
+    const { error } = await supabase
+      .from("sync_logs")
+      .update({
+        status: args.status,
+        records_created: args.created,
+        records_updated: args.updated,
+        records_failed: args.failed,
+        records_received: args.recordsReceived,
+        completed_at: new Date().toISOString(),
+        errors: args.errors ?? null,
+      })
+      .eq("id", args.syncLogId);
+
+    if (error) {
+      trackEmployeesApiError(undefined, "sync_log_finish_failed", error.message);
+    }
+  } catch (error) {
+    trackEmployeesApiError(undefined, "sync_log_finish_exception", String(error));
+  }
 }
 
 export async function syncEmployeesFromDab(
-  options?: { onProgress?: (progress: EmployeesSyncProgress) => void },
+  options?: { onProgress?: (progress: EmployeesSyncProgress) => void; companyId?: string | null },
 ): Promise<{ inserted: number; updated: number; deactivated: number; totalFetched: number }> {
   const onProgress = options?.onProgress;
 
@@ -790,10 +949,13 @@ export async function syncEmployeesFromDab(
     message: "Iniciando sincronização de funcionários...",
   });
 
-  const [fetchedEmployees, companyLookup] = await Promise.all([
-    fetchEmployeesFromDab(DEFAULT_PAGE_SIZE, onProgress),
+  const [{ employees: fetchedEmployees, diagnostics }, companyLookup] = await Promise.all([
+    fetchEmployeesFromDab(DEFAULT_PAGE_SIZE, onProgress, { companyId: options?.companyId || null }),
     fetchCompaniesLookup(),
   ]);
+
+  let syncLogCompanyId = options?.companyId || null;
+  let syncLogId: string | null = null;
 
   onProgress?.({
     stage: "preparing",
@@ -811,8 +973,10 @@ export async function syncEmployeesFromDab(
     for (const employee of fetchedEmployees) {
       if (!employee.id_funcionario || !employee.nome_funcionario) continue;
 
-      const contractCompanyId = resolveContractCompanyId(employee, companyLookup);
-      const accountingCompanyId = resolveAccountingCompanyId(employee, companyLookup);
+      const resolvedContractCompanyId = resolveContractCompanyId(employee, companyLookup);
+      const resolvedAccountingCompanyId = resolveAccountingCompanyId(employee, companyLookup);
+      const contractCompanyId = resolvedContractCompanyId || options?.companyId || null;
+      const accountingCompanyId = resolvedAccountingCompanyId || null;
         const accountingLabel = resolveAccountingLabel(employee);
         const accountingCode = resolveAccountingCode(employee);
       const uniqueKey = buildEmployeeUniqueKey(contractCompanyId, employee.id_funcionario);
@@ -857,6 +1021,25 @@ export async function syncEmployeesFromDab(
     }
 
     const payloadRows: ExternalEmployeeInsert[] = [...uniquePayloadByKey.values()];
+
+    if (!syncLogCompanyId) {
+      syncLogCompanyId = (payloadRows.find((row) => Boolean(row.company_id))?.company_id as string | null) || null;
+    }
+
+    syncLogId = await startEmployeesSyncLog({
+      companyId: syncLogCompanyId,
+      recordsReceived: fetchedEmployees.length,
+      diagnostics: {
+        phase: "full_refresh",
+        pages_fetched: diagnostics.pagesFetched,
+        first_page_count: diagnostics.firstPageCount,
+        had_next_link: diagnostics.hadNextLink,
+        used_offset_fallback: diagnostics.usedOffsetFallback,
+        retried_without_connection: diagnostics.retriedWithoutConnection,
+        retried_default_connection: diagnostics.retriedWithDefaultConnection,
+        connection_id: diagnostics.connectionId,
+      },
+    });
 
     onProgress?.({
       stage: "clearing",
@@ -910,6 +1093,25 @@ export async function syncEmployeesFromDab(
       totalToInsert: payloadRows.length,
     });
 
+    await finishEmployeesSyncLog({
+      syncLogId,
+      status: "success",
+      created: inserted,
+      updated: 0,
+      failed: 0,
+      recordsReceived: fetchedEmployees.length,
+      errors: {
+        phase: "full_refresh",
+        pages_fetched: diagnostics.pagesFetched,
+        first_page_count: diagnostics.firstPageCount,
+        had_next_link: diagnostics.hadNextLink,
+        used_offset_fallback: diagnostics.usedOffsetFallback,
+        retried_without_connection: diagnostics.retriedWithoutConnection,
+        retried_default_connection: diagnostics.retriedWithDefaultConnection,
+        connection_id: diagnostics.connectionId,
+      },
+    });
+
     return {
       inserted,
       updated: 0,
@@ -918,9 +1120,7 @@ export async function syncEmployeesFromDab(
     };
   }
 
-  const externalIds = fetchedEmployees
-    .map((employee) => employee.id_funcionario)
-    .filter(Boolean);
+  const fetchedUniqueKeys = new Set<string>();
 
   const { data: existingRows, error: existingError } = await supabase
     .from("external_employees")
@@ -935,6 +1135,25 @@ export async function syncEmployeesFromDab(
 
   let inserted = 0;
   let updated = 0;
+
+  if (!syncLogCompanyId) {
+    syncLogCompanyId = options?.companyId || null;
+  }
+
+  syncLogId = await startEmployeesSyncLog({
+    companyId: syncLogCompanyId,
+    recordsReceived: fetchedEmployees.length,
+    diagnostics: {
+      phase: "incremental",
+      pages_fetched: diagnostics.pagesFetched,
+      first_page_count: diagnostics.firstPageCount,
+      had_next_link: diagnostics.hadNextLink,
+      used_offset_fallback: diagnostics.usedOffsetFallback,
+      retried_without_connection: diagnostics.retriedWithoutConnection,
+      retried_default_connection: diagnostics.retriedWithDefaultConnection,
+      connection_id: diagnostics.connectionId,
+    },
+  });
 
   for (const employee of fetchedEmployees) {
     if (!employee.id_funcionario || !employee.nome_funcionario) continue;
@@ -982,6 +1201,7 @@ export async function syncEmployeesFromDab(
     };
 
     const uniqueKey = buildEmployeeUniqueKey(contractCompanyId, employee.id_funcionario);
+    fetchedUniqueKeys.add(uniqueKey);
     const existingId = existingByUniqueKey.get(uniqueKey);
 
     if (existingId) {
@@ -1049,18 +1269,17 @@ export async function syncEmployeesFromDab(
   }
 
   let deactivated = 0;
-  if (ENABLE_EMPLOYEE_DEACTIVATION && externalIds.length > 0) {
+  if (ENABLE_EMPLOYEE_DEACTIVATION && fetchedUniqueKeys.size > 0) {
     const { data: currentlyActive, error: activeError } = await supabase
       .from("external_employees")
-      .select("id, external_id")
+      .select("id, external_id, company_id")
       .eq("source_system", SOURCE_SYSTEM)
       .eq("is_active", true);
 
     if (activeError) throw activeError;
 
-    const fetchedSet = new Set(externalIds);
     const toDeactivateIds = (currentlyActive || [])
-      .filter((row) => !fetchedSet.has(row.external_id))
+      .filter((row) => !fetchedUniqueKeys.has(buildEmployeeUniqueKey(row.company_id, row.external_id)))
       .map((row) => row.id);
 
     if (toDeactivateIds.length > 0) {
@@ -1073,6 +1292,25 @@ export async function syncEmployeesFromDab(
       deactivated = toDeactivateIds.length;
     }
   }
+
+  await finishEmployeesSyncLog({
+    syncLogId,
+    status: "success",
+    created: inserted,
+    updated,
+    failed: 0,
+    recordsReceived: fetchedEmployees.length,
+    errors: {
+      phase: "incremental",
+      pages_fetched: diagnostics.pagesFetched,
+      first_page_count: diagnostics.firstPageCount,
+      had_next_link: diagnostics.hadNextLink,
+      used_offset_fallback: diagnostics.usedOffsetFallback,
+      retried_without_connection: diagnostics.retriedWithoutConnection,
+      retried_default_connection: diagnostics.retriedWithDefaultConnection,
+      connection_id: diagnostics.connectionId,
+    },
+  });
 
   return {
     inserted,

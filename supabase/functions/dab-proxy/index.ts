@@ -13,6 +13,11 @@ interface DabProxyRequest {
   query?: Record<string, string | number | boolean | null | undefined>;
   nextLink?: string;
   connectionId?: string;
+  allPages?: boolean;
+  maxPages?: number;
+  logSync?: boolean;
+  syncType?: string;
+  companyId?: string | null;
 }
 
 interface ApiConnectionConfig {
@@ -57,6 +62,23 @@ function normalizeNextLink(nextLink: string, baseUrl: string): string {
     return absolute.toString();
   }
 
+  // Some APIs return nextLink as an absolute path (e.g. "/funcionarios?..."),
+  // but the base URL may be rooted under "/api" or "/v1". In those cases,
+  // preserve the base prefix so pagination doesn't jump to the wrong path.
+  if (trimmed.startsWith("/")) {
+    const lower = trimmed.toLowerCase();
+
+    if (shouldUseV1 && !lower.startsWith("/v1/") && !lower.startsWith("/api/")) {
+      return new URL(`/v1${trimmed}`, baseUrlObject.origin).toString();
+    }
+
+    if (basePath.endsWith("/api") && !lower.startsWith("/api/") && !lower.startsWith("/v1/")) {
+      return new URL(`/api${trimmed}`, baseUrlObject.origin).toString();
+    }
+
+    return new URL(trimmed, baseUrlObject.origin).toString();
+  }
+
   if (shouldUseV1 && /^\/?api\//i.test(trimmed)) {
     const rewritten = trimmed.replace(/^\/?api\//i, "v1/");
     return new URL(rewritten, base).toString();
@@ -80,6 +102,15 @@ function sanitizeError(error: unknown) {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
   return "unknown_error";
+}
+
+function safeParseJson(text: string): { ok: true; value: any } | { ok: false; error: string } {
+  if (!text) return { ok: true, value: {} };
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch (error) {
+    return { ok: false, error: sanitizeError(error) };
+  }
 }
 
 function applyQueryParams(url: URL, query?: Record<string, string | number | boolean | null | undefined>) {
@@ -117,7 +148,133 @@ function extractNextLinkFromHeaders(headers: Headers): string | undefined {
     }
   }
 
+  const structuredCandidates = [
+    headers.get("x-pagination"),
+    headers.get("x-paging"),
+    headers.get("pagination"),
+  ];
+
+  for (const candidate of structuredCandidates) {
+    if (!candidate || !candidate.trim()) continue;
+    try {
+      const parsed = JSON.parse(candidate);
+      const nextFromJson = extractNextLinkFromBody(parsed);
+      if (nextFromJson) return nextFromJson;
+    } catch {
+      // ignore
+    }
+  }
+
   return undefined;
+}
+
+function extractRowsFromBody(body: unknown): Record<string, unknown>[] {
+  if (Array.isArray(body)) {
+    return body.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null);
+  }
+
+  if (body && typeof body === "object") {
+    const obj = body as Record<string, unknown>;
+    const candidates = [obj.value, obj.data, obj.items, obj.results, obj.rows, obj.funcionarios, obj.employees];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) {
+        return candidate.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null);
+      }
+    }
+  }
+
+  return [];
+}
+
+function extractNextLinkFromBody(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+
+  const obj = body as Record<string, unknown>;
+  const candidates = [
+    obj.nextLink,
+    obj.next,
+    obj.next_link,
+    obj.nextlink,
+    obj["@odata.nextLink"],
+    obj["@odata.nextlink"],
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  // Deep search: some APIs return pagination objects like { pagination: { next: "..." } }
+  // or { links: { next: "..." } }.
+  const root = body as Record<string, unknown>;
+  const queue: Array<{ node: unknown; depth: number }> = [{ node: root, depth: 0 }];
+  const seen = new Set<unknown>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) break;
+    const { node, depth } = current;
+    if (!node || typeof node !== "object" || seen.has(node)) continue;
+    seen.add(node);
+    if (depth > 6) continue;
+
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (typeof value === "string") {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey.includes("next") && value.trim()) {
+          // Accept absolute URLs, relative URLs, or any string that looks like a paginator query
+          if (/^https?:\/\//i.test(value) || value.startsWith("/") || value.includes("skip") || value.includes("page")) {
+            return value.trim();
+          }
+        }
+      }
+
+      if (value && typeof value === "object") {
+        queue.push({ node: value, depth: depth + 1 });
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function employeeRowKey(row: Record<string, unknown>): string {
+  const idFuncionario = row["id_funcionario"];
+  if (typeof idFuncionario === "string" && idFuncionario.trim()) return `id_funcionario:${idFuncionario}`;
+  const id = row["id"];
+  if (typeof id === "string" && id.trim()) return `id:${id}`;
+  const cpf = row["cpf"];
+  if (typeof cpf === "string" && cpf.trim()) return `cpf:${cpf}`;
+  try {
+    return `json:${JSON.stringify(row)}`;
+  } catch {
+    return `obj:${String(row)}`;
+  }
+}
+
+function buildPagedQueryCandidates(pageSize: number, pageIndex: number): Array<Record<string, string | number>> {
+  const offset = Math.max(0, (pageIndex - 1) * pageSize);
+  return [
+    { $top: pageSize, $skip: offset },
+    { top: pageSize, skip: offset },
+    { $first: pageSize, $skip: offset },
+    { first: pageSize, skip: offset },
+    { limit: pageSize, offset },
+    { take: pageSize, skip: offset },
+    // ABP / common backends
+    { maxResultCount: pageSize, skipCount: offset },
+    // page-based
+    { page: pageIndex, pageSize },
+    { pageNumber: pageIndex, pageSize },
+    { page: pageIndex, per_page: pageSize },
+    { page: pageIndex, page_size: pageSize },
+    // Portuguese variants
+    { pagina: pageIndex, pageSize },
+    { pagina: pageIndex, tamanhoPagina: pageSize },
+    // start/count variants
+    { start: offset, count: pageSize },
+  ];
 }
 
 function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[] {
@@ -300,7 +457,55 @@ async function getConnectionConfig(
   };
 }
 
-serve(async (req) => {
+async function resolveLogCompanyId(
+  supabaseService: ReturnType<typeof createClient>,
+  userId: string,
+  requestedCompanyId?: string | null,
+): Promise<string | null> {
+  if (requestedCompanyId) return requestedCompanyId;
+
+  const { data: userCompanies } = await supabaseService
+    .from("user_companies")
+    .select("company_id, all_companies")
+    .eq("user_id", userId)
+    .limit(20);
+
+  const firstDirectCompany = (userCompanies || []).find((row: { company_id: string | null }) => row.company_id)?.company_id;
+  if (firstDirectCompany) return String(firstDirectCompany);
+
+  const hasAllCompanies = Boolean((userCompanies || []).some((row: { all_companies: boolean | null }) => row.all_companies === true));
+  if (hasAllCompanies) {
+    const { data: firstCompany } = await supabaseService
+      .from("companies")
+      .select("id")
+      .order("name", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (firstCompany?.id) return String(firstCompany.id);
+  }
+
+  // Fallback: try profiles.company_id (for super_admins without user_companies entries)
+  const { data: profile } = await supabaseService
+    .from("profiles")
+    .select("company_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profile?.company_id) return String(profile.company_id);
+
+  // Last resort: return first company alphabetically
+  const { data: anyCompany } = await supabaseService
+    .from("companies")
+    .select("id")
+    .order("name", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  return anyCompany?.id ? String(anyCompany.id) : null;
+}
+
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -349,6 +554,37 @@ serve(async (req) => {
     const connection = await getConnectionConfig(supabaseService, payload.connectionId);
     const candidateUrls = buildCandidateUrls(connection.baseUrl, payload);
 
+    const isEmployeesPath = Boolean(payload.path && normalizePath(payload.path) === "funcionarios");
+    const shouldLogSync = payload.logSync === true || (isEmployeesPath && payload.allPages === true);
+    const syncType = payload.syncType || "employees_api_proxy";
+    const nowIso = new Date().toISOString();
+
+    let syncLogId: string | null = null;
+    if (shouldLogSync) {
+      const resolvedLogCompanyId = await resolveLogCompanyId(supabaseService, user.id, payload.companyId || null);
+
+      const { data: createdLog } = await supabaseService
+        .from("sync_logs")
+        .insert({
+          company_id: resolvedLogCompanyId,
+          sync_type: syncType,
+          status: "running",
+          started_at: nowIso,
+          records_received: 0,
+          errors: {
+            path: payload.path || null,
+            connection_id: payload.connectionId || null,
+            all_pages: payload.allPages === true,
+            requested_company_id: payload.companyId || null,
+            resolved_company_id: resolvedLogCompanyId,
+          },
+        })
+        .select("id")
+        .maybeSingle();
+
+      syncLogId = createdLog?.id ? String(createdLog.id) : null;
+    }
+
     const upstreamHeaders: Record<string, string> = {
       Accept: "application/json",
       ...(connection.headersJson || {}),
@@ -363,7 +599,7 @@ serve(async (req) => {
     }
 
     let upstreamResponse: Response | null = null;
-    let lastBody: any = null;
+    let lastBody: unknown = null;
 
     for (const targetUrl of candidateUrls) {
       const response = await fetch(targetUrl, {
@@ -372,11 +608,227 @@ serve(async (req) => {
       });
 
       const text = await response.text();
-      const body = text ? JSON.parse(text) : {};
+      const parsed = safeParseJson(text);
+      const body = parsed.ok ? parsed.value : { raw_text: text, parse_error: parsed.error };
+
+      if (response.ok && !parsed.ok) {
+        if (syncLogId) {
+          await supabaseService
+            .from("sync_logs")
+            .update({
+              status: "error",
+              completed_at: new Date().toISOString(),
+              records_failed: 1,
+              errors: {
+                message: "Upstream retornou JSON inválido",
+                parse_error: parsed.error,
+                target_url: targetUrl,
+                raw_text_preview: String(text || "").slice(0, 4000),
+              },
+            })
+            .eq("id", syncLogId);
+        }
+
+        return new Response(
+          JSON.stringify({
+            error: "upstream_invalid_json",
+            parse_error: parsed.error,
+            raw_text_preview: String(text || "").slice(0, 4000),
+          }),
+          {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
 
       if (response.ok) {
+        const allPagesMode = payload.allPages === true;
+        const maxPages = Math.max(1, Math.min(Number(payload.maxPages || 200), 1000));
+
+        if (allPagesMode) {
+          let pagesFetched = 1;
+          let rowsReceived = 0;
+          const aggregatedRows = extractRowsFromBody(body);
+          rowsReceived += aggregatedRows.length;
+
+          const firstHeaderNext = extractNextLinkFromHeaders(response.headers);
+          const firstBodyNext = extractNextLinkFromBody(body);
+          let nextUrl = firstHeaderNext || firstBodyNext;
+          let hadNextLink = Boolean(nextUrl);
+
+          let usedOffsetFallback = false;
+          let chosenQueryForFallback: Record<string, string | number> | null = null;
+
+          // If no nextLink is provided but the first page looks capped (commonly 100),
+          // try offset/page-based pagination patterns.
+          if (!nextUrl && aggregatedRows.length > 0) {
+            const pageSize = aggregatedRows.length;
+            const seen = new Set<string>(aggregatedRows.map(employeeRowKey));
+
+            let pageIndex = 2;
+            while (pageIndex <= maxPages) {
+              const queryCandidates = chosenQueryForFallback
+                ? [chosenQueryForFallback]
+                : buildPagedQueryCandidates(pageSize, pageIndex);
+
+              let bestRows: Record<string, unknown>[] = [];
+              let bestQuery: Record<string, string | number> | null = null;
+
+              for (const query of queryCandidates) {
+                const urlObject = new URL(targetUrl);
+                applyQueryParams(urlObject, query);
+
+                const pageResponse = await fetch(urlObject.toString(), {
+                  method: "GET",
+                  headers: upstreamHeaders,
+                });
+
+                const pageText = await pageResponse.text();
+                const pageBody = pageText ? JSON.parse(pageText) : {};
+
+                if (!pageResponse.ok) {
+                  continue;
+                }
+
+                const pageRows = extractRowsFromBody(pageBody);
+                if (!pageRows.length) {
+                  continue;
+                }
+
+                let newCount = 0;
+                for (const row of pageRows) {
+                  const key = employeeRowKey(row);
+                  if (!seen.has(key)) newCount += 1;
+                }
+
+                if (newCount > 0) {
+                  bestRows = pageRows;
+                  bestQuery = query;
+                  break;
+                }
+              }
+
+              if (!bestRows.length || !bestQuery) {
+                break;
+              }
+
+              usedOffsetFallback = true;
+              chosenQueryForFallback = bestQuery;
+
+              for (const row of bestRows) {
+                const key = employeeRowKey(row);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                aggregatedRows.push(row);
+              }
+
+              rowsReceived = aggregatedRows.length;
+              pagesFetched += 1;
+              pageIndex += 1;
+            }
+          }
+
+          while (nextUrl && pagesFetched < maxPages) {
+            const normalizedNext = normalizeNextLink(nextUrl, connection.baseUrl);
+            const pageResponse = await fetch(normalizedNext, {
+              method: "GET",
+              headers: upstreamHeaders,
+            });
+
+            const pageText = await pageResponse.text();
+            const pageBody = pageText ? JSON.parse(pageText) : {};
+
+            if (!pageResponse.ok) {
+              if (syncLogId) {
+                await supabaseService
+                  .from("sync_logs")
+                  .update({
+                    status: "partial",
+                    completed_at: new Date().toISOString(),
+                    records_received: rowsReceived,
+                    records_failed: 1,
+                    errors: {
+                      message: "Falha em paginação allPages no dab-proxy",
+                      failed_status: pageResponse.status,
+                      pages_fetched: pagesFetched,
+                      had_next_link: hadNextLink,
+                    },
+                  })
+                  .eq("id", syncLogId);
+              }
+
+              return new Response(
+                JSON.stringify({
+                  error: "upstream_error",
+                  status: pageResponse.status,
+                  details: pageBody,
+                  data: aggregatedRows,
+                  meta: {
+                    partial: true,
+                    pages_fetched: pagesFetched,
+                    records_received: rowsReceived,
+                    had_next_link: hadNextLink,
+                  },
+                }),
+                {
+                  status: pageResponse.status,
+                  headers: { ...corsHeaders, "Content-Type": "application/json" },
+                },
+              );
+            }
+
+            const pageRows = extractRowsFromBody(pageBody);
+            aggregatedRows.push(...pageRows);
+            rowsReceived += pageRows.length;
+            pagesFetched += 1;
+
+            const pageHeaderNext = extractNextLinkFromHeaders(pageResponse.headers);
+            const pageBodyNext = extractNextLinkFromBody(pageBody);
+            nextUrl = pageHeaderNext || pageBodyNext;
+            if (nextUrl) hadNextLink = true;
+          }
+
+          if (syncLogId) {
+            await supabaseService
+              .from("sync_logs")
+              .update({
+                status: "success",
+                completed_at: new Date().toISOString(),
+                records_received: rowsReceived,
+                records_failed: 0,
+                errors: {
+                  pages_fetched: pagesFetched,
+                  had_next_link: hadNextLink,
+                  all_pages: true,
+                  max_pages: maxPages,
+                  pagination_mode: usedOffsetFallback ? "offset_fallback" : hadNextLink ? "next_link" : "none",
+                  fallback_query: usedOffsetFallback ? chosenQueryForFallback : null,
+                },
+              })
+              .eq("id", syncLogId);
+          }
+
+          return new Response(
+            JSON.stringify({
+              data: aggregatedRows,
+              meta: {
+                pages_fetched: pagesFetched,
+                records_received: rowsReceived,
+                had_next_link: hadNextLink,
+                all_pages: true,
+                pagination_mode: usedOffsetFallback ? "offset_fallback" : hadNextLink ? "next_link" : "none",
+              },
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+
         const headerNextLink = extractNextLinkFromHeaders(response.headers);
-        let normalizedBody: any = body;
+        let normalizedBody: unknown = body;
 
         if (Array.isArray(body)) {
           normalizedBody = {
@@ -400,6 +852,22 @@ serve(async (req) => {
           }
         }
 
+        if (syncLogId) {
+          await supabaseService
+            .from("sync_logs")
+            .update({
+              status: "success",
+              completed_at: new Date().toISOString(),
+              records_received: extractRowsFromBody(normalizedBody).length,
+              records_failed: 0,
+              errors: {
+                all_pages: false,
+                had_next_link: Boolean(headerNextLink || extractNextLinkFromBody(normalizedBody)),
+              },
+            })
+            .eq("id", syncLogId);
+        }
+
         return new Response(JSON.stringify(normalizedBody), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -412,6 +880,22 @@ serve(async (req) => {
       if (response.status !== 404) {
         break;
       }
+    }
+
+    if (syncLogId) {
+      await supabaseService
+        .from("sync_logs")
+        .update({
+          status: "error",
+          completed_at: new Date().toISOString(),
+          records_failed: 1,
+          errors: {
+            message: "Falha ao consultar upstream no dab-proxy",
+            status: upstreamResponse?.status || 502,
+            details: lastBody,
+          },
+        })
+        .eq("id", syncLogId);
     }
 
     return new Response(
