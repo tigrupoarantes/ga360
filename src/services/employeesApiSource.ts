@@ -460,6 +460,50 @@ function extractNextLink(response: DabPageResponse): string | undefined {
   return undefined;
 }
 
+async function fetchPageByOffsetWithFallback(
+  pageSize: number,
+  pageIndex: number,
+  connectionId?: string,
+): Promise<DabEmployee[]> {
+  const offset = Math.max(0, (pageIndex - 1) * pageSize);
+  const queryCandidates: Array<Record<string, string | number>> = [
+    { $first: pageSize, $skip: offset },
+    { first: pageSize, skip: offset },
+    { $top: pageSize, $skip: offset },
+    { top: pageSize, skip: offset },
+    { limit: pageSize, offset },
+    { page: pageIndex, pageSize },
+    { page: pageIndex, per_page: pageSize },
+  ];
+
+  let lastError: any = null;
+  for (const query of queryCandidates) {
+    try {
+      const response = await callDabProxy({
+        path: "funcionarios",
+        query,
+        ...(connectionId ? { connectionId } : {}),
+      });
+      const rows = extractPageEmployees(response);
+      if (rows.length > 0) {
+        return rows;
+      }
+    } catch (error: any) {
+      lastError = error;
+      const status = error?.status;
+      if (status === 401 || status === 403) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) {
+    trackEmployeesApiError(lastError?.status, "offset_pagination_failed", lastError?.details || lastError?.message);
+  }
+
+  return [];
+}
+
 export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promise<DabEmployee[]> {
   const employees: DabEmployee[] = [];
   let connectionId = await resolveEmployeesConnectionId();
@@ -467,6 +511,7 @@ export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promi
   let pageCount = 0;
   const visitedNextLinks = new Set<string>();
   let retriedWithoutConnection = false;
+  let usedOffsetFallback = false;
 
   do {
     let response: DabPageResponse;
@@ -503,6 +548,40 @@ export async function fetchEmployeesFromDab(pageSize = DEFAULT_PAGE_SIZE): Promi
 
     if (pageCount > MAX_PAGES) {
       throw new Error("Pagination limit exceeded while loading funcionarios from DAB");
+    }
+
+    // Alguns backends retornam 100 itens sem nextLink. Fallback por offset/página.
+    if (!nextLink && pageData.length >= pageSize && !usedOffsetFallback) {
+      usedOffsetFallback = true;
+
+      const seenIds = new Set<string>(
+        employees
+          .map((item) => item.id_funcionario)
+          .filter((value): value is string => Boolean(value)),
+      );
+
+      for (let fallbackPage = 2; fallbackPage <= MAX_PAGES; fallbackPage++) {
+        const rows = await fetchPageByOffsetWithFallback(pageSize, fallbackPage, connectionId);
+        if (!rows.length) {
+          break;
+        }
+
+        let added = 0;
+        for (const row of rows) {
+          const key = row.id_funcionario || `${row.cpf || ""}|${row.nome_funcionario || ""}`;
+          if (seenIds.has(key)) continue;
+          seenIds.add(key);
+          employees.push(row);
+          added += 1;
+        }
+
+        // Se nenhuma linha nova entrou, endpoint não aceitou paginação por offset.
+        if (added === 0) {
+          break;
+        }
+      }
+
+      break;
     }
   } while (nextLink);
 
