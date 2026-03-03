@@ -83,6 +83,12 @@ function normalizeText(value?: string | null) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function isMissingColumnError(err: unknown, columnName?: string) {
+  const msg = String((err as any)?.message || err || "").toLowerCase();
+  if (!msg.includes("column") || !msg.includes("does not exist")) return false;
+  return columnName ? msg.includes(String(columnName).toLowerCase()) : true;
+}
+
 function normalizeCompanyNameKey(value?: string | null) {
   const normalized = normalizeText(value)
     // Common upstream pattern: "RAZAO SOCIAL (6)" / "RAZAO SOCIAL - 6"
@@ -1068,6 +1074,7 @@ serve(async (req) => {
         company_id: string;
         full_name: string | null;
         is_active: boolean | null;
+        is_disabled: boolean | null;
         department: string | null;
         position: string | null;
         unidade: string | null;
@@ -1080,22 +1087,55 @@ serve(async (req) => {
     if (cpfsInPayload.length > 0) {
       const rowsToIndex: any[] = [];
 
-      if (canUseEmployeeSnapshots && scopeAsOfIso) {
+      let snapshotsAvailable = canUseEmployeeSnapshots && Boolean(scopeAsOfIso);
+
+      if (snapshotsAvailable) {
         for (const cpfChunk of chunkArray(cpfsInPayload, 500)) {
-          const { data: snapshotRows, error: snapshotError } = await supabase
-            .from("external_employee_snapshots")
-            .select(
-              "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
-            )
-            .in("cpf", cpfChunk)
-            .not("cpf", "is", null)
-            .neq("cpf", "")
-            .not("company_id", "is", null)
-            .lte("valid_from", scopeAsOfIso)
-            .or(`valid_to.is.null,valid_to.gt.${scopeAsOfIso}`);
+          // Try with is_disabled first; fall back if the column isn't present in older DBs.
+          let snapshotRows: any[] | null = null;
+          let snapshotError: any = null;
+
+          {
+            const attempt = await supabase
+              .from("external_employee_snapshots")
+              .select(
+                "company_id, cpf, full_name, is_active, is_disabled, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+              )
+              .in("cpf", cpfChunk)
+              .not("cpf", "is", null)
+              .neq("cpf", "")
+              .not("company_id", "is", null)
+              .lte("valid_from", scopeAsOfIso)
+              .or(`valid_to.is.null,valid_to.gt.${scopeAsOfIso}`);
+
+            snapshotRows = attempt.data || null;
+            snapshotError = attempt.error || null;
+          }
+
+          if (snapshotError && isMissingColumnError(snapshotError, "is_disabled")) {
+            const fallback = await supabase
+              .from("external_employee_snapshots")
+              .select(
+                "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+              )
+              .in("cpf", cpfChunk)
+              .not("cpf", "is", null)
+              .neq("cpf", "")
+              .not("company_id", "is", null)
+              .lte("valid_from", scopeAsOfIso)
+              .or(`valid_to.is.null,valid_to.gt.${scopeAsOfIso}`);
+
+            snapshotRows = fallback.data || null;
+            snapshotError = fallback.error || null;
+          }
 
           if (snapshotError) {
-            throw new Error(`Failed to load external_employee_snapshots: ${snapshotError.message}`);
+            // Snapshots schema may be outdated (missing columns) — fall back to external_employees.
+            console.warn("[sync-verbas] external_employee_snapshots query failed; falling back to external_employees.", {
+              message: String(snapshotError?.message || snapshotError),
+            });
+            snapshotsAvailable = false;
+            break;
           }
 
           rowsToIndex.push(...(snapshotRows || []));
@@ -1103,16 +1143,67 @@ serve(async (req) => {
 
         // Fallback: if snapshots are missing for some CPFs (e.g., backfill not applied yet),
         // load from external_employees so we can still resolve company_id by CPF.
-        const snapshotCpfSet = new Set(
-          (rowsToIndex || [])
-            .map((row) => normalizeCpf(row?.cpf))
-            .filter(Boolean) as string[],
-        );
-        const missingCpfs = cpfsInPayload.filter((cpf) => !snapshotCpfSet.has(cpf));
+        if (snapshotsAvailable) {
+          const snapshotCpfSet = new Set(
+            (rowsToIndex || [])
+              .map((row) => normalizeCpf(row?.cpf))
+              .filter(Boolean) as string[],
+          );
+          const missingCpfs = cpfsInPayload.filter((cpf) => !snapshotCpfSet.has(cpf));
 
-        if (missingCpfs.length > 0) {
-          for (const cpfChunk of chunkArray(missingCpfs, 500)) {
-            const { data: externalEmployees, error: externalEmployeesError } = await supabase
+          if (missingCpfs.length > 0) {
+            for (const cpfChunk of chunkArray(missingCpfs, 500)) {
+              const attempt = await supabase
+                .from("external_employees")
+                .select(
+                  "company_id, cpf, full_name, is_active, is_disabled, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+                )
+                .in("cpf", cpfChunk)
+                .not("cpf", "is", null)
+                .neq("cpf", "")
+                .not("company_id", "is", null);
+
+              if (attempt.error && isMissingColumnError(attempt.error, "is_disabled")) {
+                const fallback = await supabase
+                  .from("external_employees")
+                  .select(
+                    "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+                  )
+                  .in("cpf", cpfChunk)
+                  .not("cpf", "is", null)
+                  .neq("cpf", "")
+                  .not("company_id", "is", null);
+
+                if (fallback.error) {
+                  throw new Error(`Failed to load external_employees fallback: ${fallback.error.message}`);
+                }
+
+                rowsToIndex.push(...(fallback.data || []));
+                continue;
+              }
+
+              if (attempt.error) {
+                throw new Error(`Failed to load external_employees fallback: ${attempt.error.message}`);
+              }
+
+              rowsToIndex.push(...(attempt.data || []));
+            }
+          }
+        }
+      } else {
+        for (const cpfChunk of chunkArray(cpfsInPayload, 500)) {
+          const attempt = await supabase
+            .from("external_employees")
+            .select(
+              "company_id, cpf, full_name, is_active, is_disabled, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+            )
+            .in("cpf", cpfChunk)
+            .not("cpf", "is", null)
+            .neq("cpf", "")
+            .not("company_id", "is", null);
+
+          if (attempt.error && isMissingColumnError(attempt.error, "is_disabled")) {
+            const fallback = await supabase
               .from("external_employees")
               .select(
                 "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
@@ -1122,30 +1213,60 @@ serve(async (req) => {
               .neq("cpf", "")
               .not("company_id", "is", null);
 
-            if (externalEmployeesError) {
-              throw new Error(`Failed to load external_employees fallback: ${externalEmployeesError.message}`);
+            if (fallback.error) {
+              throw new Error(`Failed to load external_employees: ${fallback.error.message}`);
             }
 
-            rowsToIndex.push(...(externalEmployees || []));
+            rowsToIndex.push(...(fallback.data || []));
+            continue;
           }
+
+          if (attempt.error) {
+            throw new Error(`Failed to load external_employees: ${attempt.error.message}`);
+          }
+
+          rowsToIndex.push(...(attempt.data || []));
         }
-      } else {
+      }
+
+      // If snapshots are not usable, rebuild the index from external_employees only.
+      if (canUseEmployeeSnapshots && !snapshotsAvailable) {
+        rowsToIndex.length = 0;
         for (const cpfChunk of chunkArray(cpfsInPayload, 500)) {
-          const { data: externalEmployees, error: externalEmployeesError } = await supabase
+          const attempt = await supabase
             .from("external_employees")
             .select(
-              "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+              "company_id, cpf, full_name, is_active, is_disabled, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
             )
             .in("cpf", cpfChunk)
             .not("cpf", "is", null)
             .neq("cpf", "")
             .not("company_id", "is", null);
 
-          if (externalEmployeesError) {
-            throw new Error(`Failed to load external_employees: ${externalEmployeesError.message}`);
+          if (attempt.error && isMissingColumnError(attempt.error, "is_disabled")) {
+            const fallback = await supabase
+              .from("external_employees")
+              .select(
+                "company_id, cpf, full_name, is_active, department, position, unidade, accounting_group, contract_company_id, accounting_company_id",
+              )
+              .in("cpf", cpfChunk)
+              .not("cpf", "is", null)
+              .neq("cpf", "")
+              .not("company_id", "is", null);
+
+            if (fallback.error) {
+              throw new Error(`Failed to load external_employees: ${fallback.error.message}`);
+            }
+
+            rowsToIndex.push(...(fallback.data || []));
+            continue;
           }
 
-          rowsToIndex.push(...(externalEmployees || []));
+          if (attempt.error) {
+            throw new Error(`Failed to load external_employees: ${attempt.error.message}`);
+          }
+
+          rowsToIndex.push(...(attempt.data || []));
         }
       }
 
@@ -1158,6 +1279,7 @@ serve(async (req) => {
           company_id: employee.company_id,
           full_name: employee.full_name || null,
           is_active: employee.is_active ?? null,
+          is_disabled: employee.is_disabled ?? null,
           department: employee.department || null,
           position: employee.position || null,
           unidade: employee.unidade || null,
@@ -1174,6 +1296,7 @@ serve(async (req) => {
 
     let processed = 0;
     let failed = 0;
+    let ignored = 0;
     const errors: Array<Record<string, unknown>> = [];
     const reasonCounts = new Map<string, number>();
     const upsertRows: Array<Record<string, unknown>> = [];
@@ -1220,10 +1343,23 @@ serve(async (req) => {
 
         const employeesForCpf = employeesByCpf.get(cpf) || [];
 
+        // Only consider active employees (and not disabled). Unknown / inactive CPFs are ignored.
+        const activeEmployeesForCpf = employeesForCpf.filter((employee) => {
+          if (employee.is_active === false) return false;
+          if (employee.is_disabled === true) return false;
+          return true;
+        });
+
+        if (activeEmployeesForCpf.length === 0) {
+          ignored++;
+          continue;
+        }
+
         let employeeMatch = null as {
           company_id: string;
           full_name: string | null;
           is_active: boolean | null;
+          is_disabled: boolean | null;
           department: string | null;
           position: string | null;
           unidade: string | null;
@@ -1231,44 +1367,50 @@ serve(async (req) => {
           contract_company_id: string | null;
           accounting_company_id: string | null;
         } | null;
-        let companyId =
-          item.company_id ||
-          mappedCompany?.id ||
-          mappedCompanyByName?.id ||
-          mappedCompanyByNameFuzzy?.id ||
-          fallbackCompany?.id ||
-          null;
 
-        if (!companyId && employeesForCpf.length === 1) {
-          employeeMatch = employeesForCpf[0];
-          companyId = employeeMatch.company_id;
-        }
+        // Prefer matching the requested scope (when present) using the accounting company dimension.
+        if (body.company_id) {
+          employeeMatch =
+            activeEmployeesForCpf.find((employee) => employee.accounting_company_id === body.company_id) ||
+            activeEmployeesForCpf.find((employee) => employee.company_id === body.company_id) ||
+            null;
 
-        if (!companyId && employeesForCpf.length > 1) {
-          const activeMatches = employeesForCpf.filter((employee) => employee.is_active !== false);
-          const distinctActiveCompanyIds = [...new Set(activeMatches.map((employee) => employee.company_id))];
+          if (!employeeMatch) {
+            // Out of scope; treat as ignored to avoid polluting company partitions.
+            ignored++;
+            continue;
+          }
+        } else if (activeEmployeesForCpf.length === 1) {
+          employeeMatch = activeEmployeesForCpf[0];
+        } else {
+          // If multiple active rows exist for a CPF, try to disambiguate by company mapping from payload.
+          const mappedCompanyId =
+            item.company_id ||
+            mappedCompany?.id ||
+            mappedCompanyByName?.id ||
+            mappedCompanyByNameFuzzy?.id ||
+            fallbackCompany?.id ||
+            null;
 
-          if (distinctActiveCompanyIds.length === 1) {
-            employeeMatch = activeMatches.find((employee) => employee.company_id === distinctActiveCompanyIds[0]) || null;
-            companyId = distinctActiveCompanyIds[0];
+          if (mappedCompanyId) {
+            employeeMatch =
+              activeEmployeesForCpf.find((employee) => employee.accounting_company_id === mappedCompanyId) ||
+              activeEmployeesForCpf.find((employee) => employee.company_id === mappedCompanyId) ||
+              null;
+          }
+
+          if (!employeeMatch) {
+            // Ambiguous CPF across companies; ignore to avoid wrong attribution.
+            ignored++;
+            continue;
           }
         }
 
+        // Align payroll event partition with accounting company (QLP model).
+        const companyId = employeeMatch.accounting_company_id || employeeMatch.company_id;
         if (!companyId) {
-          throw new Error(
-            `Empresa não encontrada (company_id/company_external_id/CPF/razao_social). CPF=${cpf}, razao_social=${String(item.razao_social || "").slice(0, 80)}`,
-          );
-        }
-
-        if (body.company_id && companyId !== body.company_id) {
-          throw new Error("Empresa fora do filtro selecionado");
-        }
-
-        if (!employeeMatch && employeesForCpf.length) {
-          employeeMatch =
-            employeesForCpf.find((employee) => employee.company_id === companyId && employee.is_active !== false) ||
-            employeesForCpf.find((employee) => employee.company_id === companyId) ||
-            null;
+          ignored++;
+          continue;
         }
 
         const requiredDepartment = normalizeText(body.department);
@@ -1287,19 +1429,13 @@ serve(async (req) => {
           }
         }
 
-        const resolvedCompany =
-          companyById.get(companyId) ||
-          mappedCompany ||
-          mappedCompanyByName ||
-          mappedCompanyByNameFuzzy ||
-          fallbackCompany ||
-          null;
+        const resolvedCompany = companyById.get(companyId) || null;
 
         const employeeSnapshotAtIso = getCompetenciaAsOfIso(Number(ano), Number(mes));
 
         upsertRows.push({
           company_id: companyId,
-          razao_social: item.razao_social || resolvedCompany?.name || "SEM_RAZAO_SOCIAL",
+          razao_social: resolvedCompany?.name || item.razao_social || "SEM_RAZAO_SOCIAL",
           cpf,
           nome_funcionario: (item.nome_funcionario || item.nome || employeeMatch?.full_name || "NOME_NAO_INFORMADO").trim(),
           employee_department: employeeMatch?.department || null,
@@ -1337,18 +1473,28 @@ serve(async (req) => {
 
     if (replaceScope && scopeYear) {
       const scopedCompanies = [...new Set(rowsToPersist.map((row) => String(row.company_id || "")).filter(Boolean))];
+      const isGlobalScope = !body.company_id && !body.department && !body.position;
 
-      if (scopedCompanies.length > 0) {
-        let deleteScopeQuery = supabase
-          .from("payroll_verba_events")
-          .delete()
-          .in("company_id", scopedCompanies)
-          .eq("ano", scopeYear);
+      let deleteScopeQuery = supabase
+        .from("payroll_verba_events")
+        .delete()
+        .eq("ano", scopeYear);
 
-        if (scopeMonth) {
-          deleteScopeQuery = deleteScopeQuery.eq("mes", scopeMonth);
+      if (scopeMonth) {
+        deleteScopeQuery = deleteScopeQuery.eq("mes", scopeMonth);
+      }
+
+      // If global scope, wipe the whole year/month to avoid stale rows from older attribution rules.
+      // If scoped, only wipe affected companies.
+      if (!isGlobalScope) {
+        if (scopedCompanies.length === 0) {
+          deleteScopeQuery = null as any;
+        } else {
+          deleteScopeQuery = deleteScopeQuery.in("company_id", scopedCompanies);
         }
+      }
 
+      if (deleteScopeQuery) {
         const { error: deleteScopeError } = await deleteScopeQuery;
         if (deleteScopeError) {
           throw new Error(`Failed to reconcile payroll rows (delete scope): ${deleteScopeError.message}`);
@@ -1401,6 +1547,7 @@ serve(async (req) => {
         received: records.length,
         processed,
         failed,
+        ignored,
         upserted: rowsToPersist.length,
         deduplicated: upsertRows.length - dedupedUpsertRows.length,
         replace_scope: replaceScope,
@@ -1417,6 +1564,7 @@ serve(async (req) => {
         received: records.length,
         processed,
         failed,
+        ignored,
         upserted: rowsToPersist.length,
         deduplicated: upsertRows.length - dedupedUpsertRows.length,
         duration_ms: Date.now() - startedAt,

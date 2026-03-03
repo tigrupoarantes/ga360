@@ -1,7 +1,7 @@
 # GA 360 — Product Requirements Document (PRD)
 
-> **Versão:** 1.1  
-> **Última atualização:** 2026-02-25  
+> **Versão:** 1.2  
+> **Última atualização:** 2026-03-03  
 > **Produto:** GA 360 (CRESCER+)  
 > **Organização:** Grupo Arantes  
 > **Status:** Em produção
@@ -10,16 +10,11 @@
 
 ## 1. Visão Geral do Produto
 
-### 1.0 Atualizações recentes (produção)
+### 1.1 Descrição (como está no app hoje)
 
-- **Governança EC:** automatização de permissões granulares de visualização por card ao habilitar módulo `governanca` para um usuário.
-- **Governança EC:** backfill para usuários já existentes e propagação automática para novos cards ativos.
-- **Controle PJ:** disponibilizados scripts operacionais de sincronização (`external_employees` → `pj_contracts`) e limpeza segura por empresa.
-- **Estabilidade de acesso:** ajuste de fallback no frontend para evitar tela vazia em onboarding de novos usuários com governança habilitada.
+GA 360 é um portal corporativo (web) para **gestão de reuniões**, **tarefas derivadas de reuniões**, **processos recorrentes**, **OKRs**, **Metas** e **Governança EC** (cards do Escritório Central), com recursos de **IA opcionais** (transcrição/ATA/relatórios/copiloto de metas) acionados via Supabase Edge Functions.
 
-### 1.1 Descrição
-
-GA 360 é um portal corporativo para gerenciamento do **Planejamento Estratégico anual**, centralizando reuniões, processos, tarefas e execução de Trade Marketing, com IA integrada para transcrição e geração automática de ATA (minutas) inteligentes. Projetado para CEOs, diretores e gerentes do Grupo Arantes, fornece controles configuráveis pelo CEO, dashboards executivos e operacionais, e trails de auditoria completos.
+O app é **multi-empresa** (seletor no topo) e opera com **permissões por módulo** (RBAC) e, dentro de Governança EC, com **permissões por card** (ex.: QLP, Controle PJ, VERBAS, Auditoria de Estoque).
 
 ### 1.2 Público-alvo
 
@@ -33,7 +28,7 @@ GA 360 é um portal corporativo para gerenciamento do **Planejamento Estratégic
 
 ### 1.3 Proposta de Valor
 
-Uma plataforma **100% configurável pelo CEO** que une rituais de governança (reuniões e processos) a execução operacional e auditoria de campo, com IA que transforma áudio em transcrição, identifica decisões/ações e gera ATAs aprováveis automaticamente — reduzindo tempo de registro, aumentando aderência e garantindo rastreabilidade.
+Unificar rituais (reuniões/processos) e execução (tarefas/metas) em um único lugar, com rastreabilidade e automações (convites/lembranças) e **IA sob configuração** para reduzir trabalho manual em transcrição/ATA/relatórios e acelerar análise gerencial.
 
 ---
 
@@ -42,130 +37,122 @@ Uma plataforma **100% configurável pelo CEO** que une rituais de governança (r
 ### 2.1 Must Have (Essenciais)
 
 #### Autenticação e Autorização
-- Login por e-mail + senha; recuperação e primeiro acesso com definição de senha
-- Gestão de perfis (`super_admin`, `ceo`, `diretor`, `gerente`, `colaborador`) com RBAC configurável pelo CEO
-- Permissões granulares por módulo (CRUD por sistema: dashboard, meetings, tasks, processes, trade, reports, admin, governança, calendar)
-- Sessões JWT com refresh; sistema de convites com token
-- 2FA via e-mail e WhatsApp (implementado, temporariamente desabilitado)
+- Login por e-mail + senha
+- Recuperação de senha (`/reset-password`) e alteração de senha (`/change-password`)
+- RBAC por perfil: `super_admin`, `ceo`, `diretor`, `gerente`, `colaborador`
+- Permissões por módulo/ação (ex.: `metas:view/create/edit/delete`, `admin:view`), aplicadas via `ProtectedRoute`/`RoleGuard`
+- Multi-empresa com seletor global e isolamento por empresa via políticas (RLS no Supabase)
+- Convites por e-mail com token (Admin → Configurações → Convites)
+- 2FA (código via e-mail ou WhatsApp) existe no backend, porém **está bypassado no frontend por flag** (`SKIP_2FA_TEMPORARILY=true`)
 
 #### Reuniões
-- Listagem filtrável (tipo, data, área, status)
-- Criação de reunião: tipo, participantes, área, data/hora, tópico vinculado, pautas padrão editáveis, recorrência
-- Configuração de IA por reunião (transcrição obrigatória / opcional / desativada)
-- Execução de reunião: marcar pautas (Feito/Não Feito), comentários, adicionar pautas
-- Gravação áudio via browser (MediaRecorder) e upload seguro
-- Transcrição automática (ElevenLabs Scribe / serviço STT) e revisão antes de encerrar
-- Geração automática de ATA inteligente (resumo, decisões, tarefas, prazos, responsáveis) via LLM
-- Aprovação de ATA, geração de PDF e armazenamento no histórico
-- Histórico completo (transcrição, ATA, pautas, tarefas, presenças, revisões)
-- Salas de reunião com links de plataformas (Teams, Zoom, Google Meet, etc.)
-- Confirmação de presença via e-mail com token
+- Listagem e criação de reuniões, com sala (meeting room) e área
+- Pautas (agenda) vinculadas à reunião, com marcação de concluída
+- Participantes: adicionar/remover; marcar presença; fluxo de **confirmação de presença** via link com token (`/confirm-attendance`)
+- Execução de reunião (`/reunioes/:id/executar`) com status e controle de finalização
+- Modos de IA por reunião (`ai_mode`): quando **Obrigatório**, não permite finalizar sem transcrição salva
+- Transcrição:
+	- **Tempo real** via ElevenLabs Scribe (token via função `elevenlabs-scribe-token`)
+	- **Upload de gravação** e transcrição via OpenAI Whisper (função `transcribe-meeting`)
+- ATA: geração via OpenAI (função `generate-ata`) a partir da transcrição salva; cria ATA em `meeting_atas` e tarefas em `meeting_tasks`
+- Visualização de ATA (viewer) dentro do módulo de Reuniões
 
 #### Tarefas
-- Criação/atribuição com nome, descrição, responsável, prazo, prioridade, categoria
-- Vista de lista com filtros (área, prazo, status, responsável)
-- Detalhe de tarefa com histórico, comentários, anexos, vínculo a reunião/processo/trade/governança
+- CRUD e acompanhamento de tarefas **do tipo `meeting_tasks`** (geradas da ATA e/ou criadas manualmente)
+- Lista com filtros por status, prioridade e busca por texto
+- Marcação rápida de concluída/reaberta
+- Vínculo com reunião (exibe dados da reunião relacionada)
 
 #### Processos
-- Criação e execução de processos com frequência, checklists, responsáveis, anexos
-- Execução com marcação de itens, comentários e criação de tarefas
-- Histórico e linha do tempo de execuções
+- Gestão de processos recorrentes por empresa (Dashboard / Lista / Histórico)
+- Execução e histórico (conforme componentes `ProcessDashboard`, `ProcessList`, `ProcessExecutionHistory`)
 
-#### Dashboards e KPIs
-- Dashboard executivo: visão consolidada com filtros por período e unidade/área
-- Dashboard pessoal: tarefas atribuídas, próximos rituais, reuniões pendentes
-- KPI cards (reuniões, tarefas, processos, aderência)
-- Gráficos e visualizações por área
+#### Dashboards
+- Dashboard Executivo (`/dashboard`) com KPIs básicos (reuniões do mês, tarefas concluídas/atrasadas) e próximas reuniões
+- Dashboard Pessoal (`/dashboard/me`)
+- Área de gráficos de KPIs existe como **placeholder** ("em desenvolvimento")
 
 #### Calendário
-- Calendário corporativo com reuniões, processos e deadlines
-- Vista mensal com indicadores visuais por tipo
+- Calendário com visão mensal e eventos (módulo `Calendar`)
 
 #### Trade Marketing
-- Gestão de indústrias, materiais e movimentações de estoque
-- Dashboard de inventário com balanço em tempo real
-- Auditorias com checklist, fotos, comentários, score (parcialmente implementado)
+- Inventário: Dashboard e gestão operacional (componente `InventoryDashboard`)
+- Auditorias/PDV/Relatórios: **abas existentes, porém conteúdo está em desenvolvimento (placeholder)**
 
 #### OKRs
-- Objetivos hierárquicos com nível, datas, progresso
-- Key Results vinculados com meta/atual/início, peso
-- Histórico de atualizações de KRs
+- Dashboard e lista de objetivos por empresa
 
-#### Governança EC (Estratégia Corporativa)
-- Áreas de governança (Governança, Financeiro, Pessoas & Cultura, Jurídico, Auditoria)
-- Cards de governança com periodicidade, checklists, campos manuais, escopo
-- Registros mensais/periódicos com workflow de status
-- Permissões por card (view/fill/review/manage)
-- Seed automático de `can_view` por card para usuários com módulo governança ativo
-- Tarefas vinculadas a cards/registros
-- Comentários e evidências (arquivos/links)
-- Integração com Datalake externo para dados automatizados
+#### Governança EC (Escritório Central)
+- Home (`/governanca-ec`) com dashboard de cards/áreas
+- Áreas (`/governanca-ec/:areaSlug`) e detalhe de card (`/governanca-ec/:areaSlug/:cardId`)
+- Permissões **por card** (hook `useCardPermissions`) aplicadas em páginas especiais
+- Integração com Datalake/SQL Server via Edge Functions (`dab-proxy`, `execute-datalake-query`) para consultas e sincronizações
+- Páginas especiais sob Pessoas & Cultura (todas com checagem de permissão por card):
+	- QLP (`/governanca-ec/pessoas-cultura/qlp`)
+	- Controle PJ (`/governanca-ec/pessoas-cultura/controle-pj` + detalhe por contrato)
+	- VERBAS (`/governanca-ec/pessoas-cultura/verbas`) com consulta segura e opção de mascaramento
+- Auditoria: Auditoria de Estoque (`/governanca-ec/auditoria/estoque`) com wizard + histórico
 
 #### Pessoas & Cultura — Controle PJ
-- Gestão de contratos PJ com fechamento por competência
-- Banco de folgas, logs de e-mail e geração de holerite
-- Sincronização de base PJ via `external_employees`
-- Procedimento de reset seguro por empresa para operação e treinamentos
+- Gestão de contratos PJ (CRUD), por empresa
+- Fechamentos por competência (status, itens adicionais, logs)
+- Banco de folgas (eventos) e saldo
+- Geração de holerite (PDF) e envio por e-mail via Edge Functions (`generate-pj-payslip`, `send-pj-payslip-email`)
+- Sincronizações operacionais via funções (`sync-employees`, `create-users-from-employees`) e scripts de migração (ver pasta `docs/migration/`)
 
 #### Auditoria de Estoque (Stock Audit)
-- Wizard completo: seleção de unidade → upload de base → geração de amostra → checklist de contagem → finalização → relatório
-- Contagem cega, recontagem, causa raiz
-- Fotos como evidência
+- Wizard de auditoria e histórico
+- Relatório gerado via Edge Function (`generate-stock-audit-report`) e visualização/envio no fluxo
 
 #### Gamificação
-- Leaderboard, badges, perfil de pontos
-- Histórico de pontuações e níveis
-- Condições configuráveis para badges
+- Página e componentes do módulo (leaderboard/perfil/pontos), conforme implementação atual
 
 #### Analytics
-- Filtros por data, empresa, área
-- KPIs consolidados, análise de reuniões, tarefas e participação
+- Filtros por período, empresa e área
+- KPIs e visões detalhadas (Reuniões, Tarefas, Participação)
 
 #### Relatórios
-- Assistente IA para geração de relatórios (via OpenAI)
-- Visualizador e exportação em PDF
-- Biblioteca de exemplos de prompts
+- Assistente de IA para geração de relatórios (Edge Function `generate-report`), usando OpenAI configurado em `system_settings`
+- Visualizador de relatório e exportação em PDF (jsPDF)
 
-#### Administração (CEO)
-- Gestão de usuários (criar/editar/inativar), importação CSV
-- Gestão de áreas hierárquicas (árvore)
-- Gestão de empresas (multi-company)
-- Permissões granulares por módulo
-- Gestão de empregados externos (sincronização com sistemas de RH)
-- Configurações: email SMTP, OpenAI, WhatsApp, Stock Audit
-- Governança EC: CRUD de cards, conexões datalake, queries, bindings
-- Bug reports
-- Logs e auditoria
+#### Administração
+- Hub de administração (`/admin`) com:
+	- Estrutura Organizacional (`/admin/estrutura`)
+	- Áreas (`/admin/areas`)
+	- Usuários (`/admin/users`) + importação CSV (`import-users`)
+	- Empresas (`/admin/empresas`)
+	- Permissões (`/admin/permissions`)
+	- Funcionários Externos (`/admin/employees`) e conversão em usuários
+	- Governança EC (admin) (`/admin/governanca-ec`) e Integração Datalake (`/admin/datalake`)
+	- Bugs (`/admin/bugs`)
+	- Configurações (`/admin/settings`): Convites, SMTP, WhatsApp, Auditoria, IA (OpenAI/Gemini) e Geral (alguns toggles desabilitados)
 
 #### Notificações
-- Notificações por e-mail para convites, reuniões, confirmação de presença
-- Lembretes de reunião automatizados
-- Notificações WhatsApp (configurável)
+- Confirmação de presença: envio de e-mail via Resend (`send-attendance-confirmation`)
+- Lembretes de reunião: rotina via Edge Function (`send-meeting-reminders`) com envio via Resend; WhatsApp opcional via `send-whatsapp-reminder` quando habilitado
+- Convites de usuários por e-mail via SMTP (função `send-invite`) usando configuração em `system_settings`
 
 #### Segurança e Conformidade
-- Criptografia TLS, logs de auditoria, LGPD compliance
-- RLS (Row Level Security) no Supabase para isolamento de dados por empresa
-- Controle de acesso por empresa (`user_companies` com flag `all_companies`)
+- Autenticação via Supabase Auth
+- Políticas de isolamento por empresa via RLS no Supabase (quando aplicável)
+- Uso de Service Role nas Edge Functions para operações administrativas/integrações
 
 #### Performance
-- Paginação, lazy-loading, virtualização de listas
-- Cache de consultas com React Query
+- Cache de consultas via React Query
 
 #### Responsividade
-- Suporte para desktop e tablet
-- Navegação mobile com menu hamburger
+- Layout responsivo com menu mobile no header
 
 ---
 
 ### 2.2 Should Have (Importantes, mas não bloqueadores)
 
-- Integração com calendários (Google Calendar, Outlook) para sincronização
-- Integração com Zoom/Teams para importar gravações e links de reunião
-- Search global (transcrições, ATAs, tarefas) com filtro por data/autor
+- Integração com calendários (Google/Outlook) para sincronização
+- Search global funcional (o campo de busca existe no header, mas ainda não executa buscas)
 - WebSocket/real-time updates para status de reuniões e tarefas
-- Controle de versão de ATAs e histórico de edits
+- Controle de versão de ATAs e histórico de edições
 - Export avançado (PowerPoint, pack de relatórios customizados)
-- MFA/SSO (SAML/SSO Azure AD)
+- MFA/SSO (SAML/Azure AD)
 
 ### 2.3 Could Have (Desejáveis)
 
@@ -209,21 +196,22 @@ Uma plataforma **100% configurável pelo CEO** que une rituais de governança (r
 
 ### 4.1 Navegação Principal
 
-**Layout:** Top bar horizontal (AppleNav) com dropdown para sub-menus.
+**Layout atual:** header fixo (AppleNav) + barra fixa de seletor de empresa.
 
-| Item | Rota | Subitens |
+| Item | Rota | Observações |
 |------|------|----------|
-| Dashboard | `/dashboard` | Dashboard Executivo, Dashboard Pessoal (`/dashboard/me`) |
-| Reuniões | `/reunioes` | Lista de Reuniões, Calendário (`/calendario`) |
-| Processos | `/processos` | — |
-| Tarefas | `/tarefas` | — |
-| OKRs | `/okrs` | — |
-| Governança | `/governanca-ec` | Áreas (`/:areaSlug`), Cards (`/:areaSlug/:cardId`), QLP, Stock Audit |
-| Trade | `/trade` | — |
-| Analytics | `/analytics` | — |
+| Dashboard | `/dashboard` | Inclui `/dashboard/me` |
+| Reuniões | `/reunioes` | Inclui `/calendario` e execução `/reunioes/:id/executar` |
+| Processos | `/processos` | Por empresa |
+| Tarefas | `/tarefas` | `meeting_tasks` |
+| OKRs | `/okrs` | Por empresa |
+| Metas | `/metas` | Requer permissão `metas:view` |
+| Governança EC | `/governanca-ec` | Áreas/cards e páginas especiais (QLP/Controle PJ/VERBAS/Stock Audit) |
+| Trade | `/trade` | Inventário ok; outras abas placeholder |
+| Analytics | `/analytics` | KPIs e análises |
 | Gamificação | `/gamificacao` | — |
-| Relatórios | `/relatorios` | — |
-| Admin *(CEO)* | `/admin` | Estrutura, Áreas, Usuários, Empresas, Permissões, Configurações, Empregados, Governança EC, Datalake, Bugs |
+| Relatórios | `/relatorios` | IA + export PDF |
+| Admin | `/admin` | Requer `admin:view` e role (super_admin/ceo/diretor) |
 
 ### 4.2 Páginas Públicas (sem autenticação)
 
@@ -234,83 +222,78 @@ Uma plataforma **100% configurável pelo CEO** que une rituais de governança (r
 | `/change-password` | Alteração de senha |
 | `/confirm-attendance` | Confirmação de presença em reunião via e-mail |
 
+### 4.3 Páginas Autenticadas (outras)
+
+| Rota | Descrição |
+|------|-----------|
+| `/profile` | Perfil do usuário |
+| `*` | NotFound |
+
 ---
 
 ## 5. Design e Interações
 
-### 5.1 Paleta de Cores
+### 5.1 Design System
 
-| Uso | Cor | Hex |
-|-----|-----|-----|
-| Primária | Azul Marinho | `#0B3D91` |
-| Secundária | Verde-escuro/Teal | `#007A7A` |
-| Accent | Âmbar/Ouro | `#FFB400` |
-| Background | Branco | `#FFFFFF` |
-| Background Alt | Cinza Claro | `#F6F7F9` |
-| Texto secundário | Cinza Médio | `#A3A7AF` |
-| Texto primário | Preto Suave | `#1F2933` |
-| Erro/Atenção | Vermelho | `#E53935` |
-
-> **Nota:** A implementação atual usa shadcn/ui com Tailwind CSS e suporta dark/light mode via `next-themes`.
+- UI construída com **shadcn/ui + Tailwind CSS**, com temas light/dark via `next-themes`
+- Cores e tokens vêm de **CSS variables/Tailwind theme** (sem tabela fixa de hex no PRD, pois o tema é configurável)
+- Header fixo com estilo “glass” e menu mobile (hamburger)
 
 ### 5.2 Tipografia
 
-- **Primária:** Inter (via shadcn/ui defaults)
-- **Headings:** Inter SemiBold
-- **Body:** Inter Regular
+- Tipografia padrão do stack (shadcn/ui)
 
 ### 5.3 Princípios de Animação
 
 - Duração curta e consistente; respeitar `prefers-reduced-motion`
 - `transform` + `opacity` para composições GPU-accelerated
-- Feedback imediato via toast (Sonner) + undo para ações destrutivas
-- Progressive disclosure: expandir detalhes sob demanda
+- Feedback imediato via toast (Sonner)
+- Progressive disclosure: expandir detalhes sob demanda (quando aplicável)
 
 ### 5.4 Padrões de Interação
 
 - Navegação top-bar fixa com contexto constante
-- Botão "Criar" contextual por módulo
-- Inline editing para ATAs e pautas (click-to-edit)
-- Modais para CRUD de entidades
-- Bulk actions em listas com checkbox
-- Inline validation e loaders para ações longas
+- Ações principais contextuais por módulo (ex.: criar/editar/executar)
+- Edição e revisão de conteúdo (pautas/transcrições/ATA) conforme disponibilidade na tela
+- Diálogos/modais e formulários para CRUD de entidades
+- Validações e loaders durante operações assíncronas
 
 ---
 
-## 6. Roadmap
+## 6. Roadmap (baseado no estado atual)
 
-### Fase 1 — MVP ✅ (Amplamente implementado)
+### Estado Atual — Em produção
 
-| Módulo | Status |
-|--------|--------|
-| Autenticação + RBAC + Permissões granulares | ✅ Completo |
-| Reuniões (criação, execução, IA, ATA, PDF) | ✅ Completo |
-| Tarefas (CRUD, filtros, vínculo) | ✅ Completo |
-| Processos (CRUD, execução, histórico) | ✅ Completo |
-| Dashboards (executivo + pessoal) | ✅ Completo |
-| Calendário corporativo | ✅ Completo |
-| OKRs | ✅ Completo |
-| Governança EC + Stock Audit | ✅ Completo |
-| Governança EC — Auto-seed de permissões por card | ✅ Completo |
-| Gamificação | ✅ Completo |
-| Analytics | ✅ Completo |
-| Relatórios IA | ✅ Completo |
-| Admin (usuários, áreas, empresas, config) | ✅ Completo |
-| Trade Marketing — Inventário | ✅ Completo |
-| Trade Marketing — Auditorias, PDV, Relatórios | ⏳ Placeholder |
-| 2FA | ⏳ Implementado, desabilitado |
-| Notificações e-mail/WhatsApp | ✅ Completo |
+| Módulo | Status no app |
+|--------|--------------|
+| Auth + RBAC + permissões por módulo | ✅ Implementado |
+| 2FA (email/WhatsApp) | ⚠️ Backend ok; **bypass no frontend** |
+| Reuniões (agenda, participantes, execução) | ✅ Implementado |
+| Transcrição (ElevenLabs real-time / OpenAI Whisper via upload) | ✅ Implementado (depende de configuração/keys) |
+| ATA via OpenAI + geração de tarefas | ✅ Implementado (depende de configuração/keys) |
+| Tarefas (meeting_tasks) | ✅ Implementado |
+| Processos (dashboard/lista/histórico) | ✅ Implementado |
+| Dashboards | ✅ KPIs básicos; 📌 gráficos ainda placeholder |
+| Calendário | ✅ Implementado |
+| OKRs | ✅ Implementado |
+| Metas (goals/atividades/updates) + copiloto IA | ✅ Implementado (IA depende de configuração) |
+| Governança EC + permissões por card | ✅ Implementado |
+| QLP / Controle PJ / VERBAS / Stock Audit | ✅ Implementado (com checagem por card) |
+| Relatórios IA + export PDF | ✅ Implementado (IA depende de configuração) |
+| Admin (usuários/empresas/permissões/config/empregados externos/datalake/bugs) | ✅ Implementado |
+| Trade — Inventário | ✅ Implementado |
+| Trade — Auditorias/PDV/Relatórios | ⏳ Em desenvolvimento (placeholder) |
+| Notificações e-mail (Resend/SMTP) | ✅ Implementado (depende de secrets) |
+| WhatsApp (Twilio/Evolution) | ✅ Funções existentes; UI de configuração existe; uso depende de habilitação |
 
-### Fase 2 — Melhorias (Próxima)
+### Próximas Melhorias (alinhadas ao backlog real)
 
-- Integração SSO (Azure AD), calendar sync (Google/Outlook)
-- Streaming de transcrição em tempo real (WebSocket)
-- Trade Marketing: auditorias completas, PDV, relatórios de campo
-- Kanban + bulk actions para tarefas
-- Relatórios customizáveis e agendáveis
-- Notificações real-time via WebSocket
-- Search full-text em transcrições/ATAs
-- Versionamento avançado de ATAs
+- Search global funcional (tarefas/reuniões/transcrições/ATAs)
+- Trade Marketing: concluir Auditorias/PDV/Relatórios
+- Evoluir gráficos/KPIs do Dashboard (remover placeholder)
+- Melhorar fluxo de 2FA (reativar no frontend, UX e persistência de sessão)
+- SSO/MFA corporativo (Azure AD) e calendar sync
+- Versionamento de ATA e histórico de edições
 
 ### Fase 3 — Visão de Longo Prazo
 
@@ -328,7 +311,7 @@ Uma plataforma **100% configurável pelo CEO** que une rituais de governança (r
 | Métrica | Meta |
 |---------|------|
 | Aderência a rituais (reuniões realizadas vs planejadas) | > 90% |
-| Tempo médio de geração de ATA | < 2 min (com IA) |
+| Tempo médio de geração de ATA | Meta operacional (quando IA habilitada) |
 | Tarefas concluídas no prazo | > 80% |
 | Adoção da plataforma (usuários ativos/mês) | 100% dos perfis cadastrados |
 | Latência p95 de dashboard | < 500ms |
@@ -336,4 +319,4 @@ Uma plataforma **100% configurável pelo CEO** que une rituais de governança (r
 
 ---
 
-*Documento atualizado conforme estado atual de produção e migrações aplicadas até 2026-02-25.*
+*Documento atualizado conforme o estado do frontend (`src/`) e Edge Functions (`supabase/functions/`) em 2026-03-03.*

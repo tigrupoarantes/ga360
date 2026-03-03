@@ -47,6 +47,15 @@ function normalizeDigits(value: unknown) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  if (chunkSize <= 0) return [items];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 function resolveAccountingGroupLabel(employee: any) {
   const metadataCode = normalizeDigits(employee?.metadata?.cod_contabilizacao);
   if (metadataCode && ACCOUNTING_CODE_TO_NAME[metadataCode]) {
@@ -83,6 +92,11 @@ function isSchemaExposureError(error: any) {
 function isMissingColumnError(error: any) {
   const message = normalizeErrorMessage(error);
   return message.includes("column") && message.includes("does not exist");
+}
+
+function isMissingSpecificColumn(error: any, columnName: string) {
+  const message = normalizeErrorMessage(error);
+  return isMissingColumnError(error) && message.includes(String(columnName).toLowerCase());
 }
 
 function buildVerbasQuery(
@@ -559,12 +573,93 @@ serve(async (req: Request) => {
     const rows = result.data || [];
     const total = result.count || 0;
 
+    // Enforce "only active employees" rule (CPF as PK):
+    // - If CPF doesn't exist among active employees, ignore the verba row.
+    // - Always enrich employee_* fields from external_employees (QLP model).
+    const companyIds = [...new Set(rows.map((row: any) => row.company_id).filter(Boolean))];
+    const cpfs = [...new Set(rows.map((row: any) => normalizeDigits(row.cpf)).filter((value: string) => value.length === 11))];
+
+    const employeeByCompanyCpf = new Map<string, any>();
+    if (cpfs.length > 0) {
+      const loadedEmployees: any[] = [];
+      for (const cpfChunk of chunkArray(cpfs, 500)) {
+        const attempt = await supabaseAdmin
+          .from("external_employees")
+          .select(
+            "company_id, cpf, full_name, department, unidade, position, accounting_group, is_active, is_disabled, metadata, contract_company_id, accounting_company_id",
+          )
+          .in("cpf", cpfChunk);
+
+        if (attempt.error && (isMissingSpecificColumn(attempt.error, "is_disabled") || isMissingSpecificColumn(attempt.error, "contract_company_id") || isMissingSpecificColumn(attempt.error, "accounting_company_id"))) {
+          const fallback = await supabaseAdmin
+            .from("external_employees")
+            .select(
+              "company_id, cpf, full_name, department, unidade, position, accounting_group, is_active, metadata",
+            )
+            .in("cpf", cpfChunk);
+
+          if (fallback.error) {
+            throw fallback.error;
+          }
+
+          loadedEmployees.push(...(fallback.data || []));
+          continue;
+        }
+
+        if (attempt.error) {
+          throw attempt.error;
+        }
+
+        loadedEmployees.push(...(attempt.data || []));
+      }
+
+      for (const employee of loadedEmployees) {
+        const cpfDigits = normalizeDigits(employee.cpf);
+        if (cpfDigits.length !== 11) continue;
+        if (employee.is_active === false) continue;
+        if (employee.is_disabled === true) continue;
+
+        const effectiveCompanyId = employee.accounting_company_id || employee.company_id;
+        if (!effectiveCompanyId) continue;
+        if (companyIds.length > 0 && !companyIds.includes(effectiveCompanyId)) continue;
+
+        const key = `${effectiveCompanyId}|${cpfDigits}`;
+        const existing = employeeByCompanyCpf.get(key);
+        if (!existing) {
+          employeeByCompanyCpf.set(key, employee);
+          continue;
+        }
+
+        // Prefer explicitly active rows
+        if (existing?.is_active !== true && employee?.is_active === true) {
+          employeeByCompanyCpf.set(key, employee);
+        }
+      }
+    }
+
+    const rowsActiveOnly = rows
+      .map((row: any) => {
+        const key = `${row.company_id || ""}|${normalizeDigits(row.cpf)}`;
+        const employee = employeeByCompanyCpf.get(key);
+        if (!employee) return null;
+
+        const accountingGroup = resolveAccountingGroupLabel(employee);
+        return {
+          ...row,
+          employee_department: employee?.department || null,
+          employee_unit: employee?.unidade || null,
+          employee_position: employee?.position || null,
+          employee_accounting_group: accountingGroup,
+          compare_group_key: `${row.company_id || ""}|${String(employee?.position || "SEM_CARGO").trim().toUpperCase()}`,
+        };
+      })
+      .filter(Boolean);
+
     // Fast path: view already provides employee_* columns, so we can return directly.
     if (usedEmployeeFiltersInDb) {
-      const securedRows = (hasFullAccess ? rows : rows.map(maskRow)).map((row: any) => ({
+      const securedRows = (hasFullAccess ? rowsActiveOnly : rowsActiveOnly.map(maskRow)).map((row: any) => ({
         ...row,
         masked: !hasFullAccess,
-        compare_group_key: `${row.company_id || ""}|${String(row.employee_position || "SEM_CARGO").trim().toUpperCase()}`,
       }));
 
       return new Response(
@@ -586,52 +681,7 @@ serve(async (req: Request) => {
       );
     }
 
-    const companyIds = [...new Set(rows.map((row: any) => row.company_id).filter(Boolean))];
-    const cpfs = [...new Set(rows.map((row: any) => normalizeDigits(row.cpf)).filter((value: string) => value.length === 11))];
-
-    const employeeByCompanyCpf = new Map<string, any>();
-
-    if (companyIds.length > 0 && cpfs.length > 0) {
-      const { data: externalEmployees, error: externalEmployeesError } = await supabaseAdmin
-        .from("external_employees")
-        .select("company_id, cpf, full_name, department, unidade, position, accounting_group, is_active, metadata")
-        .in("company_id", companyIds)
-        .in("cpf", cpfs);
-
-      if (externalEmployeesError) {
-        throw externalEmployeesError;
-      }
-
-      for (const employee of externalEmployees || []) {
-        const key = `${employee.company_id || ""}|${normalizeDigits(employee.cpf)}`;
-        const existing = employeeByCompanyCpf.get(key);
-        if (!existing) {
-          employeeByCompanyCpf.set(key, employee);
-          continue;
-        }
-
-        if (existing?.is_active !== true && employee?.is_active === true) {
-          employeeByCompanyCpf.set(key, employee);
-        }
-      }
-    }
-
-    const enrichedRows = rows.map((row: any) => {
-      const key = `${row.company_id || ""}|${normalizeDigits(row.cpf)}`;
-      const employee = employeeByCompanyCpf.get(key);
-      const accountingGroup = resolveAccountingGroupLabel(employee);
-
-      return {
-        ...row,
-        employee_department: employee?.department || null,
-        employee_unit: employee?.unidade || null,
-        employee_position: employee?.position || null,
-        employee_accounting_group: accountingGroup,
-        compare_group_key: `${row.company_id || ""}|${String(employee?.position || "SEM_CARGO").trim().toUpperCase()}`,
-      };
-    });
-
-    const filteredRows = enrichedRows.filter((row: any) => {
+    const filteredRows = rowsActiveOnly.filter((row: any) => {
       if (body.department?.trim()) {
         if (!normalizeLabel(row.employee_department).includes(normalizeLabel(body.department))) {
           return false;
