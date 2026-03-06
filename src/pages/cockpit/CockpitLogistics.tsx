@@ -285,6 +285,7 @@ function CockpitLogisticsContent() {
           <TabsContent value="stock" className="mt-6"><StockTab /></TabsContent>
           <TabsContent value="expiry" className="mt-6"><ExpiryTab /></TabsContent>
         </Tabs>
+    </div>
   );
 }
 

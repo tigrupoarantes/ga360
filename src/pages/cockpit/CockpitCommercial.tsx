@@ -182,6 +182,7 @@ function CockpitCommercialContent() {
             <RankingTable data={data?.channelRanking || []} title="Ranking por Canal" icon={Users} isLoading={isLoading} />
           </TabsContent>
         </Tabs>
+    </div>
   );
 }
 
