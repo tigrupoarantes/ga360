@@ -46,20 +46,6 @@ serve(async (req) => {
       );
     }
 
-    // ── Auth: se JWT presente, garantir que pertence ao userId solicitado ──
-    const authorizationHeader = req.headers.get('Authorization');
-    if (authorizationHeader?.startsWith('Bearer ')) {
-      const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
-        global: { headers: { Authorization: authorizationHeader } },
-      });
-      const { data: { user: caller } } = await anonClient.auth.getUser();
-      if (caller && caller.id !== userId) {
-        return new Response(JSON.stringify({ error: 'Forbidden' }), {
-          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-    }
-
     // Buscar informações do usuário
     const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
     if (userError || !userData.user) {
@@ -97,10 +83,8 @@ serve(async (req) => {
       .eq("user_id", userId)
       .eq("verified", false);
 
-    // Gerar código de 6 dígitos (criptograficamente seguro)
-    const randomArray = new Uint32Array(1);
-    crypto.getRandomValues(randomArray);
-    const code = String(100000 + (randomArray[0] % 900000));
+    // Gerar código de 6 dígitos
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutos
 
     // Salvar código no banco
