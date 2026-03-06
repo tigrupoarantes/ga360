@@ -1,17 +1,13 @@
 /**
- * CockpitFilters — barra de filtros global do Cockpit
+ * CockpitFilters — filtros inline do Cockpit
  *
- * Este componente fica no topo do <main> de cada página cockpit (não no AppleNav).
- *
- * Adaptações vs GlobalFilters do cockpit:
- * - Sem AppLayout/header — é um componente de conteúdo
- * - useAuth() (cockpit) → useCompany() + setSelectedCompanyId()
- * - useFilters() → useCockpitFilters()
- * - Selector de empresa usa UUID do GA360; segment options vêm de useDatalakeCompanies()
+ * - Empresa: controlada pelo MainLayout (useCompany) — removida daqui
+ * - ConnectionStatusBadge: removida — Status de conexão fica em /cockpit/config
+ * - Este componente fornece apenas os filtros analíticos: período, canal, segmento, UF
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { Building2, Calendar, Users, Layers, MapPin, Store } from 'lucide-react';
+import { Calendar, Users, Layers, MapPin, Store } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -22,41 +18,39 @@ import {
 import { useCompany } from '@/contexts/CompanyContext';
 import { useCockpitFilters } from '@/contexts/CockpitFiltersContext';
 import { useDatalakeCompanies } from '@/hooks/cockpit/useDatalakeCompanies';
-import { ConnectionStatusBadge } from './ConnectionStatusBadge';
 import type { CockpitFilters as CockpitFiltersType } from '@/lib/cockpit-types';
 
 const PERIODS = [
   { value: 'today', label: 'Hoje' },
-  { value: 'week', label: 'Semana' },
-  { value: 'month', label: 'Mês' },
+  { value: 'week',  label: 'Esta semana' },
+  { value: 'month', label: 'Este mês' },
   { value: 'custom', label: 'Personalizado' },
 ];
 
 const CHANNELS = [
-  { value: 'ALL', label: 'Todos os Canais' },
-  { value: 'KA', label: 'Key Account' },
-  { value: 'AS', label: 'Auto Serviço' },
+  { value: 'ALL',  label: 'Todos os Canais' },
+  { value: 'KA',   label: 'Key Account' },
+  { value: 'AS',   label: 'Auto Serviço' },
   { value: 'TRAD', label: 'Tradicional' },
 ];
 
 const UFS = [
   { value: 'all', label: 'Todos os Estados' },
-  { value: 'SP', label: 'São Paulo' },
-  { value: 'RJ', label: 'Rio de Janeiro' },
-  { value: 'MG', label: 'Minas Gerais' },
-  { value: 'PR', label: 'Paraná' },
-  { value: 'SC', label: 'Santa Catarina' },
-  { value: 'RS', label: 'Rio Grande do Sul' },
+  { value: 'SP',  label: 'São Paulo' },
+  { value: 'RJ',  label: 'Rio de Janeiro' },
+  { value: 'MG',  label: 'Minas Gerais' },
+  { value: 'PR',  label: 'Paraná' },
+  { value: 'SC',  label: 'Santa Catarina' },
+  { value: 'RS',  label: 'Rio Grande do Sul' },
 ];
 
 export function CockpitFilters() {
-  const { companies, selectedCompany, setSelectedCompanyId } = useCompany();
+  const { selectedCompany } = useCompany();
   const { filters, updateFilters } = useCockpitFilters();
   const { data: datalakeCompanies = [] } = useDatalakeCompanies();
 
   const [segmentOptions, setSegmentOptions] = useState<{ code: string; name: string }[]>([]);
 
-  // Find the Datalake representation of the selected company (for segment mode)
   const datalakeCompany = datalakeCompanies.find(
     (dc) => dc.code === selectedCompany?.external_id
   );
@@ -67,14 +61,12 @@ export function CockpitFilters() {
       setSegmentOptions([{ code: 'all', name: 'Todos' }]);
       return;
     }
-
     let options: { code: string; name: string }[] = [];
-
     switch (segmentMode) {
       case 'industry':
         options = [
           { code: 'all', name: 'Todas as Indústrias' },
-          ...(datalakeCompany.industries || []).map((ind) => ({ code: ind.code, name: ind.name })),
+          ...(datalakeCompany.industries || []).map((i) => ({ code: i.code, name: i.name })),
         ];
         break;
       case 'bu':
@@ -92,7 +84,6 @@ export function CockpitFilters() {
       default:
         options = [{ code: 'all', name: 'Todos' }];
     }
-
     setSegmentOptions(options);
   }, [datalakeCompany, segmentMode]);
 
@@ -103,124 +94,78 @@ export function CockpitFilters() {
     }
   }, [selectedCompany, datalakeCompany, segmentMode, buildSegmentOptions, updateFilters]);
 
-  const getSegmentIcon = () => (segmentMode === 'store' ? Store : Layers);
-  const getSegmentLabel = () => {
-    switch (segmentMode) {
-      case 'industry': return 'Indústria';
-      case 'bu': return 'BU';
-      case 'store': return 'Loja';
-      case 'category': return 'Categoria';
-      default: return 'Segmento';
-    }
-  };
-
-  const SegmentIcon = getSegmentIcon();
+  const SegmentIcon = segmentMode === 'store' ? Store : Layers;
+  const segmentLabel =
+    segmentMode === 'industry' ? 'Indústria'
+    : segmentMode === 'store'   ? 'Loja'
+    : segmentMode === 'category'? 'Categoria'
+    : 'BU';
 
   return (
-    <div className="bg-card border-b border-border px-4 py-2 flex flex-wrap items-center gap-3">
-      {/* Company selector */}
-      <div className="flex items-center gap-2">
-        <Building2 className="h-4 w-4 text-muted-foreground" />
-        <Select
-          value={selectedCompany?.id || ''}
-          onValueChange={(id) => setSelectedCompanyId(id)}
-        >
-          <SelectTrigger className="w-[200px] border-0 bg-muted/50 hover:bg-muted focus:ring-1">
-            <SelectValue placeholder="Selecione a empresa" />
-          </SelectTrigger>
-          <SelectContent>
-            {companies.filter((c) => c.is_active).map((company) => (
-              <SelectItem key={company.id} value={company.id}>
-                {company.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="h-6 w-px bg-border" />
-
-      {/* Period selector */}
-      <div className="flex items-center gap-2">
-        <Calendar className="h-4 w-4 text-muted-foreground" />
+    <div className="flex flex-wrap items-center gap-2 mb-6">
+      {/* Período */}
+      <div className="flex items-center gap-1.5 bg-muted/60 hover:bg-muted rounded-lg px-2 py-1 transition-colors">
+        <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         <Select
           value={filters.period}
-          onValueChange={(value) => updateFilters({ period: value as CockpitFiltersType['period'] })}
+          onValueChange={(v) => updateFilters({ period: v as CockpitFiltersType['period'] })}
         >
-          <SelectTrigger className="w-[140px] border-0 bg-muted/50 hover:bg-muted focus:ring-1">
+          <SelectTrigger className="h-7 border-0 bg-transparent p-0 pr-6 text-sm focus:ring-0 w-[120px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {PERIODS.map((period) => (
-              <SelectItem key={period.value} value={period.value}>{period.label}</SelectItem>
-            ))}
+            {PERIODS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="h-6 w-px bg-border" />
-
-      {/* Channel selector */}
-      <div className="flex items-center gap-2">
-        <Users className="h-4 w-4 text-muted-foreground" />
+      {/* Canal */}
+      <div className="flex items-center gap-1.5 bg-muted/60 hover:bg-muted rounded-lg px-2 py-1 transition-colors">
+        <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         <Select
           value={filters.channelCode}
-          onValueChange={(value) => updateFilters({ channelCode: value as CockpitFiltersType['channelCode'] })}
+          onValueChange={(v) => updateFilters({ channelCode: v as CockpitFiltersType['channelCode'] })}
         >
-          <SelectTrigger className="w-[160px] border-0 bg-muted/50 hover:bg-muted focus:ring-1">
+          <SelectTrigger className="h-7 border-0 bg-transparent p-0 pr-6 text-sm focus:ring-0 w-[140px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {CHANNELS.map((channel) => (
-              <SelectItem key={channel.value} value={channel.value}>{channel.label}</SelectItem>
-            ))}
+            {CHANNELS.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="h-6 w-px bg-border" />
-
-      {/* Segment selector */}
-      <div className="flex items-center gap-2">
-        <SegmentIcon className="h-4 w-4 text-muted-foreground" />
+      {/* Segmento */}
+      <div className="flex items-center gap-1.5 bg-muted/60 hover:bg-muted rounded-lg px-2 py-1 transition-colors">
+        <SegmentIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         <Select
           value={filters.segmentId || 'all'}
-          onValueChange={(value) => updateFilters({ segmentId: value === 'all' ? undefined : value })}
+          onValueChange={(v) => updateFilters({ segmentId: v === 'all' ? undefined : v })}
         >
-          <SelectTrigger className="w-[180px] border-0 bg-muted/50 hover:bg-muted focus:ring-1">
-            <SelectValue placeholder={getSegmentLabel()} />
+          <SelectTrigger className="h-7 border-0 bg-transparent p-0 pr-6 text-sm focus:ring-0 w-[150px]">
+            <SelectValue placeholder={segmentLabel} />
           </SelectTrigger>
           <SelectContent>
-            {segmentOptions.map((segment) => (
-              <SelectItem key={segment.code} value={segment.code}>{segment.name}</SelectItem>
-            ))}
+            {segmentOptions.map((s) => <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="h-6 w-px bg-border" />
-
-      {/* UF selector */}
-      <div className="flex items-center gap-2">
-        <MapPin className="h-4 w-4 text-muted-foreground" />
+      {/* UF */}
+      <div className="flex items-center gap-1.5 bg-muted/60 hover:bg-muted rounded-lg px-2 py-1 transition-colors">
+        <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         <Select
           value={filters.uf || 'all'}
-          onValueChange={(value) => updateFilters({ uf: value === 'all' ? undefined : value })}
+          onValueChange={(v) => updateFilters({ uf: v === 'all' ? undefined : v })}
         >
-          <SelectTrigger className="w-[160px] border-0 bg-muted/50 hover:bg-muted focus:ring-1">
+          <SelectTrigger className="h-7 border-0 bg-transparent p-0 pr-6 text-sm focus:ring-0 w-[140px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {UFS.map((uf) => (
-              <SelectItem key={uf.value} value={uf.value}>{uf.label}</SelectItem>
-            ))}
+            {UFS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
-
-      <div className="flex-1" />
-
-      <ConnectionStatusBadge />
     </div>
   );
 }

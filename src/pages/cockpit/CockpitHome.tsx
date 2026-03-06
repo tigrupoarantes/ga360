@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useCompany } from '@/contexts/CompanyContext';
 import { CockpitFiltersProvider } from '@/contexts/CockpitFiltersContext';
+import { MainLayout } from '@/components/layout/MainLayout';
 import { useKPISummary } from '@/hooks/cockpit/useKPISummary';
 import { useCommercialData } from '@/hooks/cockpit/useCommercialData';
 import { KPICard } from '@/components/cockpit/KPICard';
@@ -57,11 +58,8 @@ function CockpitHomeContent() {
   const hasTrend = !trendLoading && (trendData?.trend?.length ?? 0) > 0;
 
   return (
-    <div>
-      <CockpitFilters />
-
-      <div className="p-6 space-y-6 animate-fade-in">
-        {/* ── Header ── */}
+    <div className="space-y-6 animate-fade-in">
+      {/* ── Header ── */}
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground tracking-tight">
@@ -83,6 +81,9 @@ function CockpitHomeContent() {
             </Button>
           </div>
         </div>
+
+        {/* ── Filtros ── */}
+        <CockpitFilters />
 
         {/* ── Erro ── */}
         {isError && (
@@ -274,15 +275,16 @@ function CockpitHomeContent() {
             ))}
           </div>
         </div>
-      </div>
     </div>
   );
 }
 
 export default function CockpitHome() {
   return (
-    <CockpitFiltersProvider>
-      <CockpitHomeContent />
-    </CockpitFiltersProvider>
+    <MainLayout>
+      <CockpitFiltersProvider>
+        <CockpitHomeContent />
+      </CockpitFiltersProvider>
+    </MainLayout>
   );
 }

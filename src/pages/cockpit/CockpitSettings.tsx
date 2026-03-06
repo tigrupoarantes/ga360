@@ -1,15 +1,17 @@
+import { useNavigate } from 'react-router-dom';
+import { MainLayout } from '@/components/layout/MainLayout';
 import { useCompany } from '@/contexts/CompanyContext';
 import { CockpitFiltersProvider } from '@/contexts/CockpitFiltersContext';
 import { useApiConnection } from '@/hooks/cockpit/useApiConnection';
 import ApiConnectionCard from '@/components/cockpit/ApiConnectionCard';
-import { CockpitFilters } from '@/components/cockpit/CockpitFilters';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Activity, Database } from 'lucide-react';
+import { Activity, Database, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import type { DlConnection } from '@/lib/cockpit-types';
 
 function CockpitSettingsContent() {
   const { selectedCompany } = useCompany();
+  const navigate = useNavigate();
   const { connection, isLoading, saveConnection, testConnection, refetch } = useApiConnection();
 
   const handleSave = async (data: Partial<DlConnection>) => {
@@ -22,15 +24,17 @@ function CockpitSettingsContent() {
   };
 
   return (
-    <div>
-      <CockpitFilters />
-      <div className="p-6 space-y-6 animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Configurações do Cockpit</h1>
-          <p className="text-muted-foreground mt-1">
-            Integração e parâmetros — {selectedCompany?.name}
-          </p>
-        </div>
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <Button variant="ghost" size="sm" onClick={() => navigate('/cockpit')} className="mb-4 -ml-2">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Voltar
+        </Button>
+        <h1 className="text-3xl font-bold text-foreground">Configurações do Cockpit</h1>
+        <p className="text-muted-foreground mt-1">
+          Integração e parâmetros — {selectedCompany?.name}
+        </p>
+      </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* API Connection form */}
@@ -111,14 +115,15 @@ function CockpitSettingsContent() {
           </Card>
         </div>
       </div>
-    </div>
   );
 }
 
 export default function CockpitSettings() {
   return (
-    <CockpitFiltersProvider>
-      <CockpitSettingsContent />
-    </CockpitFiltersProvider>
+    <MainLayout>
+      <CockpitFiltersProvider>
+        <CockpitSettingsContent />
+      </CockpitFiltersProvider>
+    </MainLayout>
   );
 }

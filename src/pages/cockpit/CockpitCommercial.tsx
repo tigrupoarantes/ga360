@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { MainLayout } from '@/components/layout/MainLayout';
 import { useCompany } from '@/contexts/CompanyContext';
 import { CockpitFiltersProvider } from '@/contexts/CockpitFiltersContext';
 import { useCommercialData } from '@/hooks/cockpit/useCommercialData';
@@ -13,7 +15,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { TrendingUp, TrendingDown, Minus, MapPin, User, Layers, Users, Download, Loader2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, MapPin, User, Layers, Users, Download, Loader2, ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart,
@@ -88,25 +90,31 @@ function RankingTable({ data, title, icon: Icon, showExtra = false, isLoading = 
 
 function CockpitCommercialContent() {
   const { selectedCompany } = useCompany();
+  const navigate = useNavigate();
   const [chartMetric, setChartMetric] = useState<'sales' | 'positivation'>('sales');
   const { data, isLoading } = useCommercialData();
 
   return (
-    <div>
-      <CockpitFilters />
-      <div className="p-6 space-y-6 animate-fade-in">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">Detalhe Comercial</h1>
-            <p className="text-muted-foreground mt-1">
-              Tendências e rankings — <span className="font-medium text-foreground">{selectedCompany?.name}</span>
-            </p>
-          </div>
-          <Button variant="outline" className="gap-2">
-            <Download className="h-4 w-4" />
-            Exportar Relatório
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-start justify-between">
+        <div>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/cockpit')} className="mb-4 -ml-2">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Voltar
           </Button>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Detalhe Comercial</h1>
+          <p className="text-muted-foreground mt-1">
+            Tendências e rankings — <span className="font-medium text-foreground">{selectedCompany?.name}</span>
+          </p>
         </div>
+        <Button variant="outline" className="gap-2">
+          <Download className="h-4 w-4" />
+          Exportar Relatório
+        </Button>
+      </div>
+
+      {/* ── Filtros ── */}
+      <CockpitFilters />
 
         {/* Trend Chart */}
         <div className="card-ga360">
@@ -174,15 +182,15 @@ function CockpitCommercialContent() {
             <RankingTable data={data?.channelRanking || []} title="Ranking por Canal" icon={Users} isLoading={isLoading} />
           </TabsContent>
         </Tabs>
-      </div>
-    </div>
   );
 }
 
 export default function CockpitCommercial() {
   return (
-    <CockpitFiltersProvider>
-      <CockpitCommercialContent />
-    </CockpitFiltersProvider>
+    <MainLayout>
+      <CockpitFiltersProvider>
+        <CockpitCommercialContent />
+      </CockpitFiltersProvider>
+    </MainLayout>
   );
 }

@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { MainLayout } from '@/components/layout/MainLayout';
 import { CockpitFiltersProvider, useCockpitFilters } from '@/contexts/CockpitFiltersContext';
 import { CockpitFilters } from '@/components/cockpit/CockpitFilters';
 import {
   Package, BarChart3, Trophy, Clock, Download, Copy,
-  TrendingUp, Box, Hash, DollarSign, AlertTriangle,
+  TrendingUp, Box, Hash, DollarSign, AlertTriangle, ArrowLeft,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -249,20 +251,26 @@ function ExpiryTab() {
 }
 
 function CockpitLogisticsContent() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   return (
-    <div>
+    <div className="space-y-6 animate-fade-in max-w-[1400px] mx-auto">
+      <div>
+        <Button variant="ghost" size="sm" onClick={() => navigate('/cockpit')} className="mb-4 -ml-2">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Voltar
+        </Button>
+        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+          <Package className="h-7 w-7 text-primary" />
+          Logística
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Curva ABC, Mix Campeão e análise logística baseada em vendas
+        </p>
+      </div>
+
+      {/* ── Filtros ── */}
       <CockpitFilters />
-      <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Package className="h-7 w-7 text-primary" />
-            Logística
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Curva ABC, Mix Campeão e análise logística baseada em vendas
-          </p>
-        </div>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-5 max-w-3xl">
             <TabsTrigger value="overview" className="gap-1.5"><TrendingUp className="h-4 w-4" /><span className="hidden sm:inline">Visão Geral</span></TabsTrigger>
@@ -277,15 +285,15 @@ function CockpitLogisticsContent() {
           <TabsContent value="stock" className="mt-6"><StockTab /></TabsContent>
           <TabsContent value="expiry" className="mt-6"><ExpiryTab /></TabsContent>
         </Tabs>
-      </div>
-    </div>
   );
 }
 
 export default function CockpitLogistics() {
   return (
-    <CockpitFiltersProvider>
-      <CockpitLogisticsContent />
-    </CockpitFiltersProvider>
+    <MainLayout>
+      <CockpitFiltersProvider>
+        <CockpitLogisticsContent />
+      </CockpitFiltersProvider>
+    </MainLayout>
   );
 }

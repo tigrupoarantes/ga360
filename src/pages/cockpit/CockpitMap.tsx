@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { MainLayout } from '@/components/layout/MainLayout';
 import { useCompany } from '@/contexts/CompanyContext';
 import { CockpitFiltersProvider } from '@/contexts/CockpitFiltersContext';
 import { useGeoHeatmap } from '@/hooks/cockpit/useGeoHeatmap';
@@ -15,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import {
   Users, Target, DollarSign, Download, Copy, MapPin,
-  TrendingUp, TrendingDown, ChevronRight, AlertCircle, Loader2, Package,
+  TrendingUp, TrendingDown, ChevronRight, AlertCircle, Loader2, Package, ArrowLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { CityHeatmapPoint } from '@/lib/cockpit-types';
@@ -44,6 +46,7 @@ function formatCurrency(value: number) {
 
 function CockpitMapContent() {
   const { selectedCompany } = useCompany();
+  const navigate = useNavigate();
   const [metric, setMetric] = useState<'positivacao' | 'cobertura' | 'vendas'>('positivacao');
   const [selectedCityId, setSelectedCityId] = useState<string | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -105,19 +108,21 @@ function CockpitMapContent() {
   };
 
   return (
-    <div>
-      <CockpitFilters />
-      <div className="p-6 space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
 
-        {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">Mapa de Positivação</h1>
-            <p className="text-muted-foreground mt-1">
-              Ranking por cidade — <span className="font-medium text-foreground">{selectedCompany?.name}</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap justify-end">
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/cockpit')} className="mb-4 -ml-2">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Voltar
+          </Button>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Mapa de Positivação</h1>
+          <p className="text-muted-foreground mt-1">
+            Ranking por cidade — <span className="font-medium text-foreground">{selectedCompany?.name}</span>
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap justify-end">
             <ToggleGroup
               type="single"
               value={metric}
@@ -140,6 +145,9 @@ function CockpitMapContent() {
             </Button>
           </div>
         </div>
+
+        {/* ── Filtros ── */}
+        <CockpitFilters />
 
         {/* ── Erro ── */}
         {isError && (
@@ -499,14 +507,15 @@ function CockpitMapContent() {
           </SheetContent>
         </Sheet>
       </div>
-    </div>
   );
 }
 
 export default function CockpitMap() {
   return (
-    <CockpitFiltersProvider>
-      <CockpitMapContent />
-    </CockpitFiltersProvider>
+    <MainLayout>
+      <CockpitFiltersProvider>
+        <CockpitMapContent />
+      </CockpitFiltersProvider>
+    </MainLayout>
   );
 }
