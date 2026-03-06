@@ -48,8 +48,9 @@ export function ProtectedRoute({ children, allowedRoles, requiredPermission }: P
 
       let accessGranted = true;
 
+      // Both provided: require BOTH (AND) — prevents privilege escalation via permission alone
       if (allowedRoles && requiredPermission) {
-        accessGranted = !!(hasRoleAccess || hasPermissionAccess);
+        accessGranted = !!(hasRoleAccess && hasPermissionAccess);
       } else if (allowedRoles) {
         accessGranted = !!hasRoleAccess;
       } else if (requiredPermission) {

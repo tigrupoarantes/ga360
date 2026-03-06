@@ -31,7 +31,19 @@ serve(async (req) => {
       );
     }
 
-    console.log(`🔐 Verificando código 2FA para userId: ${userId}`);
+    // ── Auth: se JWT presente, garantir que pertence ao userId solicitado ──
+    const authorizationHeader = req.headers.get('Authorization');
+    if (authorizationHeader?.startsWith('Bearer ')) {
+      const anonClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
+        global: { headers: { Authorization: authorizationHeader } },
+      });
+      const { data: { user: caller } } = await anonClient.auth.getUser();
+      if (caller && caller.id !== userId) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     // Buscar código válido
     const { data: codeRecord, error: fetchError } = await supabase

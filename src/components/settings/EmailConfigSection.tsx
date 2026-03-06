@@ -149,8 +149,8 @@ export function EmailConfigSection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const EXTERNAL_URL = 'https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/test-smtp-connection';
-      const EXTERNAL_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp2ZXFoeGFpd2doZXhmb2JqYWVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3OTM0ODAsImV4cCI6MjA4NTM2OTQ4MH0.N2EEwDUfWlZTWlHMJAC777eELMxmpyOyrJ087kPex3Y';
+      const EXTERNAL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/test-smtp-connection`;
+      const EXTERNAL_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
       const response = await fetch(EXTERNAL_URL, {
         method: 'POST',

@@ -88,7 +88,17 @@ export function ECEvidenceUpload({ recordId, cardId }: ECEvidenceUploadProps) {
 
         if (error) throw error;
       } else if (selectedFile) {
-        const fileExt = selectedFile.name.split('.').pop();
+        const MIME_TO_EXT: Record<string, string> = {
+          'application/pdf': 'pdf',
+          'application/msword': 'doc',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+          'application/vnd.ms-excel': 'xls',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+          'image/jpeg': 'jpg',
+          'image/png': 'png',
+          'image/gif': 'gif',
+        };
+        const fileExt = MIME_TO_EXT[selectedFile.type] || 'bin';
         const fileName = `${user?.id}/${recordId}/${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
@@ -217,7 +227,24 @@ export function ECEvidenceUpload({ recordId, cardId }: ECEvidenceUploadProps) {
                       <Label>Arquivo</Label>
                       <Input
                         type="file"
-                        onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          if (file) {
+                            const ALLOWED_MIMES = [
+                              'application/pdf', 'application/msword',
+                              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                              'application/vnd.ms-excel',
+                              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                              'image/jpeg', 'image/png', 'image/gif',
+                            ];
+                            if (!ALLOWED_MIMES.includes(file.type)) {
+                              toast.error('Tipo de arquivo não permitido. Use: PDF, Word, Excel, JPG ou PNG.');
+                              e.target.value = '';
+                              return;
+                            }
+                          }
+                          setSelectedFile(file);
+                        }}
                         accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif"
                       />
                     </div>
@@ -310,7 +337,13 @@ export function ECEvidenceUpload({ recordId, cardId }: ECEvidenceUploadProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => window.open(evidence.url, '_blank')}
+                    onClick={() => {
+                      try {
+                        const safeUrl = new URL(evidence.url);
+                        if (!['http:', 'https:'].includes(safeUrl.protocol)) return;
+                        window.open(safeUrl.href, '_blank', 'noopener,noreferrer');
+                      } catch { /* URL inválida */ }
+                    }}
                   >
                     <ExternalLink className="h-4 w-4" />
                   </Button>

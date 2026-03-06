@@ -71,6 +71,10 @@ function normalizeNextLink(nextLink: string, baseUrl: string): string {
 
   if (/^https?:\/\//i.test(trimmed)) {
     const absolute = new URL(trimmed);
+    // SSRF prevention: nextLink must share the same origin as the configured base URL
+    if (absolute.origin !== baseUrlObject.origin) {
+      throw new Error('nextLink origin mismatch — possible SSRF attempt blocked');
+    }
     if (shouldUseV1 && absolute.pathname.toLowerCase().startsWith("/api/")) {
       absolute.pathname = absolute.pathname.replace(/^\/api\//i, "/v1/");
     }

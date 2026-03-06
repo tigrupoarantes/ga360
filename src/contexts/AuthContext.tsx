@@ -157,16 +157,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const checkPermission = (module: string, action: string = 'view'): boolean => {
-    // Super Admin has full access
-    if (role === 'super_admin') return true;
-    // CEO has full company access implicitly (for backward compatibility if needed, but we rely on DB now)
-    // if (role === 'ceo') return true; 
+    // Senior roles have full access — avoids gaps in granular permission tables
+    if (['super_admin', 'ceo', 'diretor'].includes(role ?? '')) return true;
 
-    // Check granular permissions
-    // Super Admin has full access
-    if (role === 'super_admin') return true;
-
-    // Check granular permissions
+    // Check granular permissions for other roles
     const permission = permissions.find(p => p.module === module);
     if (!permission) return false;
 
@@ -181,8 +175,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchRole = async (userId: string) => {
     try {
-      console.log('🔍 Buscando roles para userId:', userId);
-
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
@@ -193,23 +185,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw error;
       }
 
-      console.log('✅ Roles encontradas no banco:', data);
-
       if (data && data.length > 0) {
-        // Extrair roles
         const roles = data.map(r => r.role as string);
-        console.log('📋 Roles extraídas:', roles);
 
-        // Ordenar por prioridade
         const sortedRoles = roles.sort((a, b) => {
           const priorityA = ROLE_PRIORITY[a] ?? 99;
           const priorityB = ROLE_PRIORITY[b] ?? 99;
-          console.log(`⚖️ Comparando: ${a}(prioridade ${priorityA}) vs ${b}(prioridade ${priorityB})`);
           return priorityA - priorityB;
         });
-
-        console.log('🎯 Roles ordenadas:', sortedRoles);
-        console.log('✨ Role selecionada (maior prioridade):', sortedRoles[0]);
 
         setRole(sortedRoles[0]);
       } else {
@@ -290,15 +273,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.user && data.session) {
         // 🔧 FLAG TEMPORÁRIA: Pular 2FA
         if (SKIP_2FA_TEMPORARILY) {
-          console.log('⚠️ 2FA desativado temporariamente - login direto');
+          console.warn('[Auth] 2FA desativado — remover SKIP_2FA_TEMPORARILY antes do deploy');
           toast({
             title: 'Login realizado!',
             description: 'Bem-vindo de volta.',
           });
           return { error: null };
         }
-
-        console.log('🔐 Login bem-sucedido, iniciando 2FA...');
 
         // Buscar perfil para verificar se tem telefone
         const profileData = await fetchProfile(data.user.id);
@@ -372,7 +353,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Código verificado com sucesso - restaurar sessão
-      console.log('✅ Código 2FA verificado, restaurando sessão...');
 
       // Limpar estado 2FA
       setRequires2FA(false);

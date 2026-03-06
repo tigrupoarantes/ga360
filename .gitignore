@@ -23,6 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+.env
 .env*.local
 
 # Supabase CLI local artifacts
