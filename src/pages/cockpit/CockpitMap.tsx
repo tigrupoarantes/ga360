@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import {
   Users, Target, DollarSign, Download, Copy, MapPin,
   TrendingUp, TrendingDown, ChevronRight, AlertCircle, Loader2, Package,
@@ -19,10 +20,22 @@ import {
 import { cn } from '@/lib/utils';
 import type { CityHeatmapPoint } from '@/lib/cockpit-types';
 
-function getHeatColor(percent: number) {
-  if (percent >= 80) return 'bg-success';
-  if (percent >= 60) return 'bg-warning';
+function getHealthColor(pct: number) {
+  if (pct >= 80) return 'bg-success';
+  if (pct >= 60) return 'bg-warning';
   return 'bg-destructive';
+}
+
+function getHealthTextColor(pct: number) {
+  if (pct >= 80) return 'text-success';
+  if (pct >= 60) return 'text-warning';
+  return 'text-destructive';
+}
+
+function getHealthBadge(pct: number) {
+  if (pct >= 80) return { label: 'Saudável', cls: 'bg-success/10 text-success border-success/20' };
+  if (pct >= 60) return { label: 'Atenção', cls: 'bg-warning/10 text-warning border-warning/20' };
+  return { label: 'Crítico', cls: 'bg-destructive/10 text-destructive border-destructive/20' };
 }
 
 function formatCurrency(value: number) {
@@ -48,10 +61,13 @@ function CockpitMapContent() {
     if (metric === 'cobertura') return b.coveragePercent - a.coveragePercent;
     return b.positivationPercent - a.positivationPercent;
   });
-  const topCities = sortedCities.slice(0, 5);
-  const bottomCities = [...sortedCities].reverse().slice(0, 5);
 
-  const handleCityClick = (city: CityHeatmapPoint) => { setSelectedCityId(city.cityId); setIsDrawerOpen(true); };
+  const maxSales = Math.max(...cities.map(c => c.salesTotal), 1);
+
+  const handleCityClick = (city: CityHeatmapPoint) => {
+    setSelectedCityId(city.cityId);
+    setIsDrawerOpen(true);
+  };
 
   const handleExportCSV = () => {
     if (!cityDetail?.nonPositivatedClients) return;
@@ -76,128 +92,256 @@ function CockpitMapContent() {
     navigator.clipboard.writeText(mixItems.map(item => `${item.sku} - ${item.name} (${formatCurrency(item.revenue)})`).join('\n'));
   };
 
+  const getDisplayValue = (city: CityHeatmapPoint) => {
+    if (metric === 'vendas') return formatCurrency(city.salesTotal);
+    if (metric === 'cobertura') return `${city.coveragePercent.toFixed(0)}%`;
+    return `${city.positivationPercent.toFixed(0)}%`;
+  };
+
+  const getBarValue = (city: CityHeatmapPoint) => {
+    if (metric === 'vendas') return (city.salesTotal / maxSales) * 100;
+    if (metric === 'cobertura') return city.coveragePercent;
+    return city.positivationPercent;
+  };
+
   return (
     <div>
       <CockpitFilters />
       <div className="p-6 space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
+
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Mapa de Positivação</h1>
-            <p className="text-muted-foreground mt-1">Heatmap por cidade — {selectedCompany?.name}</p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">Mapa de Positivação</h1>
+            <p className="text-muted-foreground mt-1">
+              Ranking por cidade — <span className="font-medium text-foreground">{selectedCompany?.name}</span>
+            </p>
           </div>
-          <div className="flex items-center gap-3">
-            <ToggleGroup type="single" value={metric} onValueChange={(v) => v && setMetric(v as typeof metric)} className="bg-muted/50 p-1 rounded-lg">
-              <ToggleGroupItem value="positivacao" className="px-4 data-[state=on]:bg-background data-[state=on]:shadow-sm">Positivação</ToggleGroupItem>
-              <ToggleGroupItem value="cobertura" className="px-4 data-[state=on]:bg-background data-[state=on]:shadow-sm">Cobertura</ToggleGroupItem>
-              <ToggleGroupItem value="vendas" className="px-4 data-[state=on]:bg-background data-[state=on]:shadow-sm">Vendas</ToggleGroupItem>
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            <ToggleGroup
+              type="single"
+              value={metric}
+              onValueChange={(v) => v && setMetric(v as typeof metric)}
+              className="bg-muted/50 p-1 rounded-lg"
+            >
+              <ToggleGroupItem value="positivacao" className="px-4 data-[state=on]:bg-background data-[state=on]:shadow-sm text-sm">
+                Positivação
+              </ToggleGroupItem>
+              <ToggleGroupItem value="cobertura" className="px-4 data-[state=on]:bg-background data-[state=on]:shadow-sm text-sm">
+                Cobertura
+              </ToggleGroupItem>
+              <ToggleGroupItem value="vendas" className="px-4 data-[state=on]:bg-background data-[state=on]:shadow-sm text-sm">
+                Vendas
+              </ToggleGroupItem>
             </ToggleGroup>
-            <Button className="gap-2"><Target className="h-4 w-4" />Gerar Lista de Ataque</Button>
+            <Button className="gap-2">
+              <Target className="h-4 w-4" />
+              Lista de Ataque
+            </Button>
           </div>
         </div>
 
+        {/* ── Erro ── */}
         {isError && (
-          <div className="card-ga360 border-destructive/50 bg-destructive/5">
+          <div className="card-ga360 border-destructive/50 bg-destructive/5 p-4">
             <div className="flex items-center gap-3 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              <div><p className="font-medium">Erro ao carregar dados do mapa</p><p className="text-sm text-muted-foreground">{error?.message}</p></div>
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-medium">Erro ao carregar dados do mapa</p>
+                <p className="text-sm text-muted-foreground">{error?.message}</p>
+              </div>
             </div>
           </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <div className="lg:col-span-3">
-            <div className="card-ga360 h-[600px] relative">
-              {isLoading ? (
-                <div className="absolute inset-0 bg-muted/50 rounded-lg flex items-center justify-center">
-                  <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="text-sm text-muted-foreground">Carregando mapa...</p>
-                  </div>
+
+          {/* ── Ranking de cidades (coluna principal) ── */}
+          <div className="lg:col-span-3 card-ga360">
+            {/* Header do painel */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-foreground">Ranking por Cidade</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {cities.length > 0 ? `${cities.length} cidades · clique para detalhes` : 'Selecione uma empresa com dados'}
+                </p>
+              </div>
+              {/* Legenda */}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-success" />
+                  <span>≥80%</span>
                 </div>
-              ) : cities.length === 0 ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-muted/30 rounded-lg">
-                  <div className="text-center">
-                    <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-muted-foreground">Nenhuma cidade encontrada</p>
-                  </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-warning" />
+                  <span>60–79%</span>
                 </div>
-              ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-muted/50 to-muted rounded-lg overflow-hidden">
-                  <div className="relative w-full h-full p-8">
-                    {cities.slice(0, 10).map((city, index) => {
-                      const value = metric === 'vendas' ? city.salesTotal : metric === 'cobertura' ? city.coveragePercent : city.positivationPercent;
-                      const maxValue = metric === 'vendas' ? Math.max(...cities.map(c => c.salesTotal)) || 1 : 100;
-                      const size = Math.max(32, (value / maxValue) * 80);
-                      const pos = { top: `${25 + Math.floor(index / 4) * 25}%`, left: `${15 + (index % 4) * 20}%` };
-                      return (
-                        <button key={city.cityId} onClick={() => handleCityClick(city)}
-                          className={cn('absolute rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 hover:z-10', getHeatColor(city.positivationPercent), 'text-white font-semibold text-xs shadow-lg')}
-                          style={{ width: size, height: size, top: pos.top, left: pos.left, transform: 'translate(-50%, -50%)' }} title={city.cityName}>
-                          {metric === 'vendas' ? `${(city.salesTotal / 1000).toFixed(0)}k` : `${city.positivationPercent}%`}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="absolute bottom-4 left-4 bg-card/95 backdrop-blur-sm rounded-lg p-3 shadow-lg">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">Legenda</p>
-                    <div className="flex items-center gap-4">
-                      {[{ c: 'bg-success', l: '≥80%' }, { c: 'bg-warning', l: '60-79%' }, { c: 'bg-destructive', l: '<60%' }].map(({ c, l }) => (
-                        <div key={l} className="flex items-center gap-2"><div className={`w-3 h-3 rounded-full ${c}`} /><span className="text-xs">{l}</span></div>
-                      ))}
-                    </div>
-                  </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full bg-destructive" />
+                  <span>&lt;60%</span>
                 </div>
-              )}
+              </div>
             </div>
+
+            {/* Conteúdo */}
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">Carregando dados das cidades…</p>
+              </div>
+            ) : cities.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                <MapPin className="h-12 w-12 opacity-20" />
+                <p className="font-medium">Nenhuma cidade encontrada</p>
+                <p className="text-sm opacity-70">Configure o Datalake em /cockpit/config</p>
+              </div>
+            ) : (
+              <div className="space-y-1 max-h-[560px] overflow-y-auto pr-1">
+                {sortedCities.map((city, index) => {
+                  const barValue = getBarValue(city);
+                  const health = getHealthBadge(city.positivationPercent);
+
+                  return (
+                    <button
+                      key={city.cityId}
+                      onClick={() => handleCityClick(city)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted/60 border border-transparent hover:border-border/40 transition-all group text-left"
+                    >
+                      {/* Rank badge */}
+                      <span className={cn(
+                        'w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0',
+                        index === 0 ? 'bg-primary text-primary-foreground'
+                          : index === 1 ? 'bg-muted-foreground/15 text-foreground'
+                            : index === 2 ? 'bg-warning/15 text-warning'
+                              : 'bg-muted/60 text-muted-foreground'
+                      )}>
+                        {index + 1}
+                      </span>
+
+                      {/* Nome + barra */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{city.cityName}</span>
+                            <span className="text-xs text-muted-foreground">{city.uf}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={cn('text-sm font-bold', getHealthTextColor(city.positivationPercent))}>
+                              {getDisplayValue(city)}
+                            </span>
+                            <Badge variant="outline" className={cn('text-xs px-1.5 py-0 border', health.cls)}>
+                              {health.label}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={cn('h-full rounded-full transition-all duration-500', getHealthColor(city.positivationPercent))}
+                            style={{ width: `${Math.min(barValue, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
+          {/* ── Painel lateral ── */}
           {isLoading ? (
             <div className="space-y-4">
-              {[1, 2, 3].map(i => <div key={i} className="card-ga360 space-y-3"><Skeleton className="h-4 w-20" />{[1, 2, 3].map(j => <div key={j} className="flex justify-between"><Skeleton className="h-3 w-24" /><Skeleton className="h-3 w-12" /></div>)}</div>)}
+              {[1, 2].map(i => (
+                <div key={i} className="card-ga360 space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  {[1, 2, 3].map(j => (
+                    <div key={j} className="flex justify-between">
+                      <Skeleton className="h-3 w-28" />
+                      <Skeleton className="h-3 w-14" />
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           ) : (
             <div className="space-y-4">
+              {/* Resumo */}
               <div className="card-ga360">
                 <h3 className="font-semibold text-foreground mb-3">Resumo</h3>
                 <div className="space-y-3">
                   {[
                     { label: 'Positivação média', value: `${(summary?.avgPositivation || 0).toFixed(1)}%` },
-                    { label: 'Cidades mapeadas', value: String(summary?.totalCities || 0) },
-                    { label: 'Vendas totais', value: formatCurrency(summary?.totalSales || 0) },
+                    { label: 'Cidades mapeadas',  value: String(summary?.totalCities || 0) },
+                    { label: 'Vendas totais',     value: formatCurrency(summary?.totalSales || 0) },
                   ].map(({ label, value }) => (
                     <div key={label} className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">{label}</span>
-                      <span className="font-semibold">{value}</span>
+                      <span className="font-semibold text-sm">{value}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              {[
-                { title: 'Top 5 Cidades', icon: TrendingUp, iconClass: 'text-success', items: topCities, valueClass: 'text-success' },
-                { title: 'Precisam de Atenção', icon: TrendingDown, iconClass: 'text-destructive', items: bottomCities, valueClass: 'text-destructive' },
-              ].map(({ title, icon: Icon, iconClass, items, valueClass }) => (
-                <div key={title} className="card-ga360">
-                  <div className="flex items-center gap-2 mb-3"><Icon className={`h-4 w-4 ${iconClass}`} /><h3 className="font-semibold text-foreground">{title}</h3></div>
-                  <div className="space-y-2">
-                    {items.map((city, index) => (
-                      <button key={city.cityId} onClick={() => handleCityClick(city)} className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-muted transition-colors">
+
+              {/* Top 5 */}
+              {sortedCities.slice(0, 5).length > 0 && (
+                <div className="card-ga360">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingUp className="h-4 w-4 text-success" />
+                    <h3 className="font-semibold text-foreground text-sm">Top 5 Cidades</h3>
+                  </div>
+                  <div className="space-y-1.5">
+                    {sortedCities.slice(0, 5).map((city, i) => (
+                      <button
+                        key={city.cityId}
+                        onClick={() => handleCityClick(city)}
+                        className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-muted transition-colors"
+                      >
                         <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-muted text-xs flex items-center justify-center font-medium">{index + 1}</span>
+                          <span className="w-4 h-4 rounded-full bg-muted text-xs flex items-center justify-center font-medium">{i + 1}</span>
                           <span className="text-sm font-medium">{city.cityName}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-sm font-semibold ${valueClass}`}>{city.positivationPercent}%</span>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        </div>
+                        <span className="text-sm font-semibold text-success">
+                          {city.positivationPercent}%
+                        </span>
                       </button>
                     ))}
                   </div>
                 </div>
-              ))}
+              )}
+
+              {/* Precisam de atenção */}
+              {sortedCities.length > 5 && (
+                <div className="card-ga360">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingDown className="h-4 w-4 text-destructive" />
+                    <h3 className="font-semibold text-foreground text-sm">Precisam de Atenção</h3>
+                  </div>
+                  <div className="space-y-1.5">
+                    {[...sortedCities].reverse().slice(0, 5).map((city, i) => (
+                      <button
+                        key={city.cityId}
+                        onClick={() => handleCityClick(city)}
+                        className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-muted transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-4 h-4 rounded-full bg-muted text-xs flex items-center justify-center font-medium">{i + 1}</span>
+                          <span className="text-sm font-medium">{city.cityName}</span>
+                        </div>
+                        <span className="text-sm font-semibold text-destructive">
+                          {city.positivationPercent}%
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
+        {/* ── Sheet drawer de detalhe da cidade ── */}
         <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
           <SheetContent className="w-[500px] sm:max-w-[500px] overflow-y-auto">
             {selectedCity && (
@@ -207,69 +351,131 @@ function CockpitMapContent() {
                     <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                       <MapPin className="h-5 w-5 text-primary" />
                     </div>
-                    <div><SheetTitle className="text-xl">{selectedCity.cityName}</SheetTitle><p className="text-sm text-muted-foreground">{selectedCity.uf}</p></div>
+                    <div>
+                      <SheetTitle className="text-xl">{selectedCity.cityName}</SheetTitle>
+                      <p className="text-sm text-muted-foreground">{selectedCity.uf}</p>
+                    </div>
+                    <Badge variant="outline" className={cn('ml-auto border', getHealthBadge(selectedCity.positivationPercent).cls)}>
+                      {getHealthBadge(selectedCity.positivationPercent).label}
+                    </Badge>
                   </div>
                 </SheetHeader>
                 <div className="py-6 space-y-6">
                   <div className="grid grid-cols-2 gap-3">
-                    <KPICard title="Positivação" value={`${cityDetail?.kpis?.positivationPercent || selectedCity.positivationPercent}%`}
+                    <KPICard
+                      title="Positivação"
+                      value={`${cityDetail?.kpis?.positivationPercent || selectedCity.positivationPercent}%`}
                       subtitle={`${cityDetail?.kpis?.positivatedClients || selectedCity.positivatedClients} de ${cityDetail?.kpis?.baseClients || selectedCity.baseClients}`}
-                      icon={<Users className="h-4 w-4" />} className="!p-4" />
-                    <KPICard title="Vendas" value={formatCurrency(cityDetail?.kpis?.salesTotal || selectedCity.salesTotal)}
-                      icon={<DollarSign className="h-4 w-4" />} className="!p-4" />
+                      progressValue={cityDetail?.kpis?.positivationPercent || selectedCity.positivationPercent}
+                      icon={<Users className="h-4 w-4" />}
+                      className="!p-4"
+                    />
+                    <KPICard
+                      title="Vendas"
+                      value={formatCurrency(cityDetail?.kpis?.salesTotal || selectedCity.salesTotal)}
+                      icon={<DollarSign className="h-4 w-4" />}
+                      className="!p-4"
+                    />
                   </div>
+
                   <Tabs defaultValue="overview" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="overview">Visão Geral</TabsTrigger>
                       <TabsTrigger value="mix">Mix Ideal</TabsTrigger>
                     </TabsList>
+
                     <TabsContent value="overview" className="space-y-4 mt-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-semibold">Clientes Não Positivados</h4>
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-sm">Clientes Não Positivados</h4>
                         <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="sm" onClick={handleCopyList} disabled={isCityLoading}><Copy className="h-4 w-4 mr-1" />Copiar</Button>
-                          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={isCityLoading}><Download className="h-4 w-4 mr-1" />CSV</Button>
+                          <Button variant="ghost" size="sm" onClick={handleCopyList} disabled={isCityLoading}>
+                            <Copy className="h-4 w-4 mr-1" />Copiar
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={isCityLoading}>
+                            <Download className="h-4 w-4 mr-1" />CSV
+                          </Button>
                         </div>
                       </div>
                       {isCityLoading ? (
-                        <div className="space-y-2">{[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
+                        <div className="space-y-2">
+                          {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                        </div>
                       ) : cityDetail?.nonPositivatedClients?.length ? (
                         <div className="rounded-lg border overflow-hidden">
                           <Table>
-                            <TableHeader><TableRow className="bg-muted/50"><TableHead className="font-medium">Cliente</TableHead><TableHead className="font-medium">Canal</TableHead><TableHead className="font-medium text-right">Dias</TableHead></TableRow></TableHeader>
+                            <TableHeader>
+                              <TableRow className="bg-muted/50">
+                                <TableHead className="font-medium">Cliente</TableHead>
+                                <TableHead className="font-medium">Canal</TableHead>
+                                <TableHead className="font-medium text-right">Dias</TableHead>
+                              </TableRow>
+                            </TableHeader>
                             <TableBody>
                               {cityDetail.nonPositivatedClients.map((client) => (
                                 <TableRow key={client.clientId} className="hover:bg-muted/30">
-                                  <TableCell><div><p className="font-medium text-sm">{client.clientName}</p><p className="text-xs text-muted-foreground">{client.clientCode}</p></div></TableCell>
-                                  <TableCell><span className="text-xs font-medium px-2 py-1 rounded-full bg-muted">{client.channelCode}</span></TableCell>
-                                  <TableCell className="text-right"><span className={cn('text-sm font-medium', (client.daysSinceLastPurchase || 0) > 30 ? 'text-destructive' : 'text-muted-foreground')}>{client.daysSinceLastPurchase || '—'}</span></TableCell>
+                                  <TableCell>
+                                    <div>
+                                      <p className="font-medium text-sm">{client.clientName}</p>
+                                      <p className="text-xs text-muted-foreground">{client.clientCode}</p>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className="text-xs font-medium px-2 py-1 rounded-full bg-muted">{client.channelCode}</span>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <span className={cn('text-sm font-medium', (client.daysSinceLastPurchase || 0) > 30 ? 'text-destructive' : 'text-muted-foreground')}>
+                                      {client.daysSinceLastPurchase || '—'}
+                                    </span>
+                                  </TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>
                           </Table>
                         </div>
                       ) : (
-                        <div className="text-center py-8 text-muted-foreground"><Users className="h-8 w-8 mx-auto mb-2 opacity-50" /><p>Todos os clientes foram positivados!</p></div>
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p>Todos os clientes foram positivados!</p>
+                        </div>
                       )}
                     </TabsContent>
+
                     <TabsContent value="mix" className="space-y-4 mt-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <div><h4 className="font-semibold">Top Produtos da Região</h4><p className="text-xs text-muted-foreground">Baseado no histórico de vendas desta cidade</p></div>
-                        <Button variant="ghost" size="sm" onClick={handleCopyMix} disabled={isMixLoading}><Copy className="h-4 w-4 mr-1" />Copiar Mix</Button>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-semibold text-sm">Top Produtos da Região</h4>
+                          <p className="text-xs text-muted-foreground">Baseado no histórico de vendas desta cidade</p>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={handleCopyMix} disabled={isMixLoading}>
+                          <Copy className="h-4 w-4 mr-1" />Copiar Mix
+                        </Button>
                       </div>
                       {isMixLoading ? (
-                        <div className="space-y-2">{[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
+                        <div className="space-y-2">
+                          {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                        </div>
                       ) : mixItems?.length ? (
                         <div className="rounded-lg border overflow-hidden">
                           <Table>
-                            <TableHeader><TableRow className="bg-muted/50"><TableHead className="font-medium">Produto</TableHead><TableHead className="font-medium text-right">Qtd</TableHead><TableHead className="font-medium text-right">Faturamento</TableHead></TableRow></TableHeader>
+                            <TableHeader>
+                              <TableRow className="bg-muted/50">
+                                <TableHead className="font-medium">Produto</TableHead>
+                                <TableHead className="font-medium text-right">Qtd</TableHead>
+                                <TableHead className="font-medium text-right">Faturamento</TableHead>
+                              </TableRow>
+                            </TableHeader>
                             <TableBody>
                               {mixItems.map((item) => (
                                 <TableRow key={item.sku} className="hover:bg-muted/30">
                                   <TableCell>
                                     <div className="flex items-center gap-2">
-                                      <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center flex-shrink-0"><Package className="h-4 w-4 text-primary" /></div>
-                                      <div><p className="font-medium text-sm line-clamp-1">{item.name}</p><p className="text-xs text-muted-foreground">{item.sku}</p></div>
+                                      <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                                        <Package className="h-4 w-4 text-primary" />
+                                      </div>
+                                      <div>
+                                        <p className="font-medium text-sm line-clamp-1">{item.name}</p>
+                                        <p className="text-xs text-muted-foreground">{item.sku}</p>
+                                      </div>
                                     </div>
                                   </TableCell>
                                   <TableCell className="text-right text-sm">{item.quantity} un</TableCell>
@@ -280,7 +486,10 @@ function CockpitMapContent() {
                           </Table>
                         </div>
                       ) : (
-                        <div className="text-center py-8 text-muted-foreground"><Package className="h-8 w-8 mx-auto mb-2 opacity-50" /><p>Nenhum dado de venda encontrado para esta cidade.</p></div>
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p>Nenhum dado de venda encontrado para esta cidade.</p>
+                        </div>
                       )}
                     </TabsContent>
                   </Tabs>

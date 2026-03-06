@@ -95,10 +95,12 @@ function CockpitCommercialContent() {
     <div>
       <CockpitFilters />
       <div className="p-6 space-y-6 animate-fade-in">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Detalhe Comercial</h1>
-            <p className="text-muted-foreground mt-1">Tendências e rankings — {selectedCompany?.name}</p>
+            <h1 className="text-3xl font-bold text-foreground tracking-tight">Detalhe Comercial</h1>
+            <p className="text-muted-foreground mt-1">
+              Tendências e rankings — <span className="font-medium text-foreground">{selectedCompany?.name}</span>
+            </p>
           </div>
           <Button variant="outline" className="gap-2">
             <Download className="h-4 w-4" />
@@ -109,7 +111,10 @@ function CockpitCommercialContent() {
         {/* Trend Chart */}
         <div className="card-ga360">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="font-semibold text-foreground">Tendência Diária</h3>
+            <div>
+              <h3 className="font-semibold text-foreground">Tendência Diária</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Evolução no período selecionado</p>
+            </div>
             <Select value={chartMetric} onValueChange={(v) => setChartMetric(v as typeof chartMetric)}>
               <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -118,7 +123,7 @@ function CockpitCommercialContent() {
               </SelectContent>
             </Select>
           </div>
-          <div className="h-[300px]">
+          <div className="h-[360px]">
             {isLoading ? (
               <div className="flex items-center justify-center h-full">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

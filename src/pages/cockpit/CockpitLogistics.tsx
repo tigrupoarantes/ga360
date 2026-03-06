@@ -255,8 +255,13 @@ function CockpitLogisticsContent() {
       <CockpitFilters />
       <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Package className="h-6 w-6" />Logística</h1>
-          <p className="text-sm text-muted-foreground mt-1">Curva ABC, Mix Campeão e análise logística baseada em vendas</p>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Package className="h-7 w-7 text-primary" />
+            Logística
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Curva ABC, Mix Campeão e análise logística baseada em vendas
+          </p>
         </div>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-5 max-w-3xl">
