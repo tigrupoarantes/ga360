@@ -16,10 +16,11 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Normaliza o path: remove prefixo /functions/v1/public-api e /v1
+  // Normaliza o path: remove prefixo do slug da função (/functions/v1/public-api no externo,
+  // /public-api no runtime interno do Supabase) e o prefixo de versão /v1
   const raw = new URL(req.url).pathname;
   const path = raw
-    .replace(/^\/functions\/v1\/public-api/, "")
+    .replace(/^\/(functions\/v1\/)?public-api/, "")
     .replace(/^\/v1/, "")
     .replace(/\/$/, "") || "/";
 
