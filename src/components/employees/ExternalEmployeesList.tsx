@@ -360,8 +360,9 @@ export function ExternalEmployeesList() {
   };
 
   const exportToCsv = () => {
-    const headers = ['CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Sexo', 'Data Nascimento', 'Idade', 'Primeiro Emprego', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
+    const headers = ['Empresa', 'CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Sexo', 'Data Nascimento', 'Idade', 'Primeiro Emprego', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
     const rows = filteredEmployees.map(e => [
+      e.companies?.name || e.company_id || '',
       e.cpf || '',
       e.registration_number || '',
       e.full_name,
