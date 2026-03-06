@@ -46,6 +46,11 @@ import ControlePJ from "./pages/ControlePJ";
 import ControlePJDetail from "./pages/ControlePJDetail";
 import VerbasPage from "./pages/Verbas";
 import NotFound from "./pages/NotFound";
+import CockpitHome from "@/pages/cockpit/CockpitHome";
+import CockpitMap from "@/pages/cockpit/CockpitMap";
+import CockpitCommercial from "@/pages/cockpit/CockpitCommercial";
+import CockpitLogistics from "@/pages/cockpit/CockpitLogistics";
+import CockpitSettings from "@/pages/cockpit/CockpitSettings";
 
 const queryClient = new QueryClient();
 
@@ -369,6 +374,46 @@ const App = () => (
                   }
                 />
                 <Route path="/change-password" element={<ChangePassword />} />
+                <Route
+                  path="/cockpit"
+                  element={
+                    <ProtectedRoute>
+                      <CockpitHome />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cockpit/mapa"
+                  element={
+                    <ProtectedRoute>
+                      <CockpitMap />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cockpit/comercial"
+                  element={
+                    <ProtectedRoute>
+                      <CockpitCommercial />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cockpit/logistica"
+                  element={
+                    <ProtectedRoute>
+                      <CockpitLogistics />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cockpit/config"
+                  element={
+                    <ProtectedRoute allowedRoles={["super_admin", "ceo", "diretor"]}>
+                      <CockpitSettings />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </CompanyProvider>

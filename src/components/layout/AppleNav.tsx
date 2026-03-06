@@ -22,7 +22,10 @@ import {
   Target,
   Building,
   Bug,
-  Bot
+  Bot,
+  MapPin,
+  Package,
+  Monitor,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -70,6 +73,16 @@ const navigation: NavItem[] = [
   { name: 'Analytics', href: '/analytics', icon: TrendingUp },
   { name: 'Gamificação', href: '/gamificacao', icon: Gamepad2 },
   { name: 'Relatórios', href: '/relatorios', icon: BarChart3 },
+  {
+    name: 'Cockpit',
+    icon: Monitor,
+    children: [
+      { name: 'KPIs Comerciais', href: '/cockpit', icon: LayoutDashboard },
+      { name: 'Mapa / Heatmap', href: '/cockpit/mapa', icon: MapPin },
+      { name: 'Comercial', href: '/cockpit/comercial', icon: TrendingUp },
+      { name: 'Logística', href: '/cockpit/logistica', icon: Package },
+    ]
+  },
 ];
 
 export function AppleNav() {

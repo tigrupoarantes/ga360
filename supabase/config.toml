@@ -80,3 +80,27 @@ verify_jwt = true
 
 [functions.sync-verbas]
 verify_jwt = false
+
+# ============================================================
+# Cockpit GA - migrado para o GA360 em 2026-03-06
+# JWT desativado no gateway: auth manual com service role key
+# (get-companies) ou RLS via anon key (demais funções)
+# ============================================================
+
+[functions.attack-list]
+verify_jwt = false
+
+[functions.city-detail]
+verify_jwt = false
+
+[functions.geo-heatmap]
+verify_jwt = false
+
+[functions.kpi-summary]
+verify_jwt = false
+
+[functions.get-companies]
+verify_jwt = false
+
+[functions.test-api-connection]
+verify_jwt = false

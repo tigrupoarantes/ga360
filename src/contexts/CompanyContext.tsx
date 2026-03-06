@@ -7,6 +7,7 @@ interface Company {
   is_active: boolean;
   logo_url?: string;
   color?: string;
+  external_id?: string; // código DAB (ex: '2', '3') — usado pelos hooks do Cockpit
 }
 
 interface CompanyContextType {

@@ -6,7 +6,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const ALLOWED_PATHS = new Set(["funcionarios", "self"]);
+const ALLOWED_PATHS = new Set([
+  // GA360 - RH / Gestão de Pessoas
+  "funcionarios",
+  "self",
+  // Cockpit GA - Comercial / Analytics
+  "health",
+  "companies",
+  "venda_prod",
+  "sales_daily",
+  "sales_by_sku",
+  "coverage_city",
+  "stock_position",
+  "produtos",
+  "stock_lots",
+  "sales_product_detail",
+]);
 
 interface DabProxyRequest {
   path?: string;
