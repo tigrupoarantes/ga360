@@ -368,6 +368,27 @@
   }
 }
 
+/* ============================================================
+   Cockpit GA360 — Design System Bridge Classes
+   card-ga360, kpi-card e text-kpi-* eram referenciados nos
+   componentes do cockpit mas não tinham definição CSS.
+   ============================================================ */
+@layer components {
+  .card-ga360 {
+    @apply bg-card rounded-xl border border-border/60 p-5 shadow-sm;
+  }
+
+  .kpi-card {
+    @apply bg-card rounded-xl border border-border/60 p-5 shadow-sm transition-shadow duration-200 hover:shadow-md;
+  }
+}
+
+@layer utilities {
+  .text-kpi-positive { color: hsl(var(--success)); }
+  .text-kpi-negative { color: hsl(var(--destructive)); }
+  .text-kpi-neutral  { color: hsl(var(--muted-foreground)); }
+}
+
 /* Custom scrollbar - Apple style */
 ::-webkit-scrollbar {
   width: 8px;

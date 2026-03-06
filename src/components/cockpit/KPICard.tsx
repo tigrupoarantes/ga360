@@ -15,6 +15,8 @@ interface KPICardProps {
   icon?: React.ReactNode;
   isProxy?: boolean;
   proxyTooltip?: string;
+  /** 0-100 → exibe barra de progresso colorida abaixo do valor */
+  progressValue?: number;
   className?: string;
   onClick?: () => void;
 }
@@ -28,6 +30,7 @@ export function KPICard({
   icon,
   isProxy,
   proxyTooltip = 'Valor estimado (proxy)',
+  progressValue,
   className,
   onClick,
 }: KPICardProps) {
@@ -35,13 +38,29 @@ export function KPICard({
   const isNegative = variation !== undefined && variation < 0;
   const isNeutral = variation === 0;
 
+  // Cor do ícone reflete saúde do indicador
+  const iconBg =
+    variation === undefined
+      ? 'bg-primary/10 text-primary'
+      : variation > 0
+        ? 'bg-success/10 text-success'
+        : variation < -5
+          ? 'bg-destructive/10 text-destructive'
+          : 'bg-warning/10 text-warning';
+
+  // Cor da barra de progresso
+  const barColor =
+    progressValue === undefined
+      ? ''
+      : progressValue >= 80
+        ? 'bg-success'
+        : progressValue >= 60
+          ? 'bg-warning'
+          : 'bg-destructive';
+
   return (
     <div
-      className={cn(
-        'kpi-card cursor-default',
-        onClick && 'cursor-pointer',
-        className
-      )}
+      className={cn('kpi-card cursor-default', onClick && 'cursor-pointer hover-lift', className)}
       onClick={onClick}
     >
       <div className="flex items-start justify-between mb-3">
@@ -57,20 +76,27 @@ export function KPICard({
           )}
         </div>
         {icon && (
-          <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+          <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center transition-colors', iconBg)}>
             {icon}
           </div>
         )}
       </div>
 
       <div className="space-y-1">
-        <p className="text-2xl font-bold tracking-tight text-foreground">
-          {value}
-        </p>
-        {subtitle && (
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
-        )}
+        <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
       </div>
+
+      {progressValue !== undefined && (
+        <div className="mt-3">
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all duration-700', barColor)}
+              style={{ width: `${Math.min(Math.max(progressValue, 0), 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {variation !== undefined && (
         <div className="mt-3 pt-3 border-t border-border/50">
@@ -86,8 +112,7 @@ export function KPICard({
                 isNeutral && 'text-kpi-neutral'
               )}
             >
-              {isPositive && '+'}
-              {variation.toFixed(1)}%
+              {isPositive && '+'}{variation.toFixed(1)}%
             </span>
             {variationLabel && (
               <span className="text-xs text-muted-foreground">{variationLabel}</span>
