@@ -104,3 +104,15 @@ verify_jwt = false
 
 [functions.test-api-connection]
 verify_jwt = false
+
+# ============================================================
+# GA360 Public API + MCP Server — 2026-03-06
+# Auth própria via X-Api-Key (SHA-256 hash lookup)
+# verify_jwt = false porque não usa Supabase JWT
+# ============================================================
+
+[functions.public-api]
+verify_jwt = false
+
+[functions.mcp-server]
+verify_jwt = false

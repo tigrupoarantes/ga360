@@ -36,6 +36,7 @@ import AdminEmployees from "./pages/AdminEmployees";
 import AdminGovernancaEC from "./pages/AdminGovernancaEC";
 import AdminDatalake from "./pages/AdminDatalake";
 import AdminBugReports from "./pages/AdminBugReports";
+import AdminApiKeys from "./pages/AdminApiKeys";
 import GovernancaEC from "./pages/GovernancaEC";
 import GovernancaECArea from "./pages/GovernancaECArea";
 import GovernancaECCardDetail from "./pages/GovernancaECCardDetail";
@@ -290,6 +291,16 @@ const App = () => (
                       requiredPermission={{ module: 'admin', action: 'view' }}
                     >
                       <AdminBugReports />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/api-keys"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["super_admin", "ceo", "diretor"]}
+                    >
+                      <AdminApiKeys />
                     </ProtectedRoute>
                   }
                 />
