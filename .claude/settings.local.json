@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find 'c:/GIT GA/GA360' -name *.jpg -newer 'c:/GIT GA/GA360/package.json')",
+      "Bash(grep -ri lovable 'c:/GIT GA/GA360' --include=*.json --include=*.html --include=*.ts --include=*.tsx --include=*.md -l)",
+      "Bash(grep -ri lovable 'c:/GIT GA/GA360' --include=*.toml --include=*.yaml --include=*.yml -l)",
+      "Bash(python3 -c \"from PIL import Image; print\\(''pillow ok''\\)\")",
+      "Bash(node -e \"console.log\\(''node ok''\\)\")"
+    ]
+  }
+}
