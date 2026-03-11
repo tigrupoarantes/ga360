@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { BackButton } from "@/components/ui/back-button";
 import { useCardPermissions } from "@/hooks/useCardPermissions";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/external-client";
+import { supabase } from "@/integrations/supabase/client";
 import { useCompany } from "@/contexts/CompanyContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -20,6 +20,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { RoleGuard } from "@/components/auth/RoleGuard";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar, Cell } from "recharts";
 import { cn } from "@/lib/utils";
 
@@ -148,6 +150,19 @@ const TIPO_VERBA_OPTIONS = [
   "VERBA_INDENIZATORIA", "ADIANTAMENTO_VERBA_IDENIZATORIA",
   "DESC_PLANO_SAUDE", "PLANO_SAUDE_EMPRESA", "FGTS", "OUTROS",
 ];
+
+const TIPO_VERBA_LABELS: Record<string, string> = {
+  SALDO_SALARIO: "Saldo de Salário",
+  COMISSAO_DSR: "Comissão + DSR",
+  BONUS: "Bônus",
+  PREMIO: "Prêmio",
+  VERBA_INDENIZATORIA: "Verba Indenizatória",
+  ADIANTAMENTO_VERBA_IDENIZATORIA: "Adiant. Verba Indenizatória",
+  DESC_PLANO_SAUDE: "Desc. Plano de Saúde",
+  PLANO_SAUDE_EMPRESA: "Plano de Saúde (Empresa)",
+  FGTS: "FGTS",
+  OUTROS: "Outros",
+};
 
 const CHART_COLORS = [
   "hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))",
@@ -381,7 +396,7 @@ export default function VerbasPage() {
   const [cpf, setCpf] = useState("");
   const [nome, setNome] = useState("");
   const [tipoVerba, setTipoVerba] = useState("all");
-  const [companyFilter, setCompanyFilter] = useState("all");
+  const [companyFilter, setCompanyFilter] = useState(() => selectedCompanyId || "all");
   const [positionFilter, setPositionFilter] = useState("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const [viewMode, setViewMode] = useState<"company" | "accounting">("company");
@@ -394,6 +409,13 @@ export default function VerbasPage() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [syncChecklist, setSyncChecklist] = useState<Array<{ label: string; ok: boolean }>>([]);
+
+  // Sync company filter and reset dependent filters when global company changes
+  useEffect(() => {
+    setCompanyFilter(selectedCompanyId || "all");
+    setPositionFilter("all");
+    setDepartmentFilter("all");
+  }, [selectedCompanyId]);
 
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -440,66 +462,39 @@ export default function VerbasPage() {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: [
       "verbas-hierarchy-v3",
+      selectedCompanyId,
       selectedYears.join(","),
       cpf, nome, tipoVerba,
       companyFilter, positionFilter, departmentFilter,
     ],
     queryFn: async () => {
       const yearsToQuery = selectedYears.length ? selectedYears : [String(currentYear)];
-      const serverPageSize = 1000;
-      const maxPagesPerYear = 60;
 
       const responses = await Promise.all(
         yearsToQuery.map(async (year) => {
-          const allRows: VerbasRow[] = [];
-          let responseAccess: VerbasAccess = "masked";
-          let page = 1;
+          const body: Record<string, unknown> = {
+            ano: Number(year),
+            fetchAll: true,
+            autoSyncWhenEmpty: false,
+          };
+          if (companyFilter !== "all") body.companyId = companyFilter;
+          if (cpf.trim()) body.cpf = cpf.trim();
+          if (nome.trim()) body.nome = nome.trim();
+          if (tipoVerba !== "all") body.tipoVerba = tipoVerba;
+          if (departmentFilter !== "all") body.department = departmentFilter;
+          if (positionFilter !== "all") body.position = positionFilter;
 
-          while (page <= maxPagesPerYear) {
-            const body: Record<string, unknown> = {
-              ano: Number(year),
-              autoSyncWhenEmpty: false,
-              page,
-              pageSize: serverPageSize,
-            };
-            // Only restrict by company when user explicitly selects one
-            if (companyFilter !== "all") body.companyId = companyFilter;
-            if (cpf.trim()) body.cpf = cpf.trim();
-            if (nome.trim()) body.nome = nome.trim();
-            if (tipoVerba !== "all") body.tipoVerba = tipoVerba;
-            if (departmentFilter !== "all") body.department = departmentFilter;
-            if (positionFilter !== "all") body.position = positionFilter;
+          const { data: response, error: invokeError } = await supabase.functions.invoke(
+            "verbas-secure-query",
+            { body },
+          );
 
-            const { data: response, error: invokeError } = await supabase.functions.invoke(
-              "verbas-secure-query",
-              { body },
-            );
-
-            if (invokeError) {
-              const details = await extractInvokeErrorDetails(invokeError);
-              throw new Error(details || "Falha ao consultar verbas");
-            }
-
-            const typed = (response || { rows: [], total: 0, page, pageSize: serverPageSize, access: "masked" }) as VerbasResponse;
-            responseAccess = typed.access === "full" ? "full" : responseAccess;
-            const currentRows = typed.rows || [];
-            allRows.push(...currentRows);
-
-            if (currentRows.length < serverPageSize) {
-              break;
-            }
-
-            page += 1;
+          if (invokeError) {
+            const details = await extractInvokeErrorDetails(invokeError);
+            throw new Error(details || "Falha ao consultar verbas");
           }
 
-          return {
-            success: true,
-            access: responseAccess,
-            page: 1,
-            pageSize: serverPageSize,
-            total: allRows.length,
-            rows: allRows,
-          } as VerbasResponse;
+          return (response || { rows: [], total: 0, access: "masked" }) as VerbasResponse;
         }),
       );
 
@@ -507,13 +502,13 @@ export default function VerbasPage() {
         success: true,
         access: responses.some((r) => r.access === "full") ? "full" : "masked",
         page: 1,
-        pageSize: serverPageSize,
+        pageSize: 0,
         total: responses.reduce((s, r) => s + (r.total || 0), 0),
         rows: responses.flatMap((r) => r.rows || []),
       } as VerbasResponse;
     },
     enabled: !permissionsLoading && !cardLoading && !!verbasCard && hasCardPermission(verbasCard.id, "view"),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
 
@@ -937,10 +932,12 @@ export default function VerbasPage() {
                 )}
               </Badge>
             )}
-            <Button variant="outline" size="sm" onClick={() => setShowSyncPanel((v) => !v)}>
-              <Settings2 className="h-4 w-4 mr-1" />
-              Sincronização
-            </Button>
+            <RoleGuard roles={["super_admin", "ceo", "diretor"]}>
+              <Button variant="outline" size="sm" onClick={() => setShowSyncPanel((v) => !v)}>
+                <Settings2 className="h-4 w-4 mr-1" />
+                Sincronização
+              </Button>
+            </RoleGuard>
           </div>
         </div>
 
@@ -981,7 +978,7 @@ export default function VerbasPage() {
                 <p className="text-xs font-medium text-muted-foreground">Período</p>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="w-36 justify-between">
+                    <Button variant="outline" className="w-36 justify-between" disabled={isFetching}>
                       {yearsLabel}
                       <ChevronDown className="h-4 w-4 ml-2 opacity-60" />
                     </Button>
@@ -997,7 +994,7 @@ export default function VerbasPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Empresa</p>
-                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <Select value={companyFilter} onValueChange={setCompanyFilter} disabled={isFetching}>
                   <SelectTrigger className="w-56"><SelectValue placeholder="Todas as empresas" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas as empresas</SelectItem>
@@ -1007,7 +1004,7 @@ export default function VerbasPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Visão</p>
-                <Select value={viewMode} onValueChange={(v) => setViewMode(v as "company" | "accounting")}>
+                <Select value={viewMode} onValueChange={(v) => setViewMode(v as "company" | "accounting")} disabled={isFetching}>
                   <SelectTrigger className="w-56"><SelectValue placeholder="Selecionar" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="company">Por empresa</SelectItem>
@@ -1017,7 +1014,7 @@ export default function VerbasPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Cargo</p>
-                <Select value={positionFilter} onValueChange={setPositionFilter}>
+                <Select value={positionFilter} onValueChange={setPositionFilter} disabled={isFetching}>
                   <SelectTrigger className="w-52"><SelectValue placeholder="Todos os cargos" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos os cargos</SelectItem>
@@ -1027,7 +1024,7 @@ export default function VerbasPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Setor</p>
-                <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                <Select value={departmentFilter} onValueChange={setDepartmentFilter} disabled={isFetching}>
                   <SelectTrigger className="w-48"><SelectValue placeholder="Todos os setores" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos os setores</SelectItem>
@@ -1037,21 +1034,21 @@ export default function VerbasPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Tipo de verba</p>
-                <Select value={tipoVerba} onValueChange={setTipoVerba}>
+                <Select value={tipoVerba} onValueChange={setTipoVerba} disabled={isFetching}>
                   <SelectTrigger className="w-52"><SelectValue placeholder="Todos os tipos" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos os tipos</SelectItem>
-                    {TIPO_VERBA_OPTIONS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    {TIPO_VERBA_OPTIONS.map((t) => <SelectItem key={t} value={t}>{TIPO_VERBA_LABELS[t] ?? t}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Nome</p>
-                <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Buscar nome..." className="w-48" onKeyDown={(e) => e.key === "Enter" && refetch()} />
+                <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Buscar nome..." className="w-48" disabled={isFetching} onKeyDown={(e) => e.key === "Enter" && refetch()} />
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">CPF</p>
-                <Input value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" className="w-40" onKeyDown={(e) => e.key === "Enter" && refetch()} />
+                <Input value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" className="w-40" disabled={isFetching} onKeyDown={(e) => e.key === "Enter" && refetch()} />
               </div>
               <Button onClick={() => refetch()} disabled={isFetching} className="self-end">
                 {isFetching ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
@@ -1062,16 +1059,34 @@ export default function VerbasPage() {
         </Card>
 
         {/* ── Sync panel (collapsible) ────────────────────────────────────── */}
+        <RoleGuard roles={["super_admin", "ceo", "diretor"]}>
         <Collapsible open={showSyncPanel} onOpenChange={setShowSyncPanel}>
           <CollapsibleContent>
             <Card className="border-dashed">
               <CardContent className="p-4 space-y-3">
                 <p className="text-sm font-semibold text-muted-foreground">Operações de Sincronização</p>
                 <div className="flex flex-wrap gap-3 items-end">
-                  <Button variant="secondary" onClick={handleInitialBootstrap} disabled={syncing}>
-                    {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                    Carga inicial completa (todas empresas)
-                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="secondary" disabled={syncing}>
+                        {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                        Carga inicial completa (todas empresas)
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Confirmar carga inicial completa</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Esta operação irá sincronizar todos os 12 meses do(s) ano(s) selecionado(s) para todas as empresas, sem filtros.
+                          Pode levar vários minutos e sobrecarregar o Datalake temporariamente. Confirma?
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleInitialBootstrap}>Confirmar</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                   <Button variant="outline" onClick={handleSyncVerbas} disabled={syncing}>
                     {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
                     Sincronização anual (12 meses, com filtros)
@@ -1115,6 +1130,7 @@ export default function VerbasPage() {
             </Card>
           </CollapsibleContent>
         </Collapsible>
+        </RoleGuard>
 
         {/* ── Main hierarchy: EMPRESA → GRUPO → CARGO → FUNCIONÁRIO ─────── */}
         <Card>
@@ -1126,10 +1142,17 @@ export default function VerbasPage() {
             ) : error ? (
               <div className="p-6 text-sm text-destructive">{(error as Error).message}</div>
             ) : (viewMode === "company" ? companyNodes.length === 0 : accountingRootNodes.length === 0) ? (
-              <div className="p-12 text-center space-y-2">
+              <div className="p-12 text-center space-y-3">
                 <Users className="h-10 w-10 text-muted-foreground mx-auto" />
-                <p className="text-muted-foreground">Nenhum registro encontrado.</p>
-                <p className="text-xs text-muted-foreground">Ajuste os filtros e clique em Buscar.</p>
+                <p className="text-muted-foreground font-medium">Nenhum registro encontrado.</p>
+                {(cpf || nome || tipoVerba !== "all" || positionFilter !== "all" || departmentFilter !== "all") ? (
+                  <p className="text-xs text-muted-foreground">Ajuste os filtros e clique em Buscar.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Nenhum dado para o período e empresa selecionados.
+                    Use o painel de <span className="font-medium">Sincronização</span> para importar dados do Datalake.
+                  </p>
+                )}
               </div>
             ) : viewMode === "company" ? (
               <Accordion type="multiple" className="w-full">

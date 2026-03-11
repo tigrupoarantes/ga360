@@ -19,6 +19,7 @@ interface VerbasSecureQueryRequest {
   accountingGroup?: string;
   page?: number;
   pageSize?: number;
+  fetchAll?: boolean;
   autoSyncWhenEmpty?: boolean;
   syncNow?: boolean;
   syncMaxPages?: number;
@@ -106,7 +107,7 @@ function buildVerbasQuery(
   body: VerbasSecureQueryRequest,
   from: number,
   to: number,
-  options?: { enableEmployeeFilters?: boolean },
+  options?: { enableEmployeeFilters?: boolean; fetchAll?: boolean },
 ) {
   let queryBase =
     schemaName === "gold"
@@ -118,8 +119,11 @@ function buildVerbasQuery(
     .in("company_id", allowedCompanyIds)
     .order("ano", { ascending: false })
     .order("razao_social", { ascending: true })
-    .order("nome_funcionario", { ascending: true })
-    .range(from, to);
+    .order("nome_funcionario", { ascending: true });
+
+  if (!options?.fetchAll) {
+    query = query.range(from, to);
+  }
 
   if (body.ano) {
     query = query.eq("ano", Number(body.ano));
@@ -418,6 +422,7 @@ serve(async (req: Request) => {
 
     const hasFullAccess = Boolean(adminPermission.is_super_admin || adminPermission.can_view || canManageCard);
 
+    const fetchAll = body.fetchAll === true;
     const page = Math.max(1, Number(body.page || 1));
     const pageSize = Math.min(1000, Math.max(1, Number(body.pageSize || 50)));
     const from = (page - 1) * pageSize;
@@ -483,19 +488,19 @@ serve(async (req: Request) => {
     }
 
     let usedEmployeeFiltersInDb = true;
-    let result = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: true });
+    let result = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: true, fetchAll });
 
     if (result.error && isMissingColumnError(result.error)) {
       // View doesn't have employee_* columns yet; fall back to old enrichment + in-memory filtering.
       usedEmployeeFiltersInDb = false;
-      result = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: false });
+      result = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: false, fetchAll });
     }
 
     if (result.error && (isMissingViewError(result.error) || isSchemaExposureError(result.error))) {
-      result = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb });
+      result = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb, fetchAll });
       if (result.error && usedEmployeeFiltersInDb && isMissingColumnError(result.error)) {
         usedEmployeeFiltersInDb = false;
-        result = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: false });
+        result = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: false, fetchAll });
       }
     }
 
@@ -535,13 +540,13 @@ serve(async (req: Request) => {
           body.position,
           true,
         );
-        let retry = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb });
+        let retry = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb, fetchAll });
 
         if (retry.error && (isMissingViewError(retry.error) || isSchemaExposureError(retry.error))) {
-          retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb });
+          retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb, fetchAll });
           if (retry.error && usedEmployeeFiltersInDb && isMissingColumnError(retry.error)) {
             usedEmployeeFiltersInDb = false;
-            retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: false });
+            retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: false, fetchAll });
           }
         }
 
@@ -555,13 +560,13 @@ serve(async (req: Request) => {
     }
 
     if (syncNow && !syncError) {
-      let retry = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb });
+      let retry = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb, fetchAll });
 
       if (retry.error && (isMissingViewError(retry.error) || isSchemaExposureError(retry.error))) {
-        retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb });
+        retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb, fetchAll });
         if (retry.error && usedEmployeeFiltersInDb && isMissingColumnError(retry.error)) {
           usedEmployeeFiltersInDb = false;
-          retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: false });
+          retry = await buildVerbasQuery(supabaseAdmin, "gold", allowedCompanyIds, body, from, to, { enableEmployeeFilters: false, fetchAll });
         }
       }
 
