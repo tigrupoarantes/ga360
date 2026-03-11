@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Progress } from "@/components/ui/progress";
 import { RoleGuard } from "@/components/auth/RoleGuard";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, BarChart, Bar, Cell } from "recharts";
 import { cn } from "@/lib/utils";
@@ -163,6 +164,11 @@ const TIPO_VERBA_LABELS: Record<string, string> = {
   FGTS: "FGTS",
   OUTROS: "Outros",
 };
+
+const MONTH_NAMES_PT = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
 
 const CHART_COLORS = [
   "hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))",
@@ -405,6 +411,7 @@ export default function VerbasPage() {
   // ── Sync state ────────────────────────────────────────────────────────────
   const [syncing, setSyncing] = useState(false);
   const [closingMonth, setClosingMonth] = useState(String(new Date().getMonth() + 1));
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number; stepLabel: string; modeLabel: string } | null>(null);
   const [syncSummary, setSyncSummary] = useState<VerbasResponse["sync_result"] | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
@@ -527,6 +534,10 @@ export default function VerbasPage() {
       const targetYears = selectedYears.map(Number).filter(Number.isFinite).sort((a, b) => b - a);
       if (!targetYears.length) throw new Error("Selecione ao menos 1 ano para sincronizar.");
 
+      const totalSteps = targetYears.length * months.length;
+      let completedSteps = 0;
+      setSyncProgress({ current: 0, total: totalSteps, stepLabel: "Iniciando...", modeLabel });
+
       const aggregate = {
         received: 0, processed: 0, failed: 0, upserted: 0, duration_ms: 0,
         failure_reasons: new Map<string, number>(),
@@ -534,7 +545,13 @@ export default function VerbasPage() {
 
       for (const year of targetYears) {
         for (const month of months) {
-          setSyncError(`${modeLabel}: sincronizando ${month}/12 de ${year}...`);
+          const monthName = MONTH_NAMES_PT[month - 1] ?? String(month);
+          setSyncProgress({
+            current: completedSteps,
+            total: totalSteps,
+            stepLabel: `Sincronizando ${monthName} ${year}...`,
+            modeLabel,
+          });
 
           const includeFilters = options?.includeFilters !== false;
           const allPages = options?.allPages === true;
@@ -581,6 +598,16 @@ export default function VerbasPage() {
             aggregate.failure_reasons.set(k, (aggregate.failure_reasons.get(k) || 0) + (r.count ?? 0));
           }
           if (typed.sync_error) throw new Error(`Ano ${year}, mês ${month}: ${typed.sync_error}`);
+
+          completedSteps += 1;
+          setSyncProgress({
+            current: completedSteps,
+            total: totalSteps,
+            stepLabel: completedSteps === totalSteps
+              ? "Concluído!"
+              : `${monthName} ${year} processado`,
+            modeLabel,
+          });
         }
       }
 
@@ -597,7 +624,6 @@ export default function VerbasPage() {
         { label: "Processamento concluído", ok: aggregate.processed >= aggregate.upserted },
         { label: "Sem falhas de integração", ok: aggregate.failed === 0 },
       ]);
-      setSyncError(null);
       // Refreshing the UI can fail (network/transient) even when the sync succeeded.
       // Don't show a destructive error for a post-sync refresh failure.
       void refetch().catch((refreshErr) => {
@@ -1108,21 +1134,69 @@ export default function VerbasPage() {
                   <Button variant="ghost" size="sm" onClick={() => navigate("/admin/datalake?tab=logs")}>Ver logs</Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Obs.: a sincronização anual ignora o mês de fechamento; para sincronizar apenas um mês, use “Fechamento mensal (1 mês)”.
+                  Obs.: a sincronização anual ignora o mês de fechamento; para sincronizar apenas um mês, use &ldquo;Fechamento mensal (1 mês)&rdquo;.
                 </p>
+
+                {/* ── Progresso ativo ──────────────────────────────── */}
+                {syncing && syncProgress && (
+                  <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-medium text-foreground">{syncProgress.modeLabel}</p>
+                        <p className="text-xs text-muted-foreground">{syncProgress.stepLabel}</p>
+                      </div>
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {syncProgress.total > 0 ? Math.round((syncProgress.current / syncProgress.total) * 100) : 0}%
+                      </span>
+                    </div>
+                    <Progress
+                      value={syncProgress.total > 0 ? (syncProgress.current / syncProgress.total) * 100 : 0}
+                      className="h-2"
+                    />
+                    <p className="text-xs text-muted-foreground text-right tabular-nums">
+                      {syncProgress.current} de {syncProgress.total} {syncProgress.total === 1 ? "etapa" : "etapas"} concluídas
+                    </p>
+                  </div>
+                )}
+
+                {/* ── Resultado / erros ────────────────────────────── */}
                 {(syncError || syncWarning || syncSummary || syncChecklist.length > 0) && (
-                  <div className="rounded-md bg-muted/50 p-3 space-y-1 text-xs">
-                    {syncError && <p className="text-destructive">{syncError}</p>}
-                    {syncWarning && <p className="text-muted-foreground">{syncWarning}</p>}
-                    {syncSummary && (
-                      <p className="text-muted-foreground">
-                        Concluído · {syncSummary.upserted ?? 0} gravados · {syncSummary.processed ?? 0} processados · {syncSummary.failed ?? 0} falhas
-                      </p>
+                  <div className="rounded-md bg-muted/50 p-3 space-y-2 text-xs">
+                    {syncError && (
+                      <div className="flex items-start gap-2 text-destructive">
+                        <span className="shrink-0">✗</span>
+                        <p>{syncError}</p>
+                      </div>
+                    )}
+                    {syncWarning && <p className="text-muted-foreground">⚠️ {syncWarning}</p>}
+                    {syncSummary && !syncError && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { label: "Recebidos", value: syncSummary.received ?? 0 },
+                          { label: "Processados", value: syncSummary.processed ?? 0 },
+                          { label: "Gravados", value: syncSummary.upserted ?? 0 },
+                          { label: "Falhas", value: syncSummary.failed ?? 0, alert: (syncSummary.failed ?? 0) > 0 },
+                        ].map((item) => (
+                          <div key={item.label} className={cn(
+                            "rounded border px-2 py-1.5 text-center",
+                            item.alert ? "border-destructive/50 bg-destructive/10" : "bg-background",
+                          )}>
+                            <p className={cn("text-base font-bold tabular-nums", item.alert ? "text-destructive" : "text-foreground")}>
+                              {item.value.toLocaleString("pt-BR")}
+                            </p>
+                            <p className="text-muted-foreground">{item.label}</p>
+                          </div>
+                        ))}
+                      </div>
                     )}
                     {syncChecklist.length > 0 && (
-                      <p className="text-muted-foreground">
-                        {syncChecklist.map((c) => `${c.ok ? "✅" : "⚠️"} ${c.label}`).join(" · ")}
-                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
+                        {syncChecklist.map((c) => (
+                          <span key={c.label} className={cn("flex items-center gap-1", c.ok ? "text-emerald-600" : "text-amber-600")}>
+                            {c.ok ? "✓" : "⚠"} {c.label}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}
