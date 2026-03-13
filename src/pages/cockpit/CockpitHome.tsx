@@ -14,6 +14,7 @@ import { RankingVendedores } from '@/components/cockpit/RankingVendedores';
 import { MinhaPerformance } from '@/components/cockpit/MinhaPerformance';
 import { useCockpitVinculo } from '@/hooks/useCockpitVinculo';
 import { useCockpitKpis, useCockpitRanking } from '@/hooks/useCockpitKpis';
+import { useCockpitVendedoresList } from '@/hooks/useCockpitVendedoresList';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -101,6 +102,13 @@ function CockpitHomeContent() {
   const kpis = kpisData?.kpis;
   const ranking: any[] = rankingData?.items ?? [];
 
+  // Lista de vendedores da empresa (via external_employees.cod_vendedor)
+  const { data: vendedoresList = [] } = useCockpitVendedoresList();
+  // Prioridade: funcionários cadastrados; fallback: nomes do ranking DAB após carga
+  const vendedoresMerged = vendedoresList.length > 0
+    ? vendedoresList
+    : ranking.map((r) => ({ cod: r.cod_vendedor, nome: r.nome_vendedor }));
+
   // ── Supabase (analytics complementar) ─────────────────────
   const { data: kpisSupabase, isLoading: kpisSupabaseLoading } = useKPISummary();
   const { data: trendData, isLoading: trendLoading } = useCommercialData();
@@ -161,7 +169,7 @@ function CockpitHomeContent() {
         <FiltrosCockpitVendas
           filtros={filtros}
           onChange={setFiltros}
-          vendedores={ranking.map((r) => ({ cod: r.cod_vendedor, nome: r.nome_vendedor }))}
+          vendedores={vendedoresMerged}
         />
       ) : (
         <CockpitFilters />
