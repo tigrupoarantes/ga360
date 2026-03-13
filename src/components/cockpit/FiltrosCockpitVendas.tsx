@@ -95,23 +95,32 @@ export function FiltrosCockpitVendas({ filtros, onChange, vendedores = [] }: Pro
       )}
 
       {/* Filtro por vendedor (apenas para gestores) */}
-      {isGestor && vendedores.length > 0 && (
+      {isGestor && (
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Vendedor</Label>
-          <Select
-            value={filtros.codVendedorFiltro || 'todos'}
-            onValueChange={(v) => onChange({ ...filtros, codVendedorFiltro: v === 'todos' ? '' : v })}
-          >
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos os vendedores</SelectItem>
-              {vendedores.map((v) => (
-                <SelectItem key={v.cod} value={v.cod}>{v.nome}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {vendedores.length > 0 ? (
+            <Select
+              value={filtros.codVendedorFiltro || 'todos'}
+              onValueChange={(v) => onChange({ ...filtros, codVendedorFiltro: v === 'todos' ? '' : v })}
+            >
+              <SelectTrigger className="w-52">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os vendedores</SelectItem>
+                {vendedores.map((v) => (
+                  <SelectItem key={v.cod} value={v.cod}>{v.nome} ({v.cod})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              placeholder="Código do vendedor"
+              className="w-52"
+              value={filtros.codVendedorFiltro}
+              onChange={(e) => onChange({ ...filtros, codVendedorFiltro: e.target.value.trim() })}
+            />
+          )}
         </div>
       )}
     </div>
