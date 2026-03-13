@@ -131,6 +131,17 @@ function CockpitHomeContent() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {useDabKpis && !syncPending && (
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={isRefreshing}
+              title="Atualizar dados"
+              onClick={() => { refetchKpis(); refetchRanking(); }}
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
+          )}
           <Button variant="outline" onClick={() => navigate('/cockpit/comercial')} className="gap-2">
             <BarChart3 className="h-4 w-4" />
             Rankings
@@ -159,23 +170,10 @@ function CockpitHomeContent() {
       {/* ── Banner: diretoria sem filtro de vendedor ── */}
       {syncPending && (
         <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
-          <RefreshCw className={`h-4 w-4 text-amber-600 ${isRefreshing ? 'animate-spin' : ''}`} />
-          <AlertDescription className="text-amber-800 dark:text-amber-300 flex items-center justify-between gap-4">
-            <span>
-              Para ver KPIs consolidados de todos os vendedores, selecione um vendedor no filtro acima.
-              A visão por diretoria requer sincronização prévia com o Datalake.
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={isRefreshing}
-              className="shrink-0 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 disabled:opacity-60"
-              onClick={() => { refetchKpis(); refetchRanking(); }}
-            >
-              {isRefreshing ? (
-                <><Loader2 className="h-3 w-3 animate-spin mr-1" />Atualizando...</>
-              ) : 'Atualizar'}
-            </Button>
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800 dark:text-amber-300">
+            <span className="font-medium">Selecione um vendedor no filtro acima</span> para ver os KPIs.
+            {' '}A visão consolidada por diretoria requer sincronização prévia com o Datalake — enquanto isso, filtre por vendedor individual.
           </AlertDescription>
         </Alert>
       )}
