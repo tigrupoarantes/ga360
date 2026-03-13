@@ -257,10 +257,6 @@ export function EditEmployeeDialog({ open, onOpenChange, employee, onSuccess }: 
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2 flex items-center gap-3 pt-6">
-            <Switch checked={form.is_condutor} onCheckedChange={(v) => setForm({ ...form, is_condutor: v })} />
-            <Label>É condutor</Label>
-          </div>
         </div>
 
         <DialogFooter>
