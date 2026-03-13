@@ -102,7 +102,7 @@ export default function CockpitVendas() {
           <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
             <RefreshCw className="h-4 w-4 text-amber-600 animate-spin" />
             <AlertDescription className="text-amber-800 dark:text-amber-300 flex items-center justify-between">
-              <span>Sincronizando dados do Datalake pela primeira vez. Os números serão exibidos em instantes.</span>
+              <span>Para ver KPIs consolidados de todos os vendedores, selecione um vendedor no filtro acima. Visão por diretoria requer sincronização prévia com o Datalake.</span>
               <Button variant="ghost" size="sm" onClick={() => { refetchKpis(); refetchRanking(); }}>
                 Atualizar
               </Button>
