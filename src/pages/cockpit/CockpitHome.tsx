@@ -77,6 +77,7 @@ function CockpitHomeContent() {
   const {
     data: kpisData,
     isLoading: kpisLoading,
+    isFetching: kpisFetching,
     error: kpisError,
     refetch: refetchKpis,
   } = useCockpitKpis({
@@ -88,6 +89,7 @@ function CockpitHomeContent() {
   const {
     data: rankingData,
     isLoading: rankingLoading,
+    isFetching: rankingFetching,
     refetch: refetchRanking,
   } = useCockpitRanking({
     dataInicio: filtros.dataInicio,
@@ -95,6 +97,7 @@ function CockpitHomeContent() {
   });
 
   const syncPending = (kpisData as any)?.sync_pending === true;
+  const isRefreshing = kpisFetching || rankingFetching;
   const kpis = kpisData?.kpis;
   const ranking: any[] = rankingData?.items ?? [];
 
@@ -156,7 +159,7 @@ function CockpitHomeContent() {
       {/* ── Banner: diretoria sem filtro de vendedor ── */}
       {syncPending && (
         <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
-          <RefreshCw className="h-4 w-4 text-amber-600" />
+          <RefreshCw className={`h-4 w-4 text-amber-600 ${isRefreshing ? 'animate-spin' : ''}`} />
           <AlertDescription className="text-amber-800 dark:text-amber-300 flex items-center justify-between gap-4">
             <span>
               Para ver KPIs consolidados de todos os vendedores, selecione um vendedor no filtro acima.
@@ -165,10 +168,13 @@ function CockpitHomeContent() {
             <Button
               variant="ghost"
               size="sm"
-              className="shrink-0 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900"
+              disabled={isRefreshing}
+              className="shrink-0 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 disabled:opacity-60"
               onClick={() => { refetchKpis(); refetchRanking(); }}
             >
-              Atualizar
+              {isRefreshing ? (
+                <><Loader2 className="h-3 w-3 animate-spin mr-1" />Atualizando...</>
+              ) : 'Atualizar'}
             </Button>
           </AlertDescription>
         </Alert>
@@ -195,38 +201,38 @@ function CockpitHomeContent() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             <KPICard
               title="Cobertura"
-              value={kpisLoading ? '...' : kpis?.cobertura_pct != null ? `${kpis.cobertura_pct.toFixed(1)}%` : '—'}
+              value={kpisLoading || isRefreshing ? '...' : kpis?.cobertura_pct != null ? `${kpis.cobertura_pct.toFixed(1)}%` : '—'}
               subtitle="% clientes visitados"
-              progressValue={kpis?.cobertura_pct ?? undefined}
+              progressValue={kpisLoading || isRefreshing ? undefined : (kpis?.cobertura_pct ?? undefined)}
               icon={<Target className="h-5 w-5" />}
             />
             <KPICard
               title="Visitados"
-              value={kpisLoading ? '...' : kpis ? formatNumber(kpis.clientes_visitados) : '—'}
+              value={kpisLoading || isRefreshing ? '...' : kpis ? formatNumber(kpis.clientes_visitados) : '—'}
               subtitle="clientes no período"
               icon={<Users className="h-5 w-5" />}
             />
             <KPICard
               title="Não-Vendas"
-              value={kpisLoading ? '...' : kpis ? formatNumber(kpis.nao_vendas) : '—'}
+              value={kpisLoading || isRefreshing ? '...' : kpis ? formatNumber(kpis.nao_vendas) : '—'}
               subtitle="visitas sem pedido"
               icon={<XCircle className="h-5 w-5" />}
             />
             <KPICard
               title="Faturamento"
-              value={kpisLoading ? '...' : kpis ? formatCurrency(kpis.faturamento_total) : '—'}
+              value={kpisLoading || isRefreshing ? '...' : kpis ? formatCurrency(kpis.faturamento_total) : '—'}
               subtitle="no período"
               icon={<DollarSign className="h-5 w-5" />}
             />
             <KPICard
               title="Pedidos"
-              value={kpisLoading ? '...' : kpis ? formatNumber(kpis.total_pedidos) : '—'}
+              value={kpisLoading || isRefreshing ? '...' : kpis ? formatNumber(kpis.total_pedidos) : '—'}
               subtitle="pedidos emitidos"
               icon={<ShoppingCart className="h-5 w-5" />}
             />
             <KPICard
               title="Ticket Médio"
-              value={kpisLoading ? '...' : kpis ? formatCurrency(kpis.ticket_medio) : '—'}
+              value={kpisLoading || isRefreshing ? '...' : kpis ? formatCurrency(kpis.ticket_medio) : '—'}
               subtitle="por pedido"
               icon={<Receipt className="h-5 w-5" />}
             />
