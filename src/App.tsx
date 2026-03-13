@@ -52,6 +52,9 @@ import CockpitMap from "@/pages/cockpit/CockpitMap";
 import CockpitCommercial from "@/pages/cockpit/CockpitCommercial";
 import CockpitLogistics from "@/pages/cockpit/CockpitLogistics";
 import CockpitSettings from "@/pages/cockpit/CockpitSettings";
+import CockpitPedidos from "@/pages/cockpit/CockpitPedidos";
+import CockpitNaoVendas from "@/pages/cockpit/CockpitNaoVendas";
+import AdminCockpitVendas from "./pages/AdminCockpitVendas";
 
 const queryClient = new QueryClient();
 
@@ -422,6 +425,34 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedRoles={["super_admin", "ceo", "diretor"]}>
                       <CockpitSettings />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cockpit/vendas"
+                  element={<Navigate to="/cockpit" replace />}
+                />
+                <Route
+                  path="/cockpit/pedidos"
+                  element={
+                    <ProtectedRoute>
+                      <CockpitPedidos />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/cockpit/nao-vendas"
+                  element={
+                    <ProtectedRoute>
+                      <CockpitNaoVendas />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/cockpit-vendas"
+                  element={
+                    <ProtectedRoute allowedRoles={["super_admin", "ceo"]}>
+                      <AdminCockpitVendas />
                     </ProtectedRoute>
                   }
                 />

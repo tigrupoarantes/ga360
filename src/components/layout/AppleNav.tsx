@@ -26,6 +26,8 @@ import {
   MapPin,
   Package,
   Monitor,
+  ClipboardList,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -81,6 +83,8 @@ const navigation: NavItem[] = [
       { name: 'Mapa / Heatmap', href: '/cockpit/mapa', icon: MapPin },
       { name: 'Comercial', href: '/cockpit/comercial', icon: TrendingUp },
       { name: 'Logística', href: '/cockpit/logistica', icon: Package },
+      { name: 'Pedidos', href: '/cockpit/pedidos', icon: ClipboardList },
+      { name: 'Não-Vendas', href: '/cockpit/nao-vendas', icon: XCircle },
     ]
   },
 ];
