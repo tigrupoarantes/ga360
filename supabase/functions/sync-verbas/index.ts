@@ -846,6 +846,22 @@ async function loadRowsFromDatalake(
     throw new Error("target_month inválido; use 1..12");
   }
 
+  // Injeta filtro server-side de ano no DAB (crítico para performance)
+  // Sem $filter=ano eq <ANO>: full scan da tabela → >30s → timeout → dados parciais
+  // Com filtro: query indexada, retorno em <5s com todos os funcionários do ano
+  const queryParamsWithFilter: Record<string, string | number | boolean> = { ...(body.query_params || {}) };
+  if (targetYear) {
+    const existingFilter = String(queryParamsWithFilter["$filter"] || "").trim();
+    const yearFilter = `ano eq ${targetYear}`;
+    queryParamsWithFilter["$filter"] = existingFilter
+      ? `(${existingFilter}) and (${yearFilter})`
+      : yearFilter;
+  }
+  // Page size generoso: DAB suporta até 100.000 — menos round-trips, mais eficiente
+  if (!queryParamsWithFilter["$first"]) {
+    queryParamsWithFilter["$first"] = 5000;
+  }
+
   const candidates = buildVerbasEndpointCandidates(endpointPath);
 
   let chosenEndpointPath = "";
@@ -855,7 +871,7 @@ async function loadRowsFromDatalake(
   let firstEndpointError: string | null = null;
 
   for (const candidate of candidates) {
-    const candidateUrls = buildDatalakeUrls(connection.base_url, candidate, body.query_params);
+    const candidateUrls = buildDatalakeUrls(connection.base_url, candidate, queryParamsWithFilter);
 
     for (const candidateUrl of candidateUrls) {
       let response: Response;
