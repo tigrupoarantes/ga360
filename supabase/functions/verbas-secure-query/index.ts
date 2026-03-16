@@ -25,6 +25,9 @@ interface VerbasSecureQueryRequest {
   syncMaxPages?: number;
   syncAllPages?: boolean;
   syncMonth?: number;
+  // Ações de rastreamento de jobs
+  action?: string;       // "getJobStatus" | "listRecentJobs"
+  jobId?: string;        // UUID do job para consulta de status
 }
 
 const ACCOUNTING_CODE_TO_NAME: Record<string, string> = {
@@ -78,11 +81,15 @@ function normalizeErrorMessage(error: any) {
 
 function isMissingViewError(error: any) {
   const message = normalizeErrorMessage(error);
-  return (
+  const missingTable = (
     message.includes("does not exist") ||
     message.includes("relation") ||
     message.includes("could not find the table")
-  ) && message.includes("vw_pagamento_verba_pivot_mensal");
+  );
+  return missingTable && (
+    message.includes("vw_pagamento_verba_pivot_mensal") ||
+    message.includes("payroll_verba_pivot")
+  );
 }
 
 function isSchemaExposureError(error: any) {
@@ -109,10 +116,10 @@ function buildVerbasQuery(
   to: number,
   options?: { enableEmployeeFilters?: boolean; fetchAll?: boolean },
 ) {
-  let queryBase =
-    schemaName === "gold"
-      ? supabaseAdmin.schema("gold").from("vw_pagamento_verba_pivot_mensal")
-      : supabaseAdmin.from("vw_pagamento_verba_pivot_mensal");
+  // Queries directly from the pivot table (pre-aggregated, 12x fewer rows than long format)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _schemaName = schemaName; // kept for signature compatibility
+  let queryBase = supabaseAdmin.from("payroll_verba_pivot");
 
   let query = queryBase
     .select("*", { count: "exact" })
@@ -149,7 +156,7 @@ function buildVerbasQuery(
     }
 
     if (body.unit?.trim()) {
-      query = query.ilike("employee_unit", `%${body.unit.trim()}%`);
+      query = query.ilike("employee_unidade", `%${body.unit.trim()}%`);
     }
 
     if (body.position?.trim()) {
@@ -176,6 +183,7 @@ async function runSyncVerbasIfConfigured(
   department?: string,
   position?: string,
   replaceScope?: boolean,
+  jobId?: string | null,
 ) {
   if (!syncApiKey && !serviceRoleKey) return;
 
@@ -211,6 +219,11 @@ async function runSyncVerbasIfConfigured(
 
   payload.replace_scope = replaceScope !== false;
 
+  // Passa job_id para que sync-verbas atualize o progresso
+  if (jobId) {
+    payload.job_id = jobId;
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -223,19 +236,35 @@ async function runSyncVerbasIfConfigured(
     headers.Authorization = `Bearer ${serviceRoleKey}`;
   }
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/sync-verbas`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  });
+  // Timeout curto (8s): apenas garante que sync-verbas recebeu a requisição.
+  // O sync continua em background até 150s; o frontend usa polling via verbas_sync_jobs.
+  const abortCtrl = new AbortController();
+  const timeoutId = setTimeout(() => abortCtrl.abort(), 8_000);
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Falha ao sincronizar verbas via datalake: ${response.status} ${text}`);
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/sync-verbas`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: abortCtrl.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Falha ao sincronizar verbas via datalake: ${response.status} ${text}`);
+    }
+
+    const json = await response.json().catch(() => ({}));
+    return json;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      // sync-verbas continua rodando em background no servidor; frontend polling via verbas_sync_jobs
+      return { sync_started: true, timed_out: true, job_id: jobId, message: "Sincronização em andamento — acompanhe o progresso pelo painel de status." };
+    }
+    throw err;
   }
-
-  const json = await response.json().catch(() => ({}));
-  return json;
 }
 
 function maskCpf(cpf: string | null | undefined) {
@@ -402,6 +431,31 @@ serve(async (req: Request) => {
     const userId = userData.user.id;
     const body = (await req.json().catch(() => ({}))) as VerbasSecureQueryRequest;
 
+    // ── Ações de rastreamento de jobs (não requerem permissão de verbas) ─────
+    if (body.action === "getJobStatus" && body.jobId) {
+      const { data: jobData } = await supabaseAdmin
+        .from("verbas_sync_jobs")
+        .select("*")
+        .eq("id", body.jobId)
+        .single();
+      return new Response(JSON.stringify({ job: jobData }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (body.action === "listRecentJobs") {
+      const { data: jobsData } = await supabaseAdmin
+        .from("verbas_sync_jobs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return new Response(JSON.stringify({ jobs: jobsData || [] }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const allowedCompanyIds = await resolveAllowedCompanyIds(supabaseAdmin, userId, body.companyId);
     if (!allowedCompanyIds.length) {
       return new Response(JSON.stringify({ error: "Acesso a empresas não encontrado.", code: "TENANT_ACCESS_DENIED" }), {
@@ -443,6 +497,28 @@ serve(async (req: Request) => {
       const syncApiKey = Deno.env.get("SYNC_API_KEY");
       const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
+      // Cria registro de job antes de disparar sync-verbas
+      let syncJobId: string | null = null;
+      try {
+        const { data: jobData } = await supabaseAdmin
+          .from("verbas_sync_jobs")
+          .insert({
+            ano: body.ano ?? new Date().getFullYear(),
+            mes: (body.syncMonth && body.syncMonth >= 1 && body.syncMonth <= 12) ? body.syncMonth : null,
+            status: "queued",
+            metadata: {
+              all_pages: body.syncAllPages ?? false,
+              max_pages: body.syncMaxPages ?? 25,
+              company_id: body.companyId ?? null,
+            },
+          })
+          .select("id")
+          .single();
+        syncJobId = jobData?.id ?? null;
+      } catch (_jobInsertErr) {
+        // job tracking é best-effort — não bloqueia o sync
+      }
+
       try {
         syncResult = await runSyncVerbasIfConfigured(
           supabaseUrl,
@@ -456,7 +532,14 @@ serve(async (req: Request) => {
           body.department,
           body.position,
           true,
+          syncJobId,
         );
+        // Garante que job_id está na resposta para polling do frontend
+        if (syncJobId && syncResult) {
+          syncResult.job_id = syncJobId;
+        } else if (syncJobId) {
+          syncResult = { sync_started: true, job_id: syncJobId };
+        }
       } catch (syncErr) {
         syncError = String(syncErr);
 
@@ -508,7 +591,7 @@ serve(async (req: Request) => {
     if (error) {
       if (isMissingViewError(error)) {
         throw new Error(
-          "Dependência VERBAS não encontrada no banco (view vw_pagamento_verba_pivot_mensal). Execute as migrations de VERBAS no projeto remoto.",
+          "Tabela payroll_verba_pivot não encontrada no banco. Execute a migration 20260316100000_create_payroll_verba_pivot.sql no projeto remoto.",
         );
       }
 
@@ -624,11 +707,16 @@ serve(async (req: Request) => {
         if (employee.is_active === false) continue;
         if (employee.is_disabled === true) continue;
 
-        const effectiveCompanyId = employee.accounting_company_id || employee.company_id;
-        if (!effectiveCompanyId) continue;
-        if (companyIds.length > 0 && !companyIds.includes(effectiveCompanyId)) continue;
+        // Accept employees that belong (by payroll or accounting company) to any company present in the verba rows.
+        if (companyIds.length > 0) {
+          const inPayroll = companyIds.includes(employee.company_id);
+          const inAccounting = employee.accounting_company_id && companyIds.includes(employee.accounting_company_id);
+          if (!inPayroll && !inAccounting) continue;
+        }
 
-        const key = `${effectiveCompanyId}|${cpfDigits}`;
+        // Key by CPF only so that lookup always succeeds regardless of which
+        // company_id appears on the verba row vs. the employee record.
+        const key = cpfDigits;
         const existing = employeeByCompanyCpf.get(key);
         if (!existing) {
           employeeByCompanyCpf.set(key, employee);
@@ -644,7 +732,7 @@ serve(async (req: Request) => {
 
     const rowsActiveOnly = rows
       .map((row: any) => {
-        const key = `${row.company_id || ""}|${normalizeDigits(row.cpf)}`;
+        const key = normalizeDigits(row.cpf);
         const employee = employeeByCompanyCpf.get(key);
         if (!employee) return null;
 

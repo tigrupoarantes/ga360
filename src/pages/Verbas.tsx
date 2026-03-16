@@ -72,9 +72,26 @@ interface VerbasResponse {
     upserted?: number;
     duration_ms?: number;
     source_system?: string;
+    job_id?: string;
     failure_reasons?: Array<{ reason?: string; count?: number }>;
   };
   rows: VerbasRow[];
+}
+
+interface VerbasSyncJob {
+  id: string;
+  ano: number;
+  mes: number | null;
+  status: "queued" | "running" | "done" | "error";
+  pages_fetched: number;
+  records_received: number;
+  records_upserted: number;
+  records_failed: number;
+  started_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 // ─── Hierarchy node types ─────────────────────────────────────────────────────
@@ -417,6 +434,29 @@ export default function VerbasPage() {
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [syncChecklist, setSyncChecklist] = useState<Array<{ label: string; ok: boolean }>>([]);
 
+  // ── Job polling state ─────────────────────────────────────────────────────
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<VerbasSyncJob | null>(null);
+
+  useEffect(() => {
+    if (!activeJobId) return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("verbas_sync_jobs")
+        .select("*")
+        .eq("id", activeJobId)
+        .single();
+      if (data) setJobStatus(data as VerbasSyncJob);
+      if (data?.status === "done" || data?.status === "error") {
+        clearInterval(interval);
+        setActiveJobId(null);
+        setSyncing(false);
+        void refetch().catch(() => null);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activeJobId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync company filter and reset dependent filters when global company changes
   useEffect(() => {
     setCompanyFilter(selectedCompanyId || "all");
@@ -529,6 +569,8 @@ export default function VerbasPage() {
     setSyncWarning(null);
     setSyncSummary(null);
     setSyncChecklist([]);
+    setActiveJobId(null);
+    setJobStatus(null);
 
     try {
       const targetYears = selectedYears.map(Number).filter(Number.isFinite).sort((a, b) => b - a);
@@ -545,7 +587,7 @@ export default function VerbasPage() {
 
       for (const year of targetYears) {
         for (const month of months) {
-          const monthName = MONTH_NAMES_PT[month - 1] ?? String(month);
+          const monthName = month === 0 ? "todos os meses" : (MONTH_NAMES_PT[month - 1] ?? String(month));
           setSyncProgress({
             current: completedSteps,
             total: totalSteps,
@@ -560,12 +602,14 @@ export default function VerbasPage() {
             ano: year,
             autoSyncWhenEmpty: false,
             syncNow: true,
-            syncMonth: month,
             syncAllPages: allPages,
             syncMaxPages: allPages ? 5000 : (options?.maxPages ?? 25),
             page: 1,
             pageSize: 1000,
           };
+          if (month > 0) {
+            body.syncMonth = month; // 0 = sentinel "todos os meses" — não envia target_month ao sync-verbas
+          }
 
           if (includeFilters) {
             // Prefer explicit company filter; otherwise fall back to the global company selector.
@@ -588,6 +632,14 @@ export default function VerbasPage() {
 
           const typed = (response || {}) as VerbasResponse;
           const result = typed.sync_result;
+
+          // Inicia polling se retornou job_id
+          const returnedJobId = result?.job_id ?? (response as any)?.job_id ?? null;
+          if (returnedJobId) {
+            setActiveJobId(returnedJobId);
+            setJobStatus(null);
+          }
+
           aggregate.received += result?.received ?? 0;
           aggregate.processed += result?.processed ?? 0;
           aggregate.failed += result?.failed ?? 0;
@@ -642,15 +694,10 @@ export default function VerbasPage() {
   };
 
   const handleSyncVerbas = () => {
-    const effectiveCompanyId = companyFilter !== "all" ? companyFilter : (selectedCompanyId || null);
-    if (!effectiveCompanyId) {
-      setSyncError("Selecione uma empresa (no topo ou no filtro) para sincronizar.");
-      return;
-    }
     runSync(
-    [1,2,3,4,5,6,7,8,9,10,11,12],
+    [0], // 0 = sentinel "todos os meses": 1 chamada por ano, sem target_month, datalake consultado 1x
     "Sincronização anual",
-    { includeFilters: true, allPages: false, maxPages: 100 },
+    { includeFilters: false, allPages: true },
     );
   };
 
@@ -663,12 +710,7 @@ export default function VerbasPage() {
   const handleMonthlyClose = () => {
     const m = Number(closingMonth);
     if (!Number.isFinite(m) || m < 1 || m > 12) { setSyncError("Mês inválido."); return; }
-    const effectiveCompanyId = companyFilter !== "all" ? companyFilter : (selectedCompanyId || null);
-    if (!effectiveCompanyId) {
-      setSyncError("Selecione uma empresa (no topo ou no filtro) para sincronizar.");
-      return;
-    }
-    runSync([m], "Fechamento mensal", { includeFilters: true, allPages: false, maxPages: 25 });
+    runSync([m], "Fechamento mensal", { includeFilters: false, allPages: true });
   };
 
   // ── Filter options derived from loaded rows ───────────────────────────────
@@ -1137,8 +1179,8 @@ export default function VerbasPage() {
                   Obs.: a sincronização anual ignora o mês de fechamento; para sincronizar apenas um mês, use &ldquo;Fechamento mensal (1 mês)&rdquo;.
                 </p>
 
-                {/* ── Progresso ativo ──────────────────────────────── */}
-                {syncing && syncProgress && (
+                {/* ── Progresso legado (enquanto job ainda não retornou job_id) ── */}
+                {syncing && !activeJobId && !jobStatus && syncProgress && (
                   <div className="rounded-md border bg-muted/20 p-3 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
@@ -1159,8 +1201,70 @@ export default function VerbasPage() {
                   </div>
                 )}
 
-                {/* ── Resultado / erros ────────────────────────────── */}
-                {(syncError || syncWarning || syncSummary || syncChecklist.length > 0) && (
+                {/* ── Painel de status do job (polling em tempo real) ───────── */}
+                {jobStatus && (
+                  <div className="rounded-md border p-3 space-y-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={
+                        jobStatus.status === "done" ? "default"
+                        : jobStatus.status === "error" ? "destructive"
+                        : "secondary"
+                      }>
+                        {jobStatus.status === "queued" && "Na fila"}
+                        {jobStatus.status === "running" && (
+                          <span className="flex items-center gap-1">
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                            Sincronizando...
+                          </span>
+                        )}
+                        {jobStatus.status === "done" && "✓ Concluído"}
+                        {jobStatus.status === "error" && "✗ Erro"}
+                      </Badge>
+                      <span className="text-muted-foreground">
+                        Ano {jobStatus.ano}{jobStatus.mes ? ` · Mês ${jobStatus.mes}` : " · Todos os meses"}
+                      </span>
+                      {(jobStatus.status === "running" || jobStatus.status === "queued") && (
+                        <span className="text-muted-foreground ml-auto">Atualiza em 3s...</span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { label: "Páginas", value: jobStatus.pages_fetched },
+                        { label: "Recebidos", value: jobStatus.records_received },
+                        { label: "Gravados", value: jobStatus.records_upserted },
+                        { label: "Falhas", value: jobStatus.records_failed, alert: jobStatus.records_failed > 0 },
+                      ].map((item) => (
+                        <div key={item.label} className={cn(
+                          "rounded border px-2 py-1.5 text-center",
+                          item.alert ? "border-destructive/50 bg-destructive/10" : "bg-background",
+                        )}>
+                          <p className={cn("text-sm font-bold tabular-nums", item.alert ? "text-destructive" : "text-foreground")}>
+                            {item.value.toLocaleString("pt-BR")}
+                          </p>
+                          <p className="text-muted-foreground">{item.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {jobStatus.error_message && (
+                      <p className="text-destructive">{jobStatus.error_message}</p>
+                    )}
+                    {jobStatus.status === "done" && jobStatus.records_received > 0 && (
+                      <p className="text-emerald-600 font-medium">
+                        {jobStatus.records_received.toLocaleString("pt-BR")} registros recebidos do datalake
+                        {jobStatus.pages_fetched > 0 && ` em ${jobStatus.pages_fetched} ${jobStatus.pages_fetched === 1 ? "página" : "páginas"}`}.
+                        {" "}{jobStatus.records_upserted.toLocaleString("pt-BR")} gravados no banco.
+                      </p>
+                    )}
+                    {jobStatus.status === "done" && jobStatus.records_received === 0 && (
+                      <p className="text-amber-600 font-medium">
+                        Datalake não retornou registros para este período. Verifique o filtro de ano e a disponibilidade dos dados na origem.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Resultado / erros (sync legado sem job_id) ───────────── */}
+                {!jobStatus && (syncError || syncWarning || syncSummary || syncChecklist.length > 0) && (
                   <div className="rounded-md bg-muted/50 p-3 space-y-2 text-xs">
                     {syncError && (
                       <div className="flex items-start gap-2 text-destructive">

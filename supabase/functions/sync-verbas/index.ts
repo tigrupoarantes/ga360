@@ -43,6 +43,7 @@ interface SyncRequest {
   all_pages?: boolean;
   target_month?: number;
   target_year?: number;
+  job_id?: string;
 }
 
 interface DatalakeConnection {
@@ -225,6 +226,35 @@ const TIPO_VERBA_TO_COD_EVENTO: Record<string, number> = {
   SST: 10100,
   FGTS: 995,
   OUTROS: 999999,
+};
+
+// Mapeamento direto cod_evento → tipo_verba (mesmo CASE da view gold.vw_pagamento_verba_pivot_mensal)
+const COD_EVENTO_TO_TIPO: Record<number, string> = {
+  1: "SALDO_SALARIO", 10095: "SALDO_SALARIO", 7: "SALDO_SALARIO",
+  540: "SALDO_SALARIO", 541: "SALDO_SALARIO", 10088: "SALDO_SALARIO",
+  10001: "SALDO_SALARIO", 10035: "SALDO_SALARIO", 10027: "SALDO_SALARIO",
+  10063: "SALDO_SALARIO", 61: "SALDO_SALARIO", 87: "SALDO_SALARIO",
+  51: "SALDO_SALARIO", 91: "SALDO_SALARIO", 10102: "SALDO_SALARIO", 23: "SALDO_SALARIO",
+  30: "COMISSAO_DSR", 10044: "COMISSAO_DSR",
+  31: "BONUS",
+  10087: "PREMIO", 10114: "PREMIO",
+  10000: "VERBA_INDENIZATORIA",
+  10054: "ADIANTAMENTO_VERBA_IDENIZATORIA",
+  10008: "DESC_PLANO_SAUDE", 10009: "DESC_PLANO_SAUDE",
+  10098: "PLANO_SAUDE_EMPRESA",
+  995: "FGTS", 996: "FGTS",
+};
+
+const MONTH_FIELDS = [
+  "janeiro", "fevereiro", "marco", "abril",
+  "maio", "junho", "julho", "agosto",
+  "setembro", "outubro", "novembro", "dezembro",
+] as const;
+
+const MONTH_NUMBER_TO_FIELD: Record<number, string> = {
+  1: "janeiro", 2: "fevereiro", 3: "marco", 4: "abril",
+  5: "maio", 6: "junho", 7: "julho", 8: "agosto",
+  9: "setembro", 10: "outubro", 11: "novembro", 12: "dezembro",
 };
 
 function normalizeTipoVerba(value: unknown): string {
@@ -788,6 +818,7 @@ async function writeDlRunLog(
 async function loadRowsFromDatalake(
   supabase: ReturnType<typeof createClient>,
   body: SyncRequest,
+  jobId?: string | null,
 ): Promise<{ records: VerbaRecord[]; meta: Record<string, unknown> }> {
   const resolved = await resolveConnectionAndEndpoint(supabase, body);
   const { connection, endpointPath, queryName, queryId } = resolved;
@@ -904,6 +935,14 @@ async function loadRowsFromDatalake(
     collected.push(...rows.flatMap((row) => mapDatalakeRowToVerbaRecords(row, { targetMonth, targetYear })));
     pagesFetched += 1;
 
+    // Atualiza progresso do job a cada 10 páginas (fire-and-forget)
+    if (jobId && page % 10 === 0) {
+      supabase.from("verbas_sync_jobs").update({
+        pages_fetched: pagesFetched,
+        records_received: collected.length,
+      }).eq("id", jobId).then(() => {/* noop */}).catch(() => {/* noop */});
+    }
+
     const nextLink = extractNextLink(payload);
     currentUrl = nextLink ? new URL(nextLink, currentUrl).toString() : "";
   }
@@ -931,6 +970,7 @@ serve(async (req) => {
   }
 
   const startedAt = Date.now();
+  let jobId: string | null = null;
 
   try {
     const apiKey = req.headers.get("x-api-key");
@@ -959,12 +999,21 @@ serve(async (req) => {
     const sourceSystem = body.source_system || "gestao_ativos";
     const startedAtIso = new Date(startedAt).toISOString();
     const directRecords = Array.isArray(body.records) ? body.records : (Array.isArray(body.events) ? body.events : []);
+    jobId = body.job_id ?? null;
+
+    // Marca job como 'running' assim que a execução começa
+    if (jobId) {
+      await supabase.from("verbas_sync_jobs").update({
+        status: "running",
+        started_at: startedAtIso,
+      }).eq("id", jobId);
+    }
 
     let records = directRecords;
     let datalakeMeta: Record<string, unknown> | undefined;
 
     if (!records.length && body.load_from_datalake !== false) {
-      const loaded = await loadRowsFromDatalake(supabase, body);
+      const loaded = await loadRowsFromDatalake(supabase, body, jobId);
       records = loaded.records;
       datalakeMeta = loaded.meta;
     }
@@ -1471,48 +1520,135 @@ serve(async (req) => {
       return true;
     });
 
-    if (replaceScope && scopeYear) {
-      const scopedCompanies = [...new Set(rowsToPersist.map((row) => String(row.company_id || "")).filter(Boolean))];
+    // ── Agregar long format → pivot (1 linha por cpf × tipo_verba × ano) ──────
+    const pivotMap = new Map<string, Record<string, any>>();
+
+    for (const rec of rowsToPersist) {
+      const tipoVerba =
+        (rec.tipo_verba as string) ||
+        COD_EVENTO_TO_TIPO[rec.cod_evento as number] ||
+        "OUTROS";
+      if (tipoVerba === "OUTROS") continue;
+
+      const cpfNorm = normalizeDigits(rec.cpf as string);
+      const key = `${rec.company_id}|${cpfNorm}|${tipoVerba}|${rec.ano}`;
+
+      if (!pivotMap.has(key)) {
+        pivotMap.set(key, {
+          company_id: rec.company_id,
+          razao_social: rec.razao_social,
+          cpf: rec.cpf,
+          nome_funcionario: rec.nome_funcionario,
+          tipo_verba: tipoVerba,
+          ano: rec.ano,
+          janeiro: 0, fevereiro: 0, marco: 0, abril: 0,
+          maio: 0, junho: 0, julho: 0, agosto: 0,
+          setembro: 0, outubro: 0, novembro: 0, dezembro: 0,
+          employee_department: rec.employee_department,
+          employee_position: rec.employee_position,
+          employee_unidade: rec.employee_unidade,
+          employee_accounting_group: rec.employee_accounting_group,
+          employee_contract_company_id: rec.employee_contract_company_id,
+          employee_accounting_company_id: rec.employee_accounting_company_id,
+          employee_snapshot_at: rec.employee_snapshot_at,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      const pivot = pivotMap.get(key)!;
+      const monthField = MONTH_NUMBER_TO_FIELD[rec.mes as number];
+      if (monthField) pivot[monthField] += Number(rec.valor) || 0;
+    }
+
+    let pivotRows = [...pivotMap.values()];
+
+    // ── Replace scope: limpar linhas existentes antes de regravar ─────────────
+    if (replaceScope && scopeYear && pivotRows.length > 0) {
+      const scopedCompanies = [...new Set(pivotRows.map((r) => String(r.company_id || "")).filter(Boolean))];
       const isGlobalScope = !body.company_id && !body.department && !body.position;
 
-      let deleteScopeQuery = supabase
-        .from("payroll_verba_events")
-        .delete()
-        .eq("ano", scopeYear);
+      if (!scopeMonth) {
+        // Sync de ano completo: apagar todas as linhas do ano para reescrever limpo
+        let deleteQuery = supabase
+          .from("payroll_verba_pivot")
+          .delete()
+          .eq("ano", scopeYear);
 
-      if (scopeMonth) {
-        deleteScopeQuery = deleteScopeQuery.eq("mes", scopeMonth);
-      }
-
-      // If global scope, wipe the whole year/month to avoid stale rows from older attribution rules.
-      // If scoped, only wipe affected companies.
-      if (!isGlobalScope) {
-        if (scopedCompanies.length === 0) {
-          deleteScopeQuery = null as any;
-        } else {
-          deleteScopeQuery = deleteScopeQuery.in("company_id", scopedCompanies);
+        if (!isGlobalScope) {
+          if (scopedCompanies.length === 0) {
+            deleteQuery = null as any;
+          } else {
+            deleteQuery = deleteQuery.in("company_id", scopedCompanies);
+          }
         }
-      }
 
-      if (deleteScopeQuery) {
-        const { error: deleteScopeError } = await deleteScopeQuery;
-        if (deleteScopeError) {
-          throw new Error(`Failed to reconcile payroll rows (delete scope): ${deleteScopeError.message}`);
+        if (deleteQuery) {
+          const { error: deleteError } = await deleteQuery;
+          if (deleteError) {
+            throw new Error(`Failed to clear pivot rows (delete scope): ${deleteError.message}`);
+          }
+        }
+      } else {
+        // Sync mensal: buscar linhas existentes e mesclar para preservar outros meses
+        const cpfs = [...new Set(pivotRows.map((r) => String(r.cpf || "")).filter(Boolean))];
+        const { data: existingRows } = await supabase
+          .from("payroll_verba_pivot")
+          .select("company_id, cpf, tipo_verba, ano, " + MONTH_FIELDS.join(", "))
+          .in("cpf", cpfs)
+          .eq("ano", scopeYear);
+
+        if (existingRows && existingRows.length > 0) {
+          const existingMap = new Map<string, Record<string, any>>(
+            existingRows.map((r: any) => [
+              `${r.company_id}|${normalizeDigits(r.cpf)}|${r.tipo_verba}|${r.ano}`,
+              r,
+            ]),
+          );
+
+          const targetField = MONTH_NUMBER_TO_FIELD[scopeMonth];
+          pivotRows = pivotRows.map((row) => {
+            const eKey = `${row.company_id}|${normalizeDigits(row.cpf)}|${row.tipo_verba}|${row.ano}`;
+            const existing = existingMap.get(eKey);
+            if (!existing) return row;
+            // Preservar todos os meses do registro existente; sobrescrever apenas o mês alvo
+            const merged = { ...row };
+            for (const m of MONTH_FIELDS) {
+              if (m !== targetField) {
+                merged[m] = existing[m] ?? 0;
+              }
+            }
+            return merged;
+          });
         }
       }
     }
 
-    if (rowsToPersist.length > 0) {
-      const { error: upsertError } = await supabase
-        .from("payroll_verba_events")
-        .upsert(rowsToPersist, {
-          onConflict: "company_id,cpf,ano,mes,cod_evento",
-          ignoreDuplicates: false,
-        });
+    // ── Upsert em chunks de 500 (evita timeout mesmo com all_pages=true) ─────
+    if (pivotRows.length > 0) {
+      for (const chunk of chunkArray(pivotRows, 500)) {
+        const { error: upsertError } = await supabase
+          .from("payroll_verba_pivot")
+          .upsert(chunk, {
+            onConflict: "company_id,cpf,tipo_verba,ano",
+            ignoreDuplicates: false,
+          });
 
-      if (upsertError) {
-        throw new Error(`Failed to upsert payroll rows: ${upsertError.message}`);
+        if (upsertError) {
+          throw new Error(`Failed to upsert payroll pivot rows: ${upsertError.message}`);
+        }
       }
+    }
+
+    // Atualiza job com métricas finais
+    if (jobId) {
+      await supabase.from("verbas_sync_jobs").update({
+        status: "done",
+        pages_fetched: Number(datalakeMeta?.pages_fetched ?? 0),
+        records_received: records.length,
+        records_upserted: pivotRows.length,
+        records_failed: failed,
+        completed_at: new Date().toISOString(),
+      }).eq("id", jobId);
     }
 
     const failureReasons = [...reasonCounts.entries()]
@@ -1580,6 +1716,20 @@ serve(async (req) => {
       const serviceRoleKeyForClient = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
       const supabase = createClient(supabaseUrl, serviceRoleKeyForClient);
       const startedAtIso = new Date(startedAt).toISOString();
+
+      // Tenta marcar o job como erro
+      if (jobId) {
+        try {
+          await supabase.from("verbas_sync_jobs").update({
+            status: "error",
+            error_message: String((error as Error)?.message || error).slice(0, 500),
+            completed_at: new Date().toISOString(),
+          }).eq("id", jobId);
+        } catch (_jobErr) {
+          // noop — não bloquear o log principal
+        }
+      }
+
       await writeDlRunLog(supabase, {
         queryId: null,
         status: "error",
