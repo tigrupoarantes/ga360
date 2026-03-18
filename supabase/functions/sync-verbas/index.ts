@@ -738,8 +738,13 @@ async function resolveConnectionAndEndpoint(
 
     console.warn("[sync-verbas] dl_queries vazio; usando fallback da conexão ativa em dl_connections.");
 
+    const envBaseUrlFb = String(Deno.env.get("VERBAS_BASE_URL") || "").trim();
+    const resolvedFallback = envBaseUrlFb
+      ? { ...fallbackConnection, base_url: envBaseUrlFb }
+      : fallbackConnection;
+
     return {
-      connection: fallbackConnection,
+      connection: resolvedFallback,
       endpointPath: String(body.endpoint_path || "").trim(),
       queryName: "dl_connections_fallback",
       queryId: null,
@@ -761,8 +766,15 @@ async function resolveConnectionAndEndpoint(
     throw new Error("Conexão da query de VERBAS não encontrada ou inativa.");
   }
 
+  // Env var VERBAS_BASE_URL sobrescreve base_url do banco (útil quando o registro
+  // de dl_connections ainda aponta para URL local/antiga e não pode ser editado facilmente)
+  const envBaseUrl = String(Deno.env.get("VERBAS_BASE_URL") || "").trim();
+  const resolvedConnection = envBaseUrl
+    ? { ...(connection as DatalakeConnection), base_url: envBaseUrl }
+    : (connection as DatalakeConnection);
+
   return {
-    connection: connection as DatalakeConnection,
+    connection: resolvedConnection,
     endpointPath: String(selectedQuery.endpoint_path || "").trim(),
     queryName: String(selectedQuery.name || selectedQuery.id),
     queryId: String(selectedQuery.id || "") || null,
