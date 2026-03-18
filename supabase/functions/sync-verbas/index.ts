@@ -335,6 +335,16 @@ function sanitizeBaseUrl(rawBaseUrl: string) {
     .replace(/\/api\/api(\/|$)/i, "/api$1")
     .replace(/\/v1\/api(\/|$)/i, "/v1$1");
 
+  // Strip old verbas endpoint path segments that may be embedded in base_url
+  // e.g. https://api.example.com/v1/verbas -> https://api.example.com
+  // This allows auto-discovery to correctly build e.g. /v1/verbas-ga360
+  normalized = normalized
+    .replace(/\/(v1\/)?(api\/)?pagamentos\/verbas\/?$/i, "")
+    .replace(/\/(v1\/)?(api\/)?folha\/verbas\/?$/i, "")
+    .replace(/\/(v1\/)?(api\/)?verbas\/?$/i, "")
+    .replace(/\/(v1\/)?(api\/)?eventos\/?$/i, "")
+    .replace(/\/+$/, "");
+
   return normalized;
 }
 
