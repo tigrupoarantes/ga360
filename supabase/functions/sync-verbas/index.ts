@@ -23,6 +23,9 @@ interface VerbaRecord {
   periodo?: string;
   tipo_verba?: string;
   id_verba?: string;
+  id_verba_long?: string;  // hash SHA2 — PK técnica do endpoint verbas-ga360
+  nome_evento?: string;    // descrição do evento (ex: "SALARIO MENSAL")
+  tenant_id?: string;      // razão social normalizada (ex: "CHOK_DISTRIBUIDORA_...")
 }
 
 interface SyncRequest {
@@ -267,6 +270,16 @@ function normalizeTipoVerba(value: unknown): string {
     .replace(/\s+/g, "_");
 }
 
+function toTenantId(razaoSocial: string): string {
+  return razaoSocial
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9\s]/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+}
+
 function resolveCodEventoFromTipoVerba(value: unknown): number | null {
   const tipo = normalizeTipoVerba(value);
   if (!tipo) return null;
@@ -406,6 +419,9 @@ function buildVerbasEndpointCandidates(explicitEndpointPath?: string | null) {
   const envEndpoint = String(Deno.env.get("VERBAS_ENDPOINT_PATH") || "").trim().replace(/^\/+/, "");
 
   const defaults = [
+    "v1/verbas-ga360",      // endpoint otimizado (LONG format, base_url sem /v1)
+    "verbas-ga360",         // fallback se base_url já inclui /v1
+    "api/verbas-ga360",     // fallback interno (upstream DAB direto)
     "verbas",
     "api/verbas",
     "v1/verbas",
@@ -861,6 +877,26 @@ async function loadRowsFromDatalake(
   // Page size generoso: DAB suporta até 100.000 — menos round-trips, mais eficiente
   if (!queryParamsWithFilter["$first"]) {
     queryParamsWithFilter["$first"] = 5000;
+  }
+
+  // Injeta filtro tenant_id quando company_external_id (CNPJ) fornecido.
+  // O DAB usa tenant_id = razao_social normalizada (UPPERCASE_UNDERSCORE).
+  // Reduz volume retornado pelo DAB quando sync é por empresa específica.
+  if (body.company_external_id) {
+    const cnpjNorm = normalizeCnpj(body.company_external_id);
+    const { data: companyRow } = await supabase
+      .from("companies")
+      .select("name")
+      .eq("external_id", cnpjNorm)
+      .maybeSingle();
+    if (companyRow?.name) {
+      const tenantId = toTenantId(companyRow.name);
+      const cur = String(queryParamsWithFilter["$filter"] || "").trim();
+      const tenantFilter = `tenant_id eq '${tenantId}'`;
+      queryParamsWithFilter["$filter"] = cur
+        ? `(${cur}) and (${tenantFilter})`
+        : tenantFilter;
+    }
   }
 
   const candidates = buildVerbasEndpointCandidates(endpointPath);

@@ -186,6 +186,7 @@ async function runSyncVerbasIfConfigured(
   replaceScope?: boolean,
   jobId?: string | null,
   previewOnly?: boolean,
+  companyExternalId?: string,
 ) {
   if (!syncApiKey && !serviceRoleKey) return;
 
@@ -209,6 +210,10 @@ async function runSyncVerbasIfConfigured(
 
   if (companyId) {
     payload.company_id = companyId;
+  }
+
+  if (companyExternalId) {
+    payload.company_external_id = companyExternalId;
   }
 
   if (department) {
@@ -532,6 +537,18 @@ serve(async (req: Request) => {
     let syncResult: Record<string, unknown> | undefined;
     let syncError: string | undefined;
 
+    // Resolve company_external_id (CNPJ) a partir do companyId (UUID) uma única vez.
+    // Necessário para que sync-verbas injete o filtro tenant_id no DAB.
+    let companyExternalId: string | undefined;
+    if (body.companyId) {
+      const { data: companyRow } = await supabaseAdmin
+        .from("companies")
+        .select("external_id")
+        .eq("id", body.companyId)
+        .maybeSingle();
+      companyExternalId = companyRow?.external_id ?? undefined;
+    }
+
     if (syncNow || previewOnly) {
       if (!hasFullAccess) {
         return new Response(JSON.stringify({ error: "Sem permissão para sincronizar VERBAS.", code: "PERMISSION_DENIED" }), {
@@ -582,6 +599,7 @@ serve(async (req: Request) => {
           true,
           syncJobId,
           previewOnly,
+          companyExternalId,
         );
         // Preview mode: retorna resultado imediatamente sem buscar dados do banco
         if (previewOnly && syncResult) {
@@ -678,6 +696,9 @@ serve(async (req: Request) => {
           body.department,
           body.position,
           true,
+          undefined,
+          undefined,
+          companyExternalId,
         );
         let retry = await buildVerbasQuery(supabaseAdmin, "public", allowedCompanyIds, body, from, to, { enableEmployeeFilters: usedEmployeeFiltersInDb, fetchAll });
 
