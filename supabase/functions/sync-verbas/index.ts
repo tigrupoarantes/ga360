@@ -587,6 +587,7 @@ function mapDatalakeRowToVerbaRecords(
     company_external_id: pickField(row, ["company_external_id", "external_id_empresa", "cnpj_empresa", "cnpj", "empresa_cnpj", "cnpjcpf"]),
     cnpj_empresa: pickField(row, ["cnpj_empresa", "cnpj", "empresa_cnpj", "cnpjcpf"]),
     razao_social: pickField(row, ["razao_social", "empresa", "nome_empresa", "razao", "empresa_nome"]),
+    tenant_id: pickField(row, ["tenant_id", "tenantid", "tenant"]),
     cpf: pickField(row, ["cpf", "cpf_funcionario", "cpf_colaborador", "documento", "nr_cpf", "cpfcnpj", "matricula_cpf"]),
     nome_funcionario: pickField(row, ["nome_funcionario", "funcionario", "nome", "nome_colaborador", "colaborador", "nome_colab"]),
     competencia,
@@ -1523,6 +1524,8 @@ serve(async (req) => {
           upsertRows.push({
             cpf,
             nome_funcionario: (item.nome_funcionario || item.nome || "NOME_NAO_INFORMADO").trim(),
+            razao_social: String(item.razao_social || "").trim(),
+            tenant_id: String(item.tenant_id || "").trim(),
             ano: Number(ano),
             mes: Number(mes),
             cod_evento: Number(codEvento),
@@ -1565,6 +1568,8 @@ serve(async (req) => {
         stagingMap.set(key, {
           cpf: cpfNorm,
           nome_funcionario: String(rec.nome_funcionario || "NOME_NAO_INFORMADO"),
+          razao_social: String(rec.razao_social || "").trim(),
+          tenant_id: String(rec.tenant_id || "").trim(),
           tipo_verba: tipoVerba,
           ano: rec.ano,
           janeiro: 0, fevereiro: 0, marco: 0, abril: 0,
@@ -1575,6 +1580,9 @@ serve(async (req) => {
       }
 
       const stg = stagingMap.get(key)!;
+      // Keep first non-empty razao_social / tenant_id seen for this CPF
+      if (!stg.razao_social && rec.razao_social) stg.razao_social = String(rec.razao_social).trim();
+      if (!stg.tenant_id && rec.tenant_id) stg.tenant_id = String(rec.tenant_id).trim();
       const monthField = MONTH_NUMBER_TO_FIELD[rec.mes as number];
       if (monthField) stg[monthField] += Number(rec.valor) || 0;
     }
