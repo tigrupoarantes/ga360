@@ -44,6 +44,7 @@ interface SyncRequest {
   target_month?: number;
   target_year?: number;
   job_id?: string;
+  preview_only?: boolean;
 }
 
 interface DatalakeConnection {
@@ -1362,6 +1363,10 @@ serve(async (req) => {
     let processed = 0;
     let failed = 0;
     let ignored = 0;
+    let semEmpresa = 0;
+    const previewOnly = body.preview_only === true;
+    const distinctCpfsInSource = new Set<string>();
+    const semEmpresaRecords: Array<{ cpf: string; nome: string }> = [];
     const errors: Array<Record<string, unknown>> = [];
     const reasonCounts = new Map<string, number>();
     const upsertRows: Array<Record<string, unknown>> = [];
@@ -1406,118 +1411,43 @@ serve(async (req) => {
           }
         }
 
-        const employeesForCpf = employeesByCpf.get(cpf) || [];
+        // Track distinct CPFs seen in the source (DAB)
+        distinctCpfsInSource.add(cpf);
 
-        // Only consider active employees (and not disabled). Unknown / inactive CPFs are ignored.
-        const activeEmployeesForCpf = employeesForCpf.filter((employee) => {
-          if (employee.is_active === false) return false;
-          if (employee.is_disabled === true) return false;
-          return true;
-        });
-
-        if (activeEmployeesForCpf.length === 0) {
-          ignored++;
-          continue;
-        }
-
-        let employeeMatch = null as {
-          company_id: string;
-          full_name: string | null;
-          is_active: boolean | null;
-          is_disabled: boolean | null;
-          department: string | null;
-          position: string | null;
-          unidade: string | null;
-          accounting_group: string | null;
-          contract_company_id: string | null;
-          accounting_company_id: string | null;
-        } | null;
-
-        // Prefer matching the requested scope (when present) using the accounting company dimension.
-        if (body.company_id) {
-          employeeMatch =
-            activeEmployeesForCpf.find((employee) => employee.accounting_company_id === body.company_id) ||
-            activeEmployeesForCpf.find((employee) => employee.company_id === body.company_id) ||
-            null;
-
-          if (!employeeMatch) {
-            // Out of scope; treat as ignored to avoid polluting company partitions.
+        // ── Nova arquitetura: staging-first ──────────────────────────────────
+        // Não tentamos resolver company_id aqui. Todos os registros válidos
+        // (CPF + ano + mes + cod_evento) vão para payroll_verba_staging.
+        // O JOIN com external_employees acontece depois via apply_payroll_staging().
+        //
+        // Para preview: usamos employeesByCpf apenas para estatísticas.
+        if (previewOnly) {
+          const employeesForCpf = employeesByCpf.get(cpf) || [];
+          if (employeesForCpf.length === 0) {
             ignored++;
-            continue;
+          } else {
+            const hasCompany = employeesForCpf.some((e) => e.company_id);
+            if (!hasCompany) {
+              semEmpresa++;
+              semEmpresaRecords.push({
+                cpf,
+                nome: employeesForCpf[0]?.full_name || (item.nome_funcionario as string) || cpf,
+              });
+            } else {
+              processed++;
+            }
           }
-        } else if (activeEmployeesForCpf.length === 1) {
-          employeeMatch = activeEmployeesForCpf[0];
         } else {
-          // If multiple active rows exist for a CPF, try to disambiguate by company mapping from payload.
-          const mappedCompanyId =
-            item.company_id ||
-            mappedCompany?.id ||
-            mappedCompanyByName?.id ||
-            mappedCompanyByNameFuzzy?.id ||
-            fallbackCompany?.id ||
-            null;
-
-          if (mappedCompanyId) {
-            employeeMatch =
-              activeEmployeesForCpf.find((employee) => employee.accounting_company_id === mappedCompanyId) ||
-              activeEmployeesForCpf.find((employee) => employee.company_id === mappedCompanyId) ||
-              null;
-          }
-
-          if (!employeeMatch) {
-            // Ambiguous CPF across companies; ignore to avoid wrong attribution.
-            ignored++;
-            continue;
-          }
+          // Sync real: empurra para staging sem company_id
+          upsertRows.push({
+            cpf,
+            nome_funcionario: (item.nome_funcionario || item.nome || "NOME_NAO_INFORMADO").trim(),
+            ano: Number(ano),
+            mes: Number(mes),
+            cod_evento: Number(codEvento),
+            valor: Number(valor),
+          });
+          processed++;
         }
-
-        // Align payroll event partition with accounting company (QLP model).
-        const companyId = employeeMatch.accounting_company_id || employeeMatch.company_id;
-        if (!companyId) {
-          ignored++;
-          continue;
-        }
-
-        const requiredDepartment = normalizeText(body.department);
-        if (requiredDepartment) {
-          const employeeDepartment = normalizeText(employeeMatch?.department || null);
-          if (!employeeDepartment || !employeeDepartment.includes(requiredDepartment)) {
-            throw new Error("Departamento fora do filtro selecionado");
-          }
-        }
-
-        const requiredPosition = normalizeText(body.position);
-        if (requiredPosition) {
-          const employeePosition = normalizeText(employeeMatch?.position || null);
-          if (!employeePosition || !employeePosition.includes(requiredPosition)) {
-            throw new Error("Cargo fora do filtro selecionado");
-          }
-        }
-
-        const resolvedCompany = companyById.get(companyId) || null;
-
-        const employeeSnapshotAtIso = getCompetenciaAsOfIso(Number(ano), Number(mes));
-
-        upsertRows.push({
-          company_id: companyId,
-          razao_social: resolvedCompany?.name || item.razao_social || "SEM_RAZAO_SOCIAL",
-          cpf,
-          nome_funcionario: (item.nome_funcionario || item.nome || employeeMatch?.full_name || "NOME_NAO_INFORMADO").trim(),
-          employee_department: employeeMatch?.department || null,
-          employee_position: employeeMatch?.position || null,
-          employee_unidade: employeeMatch?.unidade || null,
-          employee_accounting_group: employeeMatch?.accounting_group || null,
-          employee_contract_company_id: employeeMatch?.contract_company_id || null,
-          employee_accounting_company_id: employeeMatch?.accounting_company_id || null,
-          employee_snapshot_at: employeeSnapshotAtIso,
-          ano: Number(ano),
-          mes: Number(mes),
-          cod_evento: Number(codEvento),
-          valor: Number(valor),
-          updated_at: new Date().toISOString(),
-        });
-
-        processed++;
       } catch (error) {
         failed++;
         const reason = String(error);
@@ -1532,12 +1462,12 @@ serve(async (req) => {
     const rowsToPersist = dedupedUpsertRows.filter((row) => {
       if (scopeYear && Number(row.ano) !== scopeYear) return false;
       if (scopeMonth && Number(row.mes) !== scopeMonth) return false;
-      if (body.company_id && String(row.company_id || "") !== body.company_id) return false;
       return true;
     });
 
-    // ── Agregar long format → pivot (1 linha por cpf × tipo_verba × ano) ──────
-    const pivotMap = new Map<string, Record<string, any>>();
+    // ── Agregar long format → staging (1 linha por cpf × tipo_verba × ano) ──
+    // Sem company_id — a associação com empresa é feita pelo DB via apply_payroll_staging()
+    const stagingMap = new Map<string, Record<string, any>>();
 
     for (const rec of rowsToPersist) {
       const tipoVerba =
@@ -1547,86 +1477,94 @@ serve(async (req) => {
       if (tipoVerba === "OUTROS") continue;
 
       const cpfNorm = normalizeDigits(rec.cpf as string);
-      const key = `${rec.company_id}|${cpfNorm}|${tipoVerba}|${rec.ano}`;
+      const key = `${cpfNorm}|${tipoVerba}|${rec.ano}`;
 
-      if (!pivotMap.has(key)) {
-        pivotMap.set(key, {
-          company_id: rec.company_id,
-          razao_social: rec.razao_social,
-          cpf: rec.cpf,
-          nome_funcionario: rec.nome_funcionario,
+      if (!stagingMap.has(key)) {
+        stagingMap.set(key, {
+          cpf: cpfNorm,
+          nome_funcionario: String(rec.nome_funcionario || "NOME_NAO_INFORMADO"),
           tipo_verba: tipoVerba,
           ano: rec.ano,
           janeiro: 0, fevereiro: 0, marco: 0, abril: 0,
           maio: 0, junho: 0, julho: 0, agosto: 0,
           setembro: 0, outubro: 0, novembro: 0, dezembro: 0,
-          employee_department: rec.employee_department,
-          employee_position: rec.employee_position,
-          employee_unidade: rec.employee_unidade,
-          employee_accounting_group: rec.employee_accounting_group,
-          employee_contract_company_id: rec.employee_contract_company_id,
-          employee_accounting_company_id: rec.employee_accounting_company_id,
-          employee_snapshot_at: rec.employee_snapshot_at,
-          updated_at: new Date().toISOString(),
+          synced_at: new Date().toISOString(),
         });
       }
 
-      const pivot = pivotMap.get(key)!;
+      const stg = stagingMap.get(key)!;
       const monthField = MONTH_NUMBER_TO_FIELD[rec.mes as number];
-      if (monthField) pivot[monthField] += Number(rec.valor) || 0;
+      if (monthField) stg[monthField] += Number(rec.valor) || 0;
     }
 
-    let pivotRows = [...pivotMap.values()];
+    let stagingRows = [...stagingMap.values()];
 
-    // ── Replace scope: limpar linhas existentes antes de regravar ─────────────
-    if (replaceScope && scopeYear && pivotRows.length > 0) {
-      const scopedCompanies = [...new Set(pivotRows.map((r) => String(r.company_id || "")).filter(Boolean))];
-      const isGlobalScope = !body.company_id && !body.department && !body.position;
+    // ── Preview mode: retorna stats sem escrever no banco ─────────────────────
+    if (previewOnly) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          preview_only: true,
+          source_system: sourceSystem,
+          received: records.length,
+          distinct_cpfs_in_source: distinctCpfsInSource.size,
+          cpfs_matched: processed,
+          cpfs_sem_empresa: semEmpresa,
+          sem_empresa_records: semEmpresaRecords.slice(0, 500),
+          cpfs_not_found: ignored,
+          failed,
+          datalake: datalakeMeta,
+          failure_reasons: [...reasonCounts.entries()]
+            .map(([reason, count]) => ({ reason, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 10),
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
+    // ── Replace scope: limpar staging (e pivot) antes de regravar ────────────
+    if (replaceScope && scopeYear && stagingRows.length > 0) {
       if (!scopeMonth) {
-        // Sync de ano completo: apagar todas as linhas do ano para reescrever limpo
-        let deleteQuery = supabase
+        // Sync de ano completo: limpar staging e pivot para o ano antes de reescrever
+        const { error: stgDeleteError } = await supabase
+          .from("payroll_verba_staging")
+          .delete()
+          .eq("ano", scopeYear);
+        if (stgDeleteError) {
+          throw new Error(`Failed to clear staging rows: ${stgDeleteError.message}`);
+        }
+
+        const { error: pivotDeleteError } = await supabase
           .from("payroll_verba_pivot")
           .delete()
           .eq("ano", scopeYear);
-
-        if (!isGlobalScope) {
-          if (scopedCompanies.length === 0) {
-            deleteQuery = null as any;
-          } else {
-            deleteQuery = deleteQuery.in("company_id", scopedCompanies);
-          }
-        }
-
-        if (deleteQuery) {
-          const { error: deleteError } = await deleteQuery;
-          if (deleteError) {
-            throw new Error(`Failed to clear pivot rows (delete scope): ${deleteError.message}`);
-          }
+        if (pivotDeleteError) {
+          throw new Error(`Failed to clear pivot rows: ${pivotDeleteError.message}`);
         }
       } else {
-        // Sync mensal: buscar linhas existentes e mesclar para preservar outros meses
-        const cpfs = [...new Set(pivotRows.map((r) => String(r.cpf || "")).filter(Boolean))];
-        const { data: existingRows } = await supabase
-          .from("payroll_verba_pivot")
-          .select("company_id, cpf, tipo_verba, ano, " + MONTH_FIELDS.join(", "))
+        // Sync mensal: preservar outros meses no staging, atualizar só o mês alvo
+        const cpfs = [...new Set(stagingRows.map((r) => String(r.cpf || "")).filter(Boolean))];
+        const { data: existingStaging } = await supabase
+          .from("payroll_verba_staging")
+          .select("cpf, tipo_verba, ano, " + MONTH_FIELDS.join(", "))
           .in("cpf", cpfs)
           .eq("ano", scopeYear);
 
-        if (existingRows && existingRows.length > 0) {
+        if (existingStaging && existingStaging.length > 0) {
           const existingMap = new Map<string, Record<string, any>>(
-            existingRows.map((r: any) => [
-              `${r.company_id}|${normalizeDigits(r.cpf)}|${r.tipo_verba}|${r.ano}`,
+            existingStaging.map((r: any) => [
+              `${normalizeDigits(r.cpf)}|${r.tipo_verba}|${r.ano}`,
               r,
             ]),
           );
 
           const targetField = MONTH_NUMBER_TO_FIELD[scopeMonth];
-          pivotRows = pivotRows.map((row) => {
-            const eKey = `${row.company_id}|${normalizeDigits(row.cpf)}|${row.tipo_verba}|${row.ano}`;
+          stagingRows = stagingRows.map((row) => {
+            const eKey = `${normalizeDigits(row.cpf)}|${row.tipo_verba}|${row.ano}`;
             const existing = existingMap.get(eKey);
             if (!existing) return row;
-            // Preservar todos os meses do registro existente; sobrescrever apenas o mês alvo
+            // Preservar todos os meses do staging existente; sobrescrever apenas o mês alvo
             const merged = { ...row };
             for (const m of MONTH_FIELDS) {
               if (m !== targetField) {
@@ -1639,19 +1577,32 @@ serve(async (req) => {
       }
     }
 
-    // ── Upsert em chunks de 500 (evita timeout mesmo com all_pages=true) ─────
-    if (pivotRows.length > 0) {
-      for (const chunk of chunkArray(pivotRows, 500)) {
+    // ── Upsert staging em chunks de 500 ───────────────────────────────────────
+    if (stagingRows.length > 0) {
+      for (const chunk of chunkArray(stagingRows, 500)) {
         const { error: upsertError } = await supabase
-          .from("payroll_verba_pivot")
+          .from("payroll_verba_staging")
           .upsert(chunk, {
-            onConflict: "company_id,cpf,tipo_verba,ano",
+            onConflict: "cpf,tipo_verba,ano",
             ignoreDuplicates: false,
           });
 
         if (upsertError) {
-          throw new Error(`Failed to upsert payroll pivot rows: ${upsertError.message}`);
+          throw new Error(`Failed to upsert staging rows: ${upsertError.message}`);
         }
+      }
+    }
+
+    // ── Aplicar staging → pivot via JOIN com external_employees ───────────────
+    let applyResult: { inserted_or_updated?: number; cpfs_sem_empresa?: number } = {};
+    if (stagingRows.length > 0) {
+      const { data: applyData, error: applyError } = await supabase
+        .rpc("apply_payroll_staging", { p_ano: scopeYear ?? null });
+
+      if (applyError) {
+        console.warn("[sync-verbas] apply_payroll_staging error:", applyError.message);
+      } else {
+        applyResult = applyData as typeof applyResult || {};
       }
     }
 
@@ -1661,7 +1612,7 @@ serve(async (req) => {
         status: "done",
         pages_fetched: Number(datalakeMeta?.pages_fetched ?? 0),
         records_received: records.length,
-        records_upserted: pivotRows.length,
+        records_upserted: applyResult.inserted_or_updated ?? stagingRows.length,
         records_failed: failed,
         completed_at: new Date().toISOString(),
       }).eq("id", jobId);
@@ -1683,13 +1634,10 @@ serve(async (req) => {
       startedAtIso,
       finishedAtIso: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
-      rowsReturned: dedupedUpsertRows.length,
+      rowsReturned: stagingRows.length,
       errorMessage: failed > 0 ? `Falhas: ${failed}. ${summarizedFailure}` : null,
       params: {
         source_system: sourceSystem,
-        company_id: body.company_id || null,
-        department: body.department || null,
-        position: body.position || null,
         target_month: body.target_month || null,
         target_year: body.target_year || null,
         max_pages: body.max_pages || null,
@@ -1700,8 +1648,9 @@ serve(async (req) => {
         processed,
         failed,
         ignored,
-        upserted: rowsToPersist.length,
-        deduplicated: upsertRows.length - dedupedUpsertRows.length,
+        staging_rows: stagingRows.length,
+        pivot_rows: applyResult.inserted_or_updated ?? 0,
+        cpfs_sem_empresa: applyResult.cpfs_sem_empresa ?? 0,
         replace_scope: replaceScope,
         scope_year: scopeYear,
         scope_month: scopeMonth,
@@ -1714,11 +1663,13 @@ serve(async (req) => {
         success: true,
         source_system: sourceSystem,
         received: records.length,
+        distinct_cpfs_in_source: distinctCpfsInSource.size,
+        staging_rows: stagingRows.length,
+        pivot_rows: applyResult.inserted_or_updated ?? 0,
+        cpfs_sem_empresa: applyResult.cpfs_sem_empresa ?? 0,
         processed,
         failed,
         ignored,
-        upserted: rowsToPersist.length,
-        deduplicated: upsertRows.length - dedupedUpsertRows.length,
         duration_ms: Date.now() - startedAt,
         datalake: datalakeMeta,
         failure_reasons: failureReasons,

@@ -1,5 +1,3 @@
-import { MainLayout } from "@/components/layout/MainLayout";
-import { BackButton } from "@/components/ui/back-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DatalakeConnectionsList } from "@/components/governanca-ec/admin/DatalakeConnectionsList";
 import { DatalakeQueriesList } from "@/components/governanca-ec/admin/DatalakeQueriesList";
@@ -10,17 +8,13 @@ import { Database, Link2, FileText, History, LayoutGrid } from "lucide-react";
 
 export default function AdminGovernancaEC() {
   return (
-    <MainLayout>
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <BackButton to="/admin" />
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Governança EC - Configurações</h1>
-            <p className="text-muted-foreground mt-1">
-              Gerencie cards, conexões com Datalake e vínculos
-            </p>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Governança EC — Configurações</h1>
+        <p className="text-muted-foreground mt-1">
+          Gerencie cards, conexões com Datalake e vínculos
+        </p>
+      </div>
 
         <Tabs defaultValue="cards" className="space-y-4">
           <TabsList className="grid w-full grid-cols-5">
@@ -66,7 +60,6 @@ export default function AdminGovernancaEC() {
             <DatalakeLogsViewer />
           </TabsContent>
         </Tabs>
-      </div>
-    </MainLayout>
+    </div>
   );
 }

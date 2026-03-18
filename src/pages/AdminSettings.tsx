@@ -1,8 +1,6 @@
-import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Settings, UserPlus, Mail, MessageSquare, Cog, Package, Bot } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Settings, UserPlus, Mail, MessageSquare, Cog, Package, Bot } from 'lucide-react';
 import { InvitesList } from '@/components/settings/InvitesList';
 import { EmailConfigSection } from '@/components/settings/EmailConfigSection';
 import { WhatsAppConfigSection } from '@/components/settings/WhatsAppConfigSection';
@@ -13,32 +11,18 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
 export default function AdminSettings() {
-  const navigate = useNavigate();
-
   return (
-    <MainLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="animate-fade-in">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/admin')}
-            className="mb-4"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar
-          </Button>
-          <div className="flex items-center gap-3">
-            <Settings className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">Configurações do Sistema</h1>
-              <p className="text-muted-foreground mt-1">
-                Gerencie usuários, e-mails, integrações e configurações gerais
-              </p>
-            </div>
-          </div>
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Settings className="h-6 w-6 text-primary" />
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Configurações do Sistema</h1>
+          <p className="text-muted-foreground mt-0.5">
+            Gerencie usuários, e-mails, integrações e configurações gerais
+          </p>
         </div>
+      </div>
 
         {/* Tabs */}
         <Tabs defaultValue="invites" className="animate-fade-in-up">
@@ -136,7 +120,6 @@ export default function AdminSettings() {
             </div>
           </TabsContent>
         </Tabs>
-      </div>
-    </MainLayout>
+    </div>
   );
 }

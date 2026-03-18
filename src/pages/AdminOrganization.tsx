@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BackButton } from '@/components/ui/back-button';
 import { Building2, Plus, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/external-client';
 import { useToast } from '@/hooks/use-toast';
@@ -204,19 +202,15 @@ export default function AdminOrganization() {
 
   if (loading) {
     return (
-      <MainLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <p className="text-muted-foreground">Carregando...</p>
-        </div>
-      </MainLayout>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <p className="text-muted-foreground">Carregando...</p>
+      </div>
     );
   }
 
   return (
-    <MainLayout>
-      <div className="space-y-6">
-        <BackButton to="/admin" />
-        <div className="flex items-center justify-between animate-fade-in">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between animate-fade-in">
           <div>
             <h1 className="text-3xl font-bold text-foreground">
               Estrutura Organizacional
@@ -324,7 +318,6 @@ export default function AdminOrganization() {
             </Button>
           </Card>
         )}
-      </div>
 
       <CompanyFormDialog
         open={companyDialogOpen}
@@ -361,6 +354,6 @@ export default function AdminOrganization() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </MainLayout>
+    </div>
   );
 }

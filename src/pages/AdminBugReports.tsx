@@ -1,12 +1,10 @@
 import { useState, useEffect } from "react";
-import { MainLayout } from "@/components/layout/MainLayout";
 import { supabase } from "@/integrations/supabase/external-client";
 import { toast } from "@/hooks/use-toast";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { BackButton } from "@/components/ui/back-button";
 import {
   Select,
   SelectContent,
@@ -131,15 +129,11 @@ export default function AdminBugReports() {
   const totalMelhorias = reports.filter((r) => r.type === "melhoria").length;
 
   return (
-    <MainLayout>
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <BackButton to="/admin" />
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Bugs e Melhorias</h1>
-            <p className="text-muted-foreground mt-1">Gerencie os reports dos usuários</p>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Bugs e Melhorias</h1>
+        <p className="text-muted-foreground mt-1">Gerencie os reports dos usuários</p>
+      </div>
 
         {/* KPIs */}
         <div className="grid gap-4 md:grid-cols-3">
@@ -306,7 +300,6 @@ export default function AdminBugReports() {
             </TableBody>
           </Table>
         </Card>
-      </div>
-    </MainLayout>
+    </div>
   );
 }

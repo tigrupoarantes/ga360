@@ -37,6 +37,7 @@ import AdminGovernancaEC from "./pages/AdminGovernancaEC";
 import AdminDatalake from "./pages/AdminDatalake";
 import AdminBugReports from "./pages/AdminBugReports";
 import AdminApiKeys from "./pages/AdminApiKeys";
+import AdminD4Sign from "./pages/AdminD4Sign";
 import GovernancaEC from "./pages/GovernancaEC";
 import GovernancaECArea from "./pages/GovernancaECArea";
 import GovernancaECCardDetail from "./pages/GovernancaECCardDetail";
@@ -46,6 +47,7 @@ import QLPPage from "./pages/QLPPage";
 import ControlePJ from "./pages/ControlePJ";
 import ControlePJDetail from "./pages/ControlePJDetail";
 import VerbasPage from "./pages/Verbas";
+import VerbasIndenizatorias from "./pages/VerbasIndenizatorias";
 import NotFound from "./pages/NotFound";
 import CockpitHome from "@/pages/cockpit/CockpitHome";
 import CockpitMap from "@/pages/cockpit/CockpitMap";
@@ -55,6 +57,7 @@ import CockpitSettings from "@/pages/cockpit/CockpitSettings";
 import CockpitPedidos from "@/pages/cockpit/CockpitPedidos";
 import CockpitNaoVendas from "@/pages/cockpit/CockpitNaoVendas";
 import AdminCockpitVendas from "./pages/AdminCockpitVendas";
+import { AdminLayout } from "@/components/layout/AdminLayout";
 
 const queryClient = new QueryClient();
 
@@ -176,6 +179,7 @@ const App = () => (
                     </ProtectedRoute>
                   }
                 />
+                {/* Admin — layout com sidebar colapsável */}
                 <Route
                   path="/admin"
                   element={
@@ -183,130 +187,25 @@ const App = () => (
                       allowedRoles={["super_admin", "ceo", "diretor"]}
                       requiredPermission={{ module: 'admin', action: 'view' }}
                     >
-                      <Admin />
+                      <AdminLayout />
                     </ProtectedRoute>
                   }
-                />
-                <Route
-                  path="/admin/estrutura"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminOrganization />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/areas"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminAreas />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/users"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminUsers />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/empresas"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminCompanies />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/permissions"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminPermissions />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/settings"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminSettings />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/employees"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminEmployees />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/governanca-ec"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminGovernancaEC />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/datalake"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminDatalake />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/bugs"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                      requiredPermission={{ module: 'admin', action: 'view' }}
-                    >
-                      <AdminBugReports />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/api-keys"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["super_admin", "ceo", "diretor"]}
-                    >
-                      <AdminApiKeys />
-                    </ProtectedRoute>
-                  }
-                />
+                >
+                  <Route index element={<Navigate to="/admin/users" replace />} />
+                  <Route path="estrutura" element={<AdminOrganization />} />
+                  <Route path="areas" element={<AdminAreas />} />
+                  <Route path="users" element={<AdminUsers />} />
+                  <Route path="empresas" element={<AdminCompanies />} />
+                  <Route path="permissions" element={<AdminPermissions />} />
+                  <Route path="settings" element={<AdminSettings />} />
+                  <Route path="employees" element={<AdminEmployees />} />
+                  <Route path="governanca-ec" element={<AdminGovernancaEC />} />
+                  <Route path="datalake" element={<AdminDatalake />} />
+                  <Route path="bugs" element={<AdminBugReports />} />
+                  <Route path="api-keys" element={<AdminApiKeys />} />
+                  <Route path="d4sign" element={<AdminD4Sign />} />
+                  <Route path="cockpit-vendas" element={<AdminCockpitVendas />} />
+                </Route>
                 <Route
                   path="/governanca-ec"
                   element={
@@ -360,6 +259,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <VerbasPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/governanca-ec/pessoas-cultura/verbas-indenizatorias"
+                  element={
+                    <ProtectedRoute>
+                      <VerbasIndenizatorias />
                     </ProtectedRoute>
                   }
                 />
@@ -445,14 +352,6 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <CockpitNaoVendas />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/admin/cockpit-vendas"
-                  element={
-                    <ProtectedRoute allowedRoles={["super_admin", "ceo"]}>
-                      <AdminCockpitVendas />
                     </ProtectedRoute>
                   }
                 />

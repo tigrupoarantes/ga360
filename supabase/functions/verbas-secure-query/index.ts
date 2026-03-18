@@ -25,9 +25,10 @@ interface VerbasSecureQueryRequest {
   syncMaxPages?: number;
   syncAllPages?: boolean;
   syncMonth?: number;
-  // Ações de rastreamento de jobs
-  action?: string;       // "getJobStatus" | "listRecentJobs"
+  // Ações de rastreamento de jobs e recálculo
+  action?: string;       // "getJobStatus" | "listRecentJobs" | "recalcPivot"
   jobId?: string;        // UUID do job para consulta de status
+  previewOnly?: boolean; // se true, calcula stats mas não escreve no banco
 }
 
 const ACCOUNTING_CODE_TO_NAME: Record<string, string> = {
@@ -184,6 +185,7 @@ async function runSyncVerbasIfConfigured(
   position?: string,
   replaceScope?: boolean,
   jobId?: string | null,
+  previewOnly?: boolean,
 ) {
   if (!syncApiKey && !serviceRoleKey) return;
 
@@ -222,6 +224,10 @@ async function runSyncVerbasIfConfigured(
   // Passa job_id para que sync-verbas atualize o progresso
   if (jobId) {
     payload.job_id = jobId;
+  }
+
+  if (previewOnly) {
+    payload.preview_only = true;
   }
 
   const headers: Record<string, string> = {
@@ -304,6 +310,15 @@ function maskRow(row: Record<string, any>) {
 }
 
 async function resolveAllowedCompanyIds(supabaseAdmin: any, userId: string, requestedCompanyId?: string) {
+  // Verifica se é super_admin, ceo ou diretor — esses roles têm acesso a todas as empresas
+  const { data: userRoles } = await supabaseAdmin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId);
+
+  const seniorRoles = ["super_admin", "ceo", "diretor"];
+  const isSenior = (userRoles || []).some((r: any) => seniorRoles.includes(r.role));
+
   const { data: userCompanies, error } = await supabaseAdmin
     .from("user_companies")
     .select("company_id, all_companies")
@@ -312,7 +327,7 @@ async function resolveAllowedCompanyIds(supabaseAdmin: any, userId: string, requ
   if (error) throw error;
 
   const rows = userCompanies || [];
-  const allCompanies = rows.some((row: any) => row.all_companies === true);
+  const allCompanies = isSenior || rows.some((row: any) => row.all_companies === true);
   const explicitCompanyIds = rows.map((row: any) => row.company_id).filter(Boolean);
 
   if (requestedCompanyId) {
@@ -456,6 +471,36 @@ serve(async (req: Request) => {
       });
     }
 
+    // ── Recalcular associações via staging → pivot (requer permissão de admin/verbas) ──
+    if (body.action === "recalcPivot") {
+      // Conta linhas no staging para diagnóstico
+      const { count: stagingCount } = await supabaseAdmin
+        .from("payroll_verba_staging")
+        .select("*", { count: "exact", head: true });
+
+      const targetAno = (body.ano && body.ano >= 2000) ? body.ano : null;
+
+      const { data: applyData, error: applyError } = await supabaseAdmin
+        .rpc("apply_payroll_staging", { p_ano: targetAno });
+
+      if (applyError) {
+        return new Response(JSON.stringify({ error: applyError.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const result = (applyData as any) || {};
+      return new Response(JSON.stringify({
+        staging_rows: stagingCount ?? 0,
+        inserted_or_updated: result.inserted_or_updated ?? 0,
+        cpfs_sem_empresa: result.cpfs_sem_empresa ?? 0,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const allowedCompanyIds = await resolveAllowedCompanyIds(supabaseAdmin, userId, body.companyId);
     if (!allowedCompanyIds.length) {
       return new Response(JSON.stringify({ error: "Acesso a empresas não encontrado.", code: "TENANT_ACCESS_DENIED" }), {
@@ -483,10 +528,11 @@ serve(async (req: Request) => {
     const to = from + pageSize - 1;
     const autoSyncWhenEmpty = body.autoSyncWhenEmpty !== false;
     const syncNow = body.syncNow === true;
+    const previewOnly = body.previewOnly === true;
     let syncResult: Record<string, unknown> | undefined;
     let syncError: string | undefined;
 
-    if (syncNow) {
+    if (syncNow || previewOnly) {
       if (!hasFullAccess) {
         return new Response(JSON.stringify({ error: "Sem permissão para sincronizar VERBAS.", code: "PERMISSION_DENIED" }), {
           status: 403,
@@ -497,26 +543,28 @@ serve(async (req: Request) => {
       const syncApiKey = Deno.env.get("SYNC_API_KEY");
       const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-      // Cria registro de job antes de disparar sync-verbas
+      // Cria registro de job antes de disparar sync-verbas (somente no sync real)
       let syncJobId: string | null = null;
-      try {
-        const { data: jobData } = await supabaseAdmin
-          .from("verbas_sync_jobs")
-          .insert({
-            ano: body.ano ?? new Date().getFullYear(),
-            mes: (body.syncMonth && body.syncMonth >= 1 && body.syncMonth <= 12) ? body.syncMonth : null,
-            status: "queued",
-            metadata: {
-              all_pages: body.syncAllPages ?? false,
-              max_pages: body.syncMaxPages ?? 25,
-              company_id: body.companyId ?? null,
-            },
-          })
-          .select("id")
-          .single();
-        syncJobId = jobData?.id ?? null;
-      } catch (_jobInsertErr) {
-        // job tracking é best-effort — não bloqueia o sync
+      if (!previewOnly) {
+        try {
+          const { data: jobData } = await supabaseAdmin
+            .from("verbas_sync_jobs")
+            .insert({
+              ano: body.ano ?? new Date().getFullYear(),
+              mes: (body.syncMonth && body.syncMonth >= 1 && body.syncMonth <= 12) ? body.syncMonth : null,
+              status: "queued",
+              metadata: {
+                all_pages: body.syncAllPages ?? false,
+                max_pages: body.syncMaxPages ?? 25,
+                company_id: body.companyId ?? null,
+              },
+            })
+            .select("id")
+            .single();
+          syncJobId = jobData?.id ?? null;
+        } catch (_jobInsertErr) {
+          // job tracking é best-effort — não bloqueia o sync
+        }
       }
 
       try {
@@ -533,7 +581,15 @@ serve(async (req: Request) => {
           body.position,
           true,
           syncJobId,
+          previewOnly,
         );
+        // Preview mode: retorna resultado imediatamente sem buscar dados do banco
+        if (previewOnly && syncResult) {
+          return new Response(JSON.stringify({ success: true, preview: syncResult }), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
         // Garante que job_id está na resposta para polling do frontend
         if (syncJobId && syncResult) {
           syncResult.job_id = syncJobId;

@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -23,10 +25,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Trash2, Link2, UserCheck } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Link2, UserCheck, Search, Save, Info } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useVIAccountingGroups, useCockpitVIConfig } from '@/hooks/useVerbasIndenizatorias';
 
 type NivelAcesso = 'vendedor' | 'supervisor' | 'gerente' | 'diretoria';
 
@@ -56,7 +58,6 @@ const NIVEL_COLORS: Record<NivelAcesso, string> = {
 };
 
 export default function AdminCockpitVendas() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { selectedCompanyId } = useCompany();
 
@@ -67,6 +68,49 @@ export default function AdminCockpitVendas() {
     cod_vendedor: '',
     nivel_acesso: 'vendedor' as NivelAcesso,
   });
+
+  // Grupos contábeis — configuração de vendedores/promotores
+  const [groupCompetencia, setGroupCompetencia] = useState(
+    new Date().toISOString().slice(0, 7),
+  );
+  const [groupQueryEnabled, setGroupQueryEnabled] = useState(false);
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+
+  const { data: availableGroups = [], isLoading: loadingGroups, isError: groupsError } =
+    useVIAccountingGroups(
+      groupQueryEnabled ? selectedCompanyId : null,
+      groupCompetencia,
+    );
+
+  const { data: savedGroups = [] } = useCockpitVIConfig(selectedCompanyId ?? null);
+
+  // Quando os grupos salvos carregam, inicializa a seleção local
+  useEffect(() => {
+    if (savedGroups.length > 0) setSelectedGroups(savedGroups);
+  }, [savedGroups]);
+
+  const saveGroupsMutation = useMutation({
+    mutationFn: async (groups: string[]) => {
+      const { error } = await supabase
+        .from('cockpit_vi_config')
+        .upsert(
+          { company_id: selectedCompanyId, vi_accounting_groups: groups, updated_at: new Date().toISOString() },
+          { onConflict: 'company_id' },
+        );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cockpit-vi-config'] });
+      toast.success('Configuração salva');
+    },
+    onError: () => toast.error('Erro ao salvar configuração'),
+  });
+
+  function toggleGroup(group: string) {
+    setSelectedGroups((prev) =>
+      prev.includes(group) ? prev.filter((g) => g !== group) : [...prev, group],
+    );
+  }
 
   // Busca vínculos com join em profiles
   const { data: links = [], isLoading } = useQuery<VendorLink[]>({
@@ -149,32 +193,28 @@ export default function AdminCockpitVendas() {
   });
 
   return (
-    <MainLayout>
-      <div className="p-6 max-w-5xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/admin')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Link2 className="h-6 w-6 text-primary" />
-              Cockpit de Vendas — Vínculos DAB
-            </h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              Associe usuários do GA 360 aos códigos de vendedor/supervisor/gerente do Datalake (DAB)
-            </p>
-          </div>
-          <div className="ml-auto">
-            <Button onClick={() => setCreateOpen(true)} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Novo Vínculo
-            </Button>
-          </div>
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Link2 className="h-5 w-5 text-primary" />
+            Cockpit de Vendas — Vínculos DAB
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Associe usuários do GA 360 aos códigos de vendedor/supervisor/gerente do Datalake (DAB)
+          </p>
         </div>
+        <div className="ml-auto">
+          <Button onClick={() => setCreateOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Novo Vínculo
+          </Button>
+        </div>
+      </div>
 
-        {/* Tabela de vínculos */}
-        <Card>
+      {/* Tabela de vínculos */}
+      <Card>
           <CardHeader>
             <CardTitle className="text-base">Vínculos configurados</CardTitle>
             <CardDescription>
@@ -247,7 +287,123 @@ export default function AdminCockpitVendas() {
             )}
           </CardContent>
         </Card>
-      </div>
+
+      {/* Grupos contábeis — Verbas Indenizatórias */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Grupos Contábeis — Verbas Indenizatórias</CardTitle>
+          <CardDescription>
+            Selecione quais grupos contábeis do DAB correspondem a vendedores e promotores.
+            O dropdown de geração de documentos exibirá apenas funcionários desses grupos.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Nota sobre sync */}
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Os grupos exibidos vêm dos dados já sincronizados pelo card de Verbas. Não é necessário
+              sincronizar novamente aqui.
+            </AlertDescription>
+          </Alert>
+
+          {/* Competência + Buscar */}
+          <div className="flex items-end gap-3">
+            <div className="space-y-1.5 flex-1 max-w-[200px]">
+              <Label htmlFor="group-competencia">Competência</Label>
+              <Input
+                id="group-competencia"
+                type="month"
+                value={groupCompetencia}
+                onChange={(e) => {
+                  setGroupCompetencia(e.target.value);
+                  setGroupQueryEnabled(false);
+                }}
+              />
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => setGroupQueryEnabled(true)}
+              disabled={loadingGroups}
+            >
+              <Search className="h-4 w-4 mr-2" />
+              {loadingGroups ? 'Buscando...' : 'Buscar grupos'}
+            </Button>
+          </div>
+
+          {/* Estados */}
+          {loadingGroups && (
+            <div className="space-y-2">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-6 w-full max-w-xs" />
+              ))}
+            </div>
+          )}
+
+          {groupsError && !loadingGroups && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                Erro ao buscar grupos. Verifique se há verbas sincronizadas para esta competência.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {groupQueryEnabled && !loadingGroups && !groupsError && availableGroups.length === 0 && (
+            <Alert>
+              <AlertDescription>
+                Nenhum grupo contábil encontrado para esta competência. Verifique se o card de Verbas já
+                foi sincronizado.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {availableGroups.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Grupos encontrados — marque os que são vendedores/promotores:</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {availableGroups.map((group) => (
+                  <label
+                    key={group}
+                    className="flex items-center gap-2 cursor-pointer rounded-md border px-3 py-2 hover:bg-muted/50 transition-colors"
+                  >
+                    <Checkbox
+                      checked={selectedGroups.includes(group)}
+                      onCheckedChange={() => toggleGroup(group)}
+                    />
+                    <span className="text-sm">{group}</span>
+                    {savedGroups.includes(group) && (
+                      <Badge variant="secondary" className="ml-auto text-xs">Salvo</Badge>
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Grupos já salvos (quando ainda não buscou) */}
+          {!groupQueryEnabled && savedGroups.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-sm text-muted-foreground">Grupos atualmente configurados:</p>
+              <div className="flex flex-wrap gap-2">
+                {savedGroups.map((g) => (
+                  <Badge key={g} variant="default">{g}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Salvar */}
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={() => saveGroupsMutation.mutate(selectedGroups)}
+              disabled={saveGroupsMutation.isPending}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saveGroupsMutation.isPending ? 'Salvando...' : 'Salvar configuração'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Dialog criar vínculo */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -329,6 +485,6 @@ export default function AdminCockpitVendas() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </MainLayout>
+    </div>
   );
 }

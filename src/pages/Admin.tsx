@@ -1,7 +1,7 @@
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Building2, Users, Settings, Shield, UserCheck, Database, Bug, Plug } from "lucide-react";
+import { Building2, Users, Settings, Shield, UserCheck, Database, Bug, Plug, PenLine } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function Admin() {
@@ -63,6 +63,14 @@ export default function Admin() {
       href: '/admin/api-keys',
       color: 'text-emerald-600',
       bgColor: 'bg-emerald-500/10',
+    },
+    {
+      title: 'D4Sign — Assinatura Digital',
+      description: 'Configure credenciais e templates para assinatura digital de verbas indenizatórias',
+      icon: PenLine,
+      href: '/admin/d4sign',
+      color: 'text-violet-600',
+      bgColor: 'bg-violet-500/10',
     },
     {
       title: 'Configurações Gerais',

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/external-client';
 import { useAuth } from '@/contexts/AuthContext';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,8 +15,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { ArrowLeft, Plus, Trash2, Copy, ExternalLink, Plug, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Copy, ExternalLink, Plug, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -63,7 +61,6 @@ const ALL_PERMISSIONS = Object.keys(PERMISSION_LABELS);
 
 export default function AdminApiKeys() {
   const { selectedCompanyId } = useAuth();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -147,22 +144,18 @@ export default function AdminApiKeys() {
   const BASE_URL = 'https://zveqhxaiwghexfobjaek.supabase.co/functions/v1/public-api/v1';
 
   return (
-    <MainLayout>
-      <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/admin')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Plug className="h-6 w-6 text-emerald-600" />
-              API & Integrações
-            </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Chaves de API para n8n, MCP e automações externas
-            </p>
-          </div>
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Plug className="h-5 w-5 text-emerald-600" />
+            API & Integrações
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Chaves de API para n8n, MCP e automações externas
+          </p>
+        </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => window.open('/api-docs', '_blank')}>
               <ExternalLink className="h-4 w-4 mr-2" />
@@ -291,7 +284,6 @@ Headers:
             </div>
           </div>
         </Card>
-      </div>
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -386,6 +378,6 @@ Headers:
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </MainLayout>
+    </div>
   );
 }

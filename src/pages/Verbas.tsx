@@ -1,15 +1,14 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { BackButton } from "@/components/ui/back-button";
-import { useCardPermissions } from "@/hooks/useCardPermissions";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useCompany } from "@/contexts/CompanyContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ShieldAlert, Search, EyeOff, Eye, RefreshCw, ChevronDown,
   Building2, Briefcase, Users, DollarSign, TrendingUp, TrendingDown,
-  Minus, Settings2,
+  Minus, Settings2, PieChart, Table2, ArrowUp, ArrowDown, ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
@@ -97,6 +96,18 @@ interface VerbasSyncJob {
 // ─── Hierarchy node types ─────────────────────────────────────────────────────
 
 type MonthMap = Record<typeof MONTH_COLUMNS[number], number>;
+
+interface TableRow {
+  companyId: string;
+  razaoSocial: string;
+  cpf: string;
+  nome: string;
+  cargo: string;
+  setor: string;
+  grupoContabil: string;
+  months: MonthMap;
+  total: number;
+}
 
 interface TipoNode {
   tipo: string;
@@ -240,6 +251,13 @@ async function extractInvokeErrorDetails(invokeError: any): Promise<string> {
   } catch {
     return details;
   }
+}
+
+function maskCpf(cpf: string | null | undefined): string {
+  if (!cpf) return "***.***.***-**";
+  const d = cpf.replace(/\D/g, "");
+  if (d.length !== 11) return "***.***.***-**";
+  return `${d.slice(0, 3)}.***.***-${d.slice(9, 11)}`;
 }
 
 // ─── Delta badge (above/below role average) ───────────────────────────────────
@@ -410,19 +428,25 @@ function EmployeeTiposAccordion({
 
 export default function VerbasPage() {
   const navigate = useNavigate();
-  const { hasCardPermission, isLoading: permissionsLoading } = useCardPermissions();
-  const { selectedCompanyId } = useCompany();
+  const { role } = useAuth();
+  const hasFullAccess = ["super_admin", "ceo", "diretor"].includes(role ?? "");
   const currentYear = new Date().getFullYear();
 
   // ── Filters ──────────────────────────────────────────────────────────────
   const [selectedYears, setSelectedYears] = useState<string[]>([String(currentYear)]);
+  // Inputs controlados (o que o usuário digita)
+  const [cpfInput, setCpfInput] = useState("");
+  const [nomeInput, setNomeInput] = useState("");
+  // Valores debounced (entram no queryKey, disparam fetch após 400ms)
   const [cpf, setCpf] = useState("");
   const [nome, setNome] = useState("");
   const [tipoVerba, setTipoVerba] = useState("all");
-  const [companyFilter, setCompanyFilter] = useState(() => selectedCompanyId || "all");
+  const [companyFilter, setCompanyFilter] = useState("all");
   const [positionFilter, setPositionFilter] = useState("all");
   const [departmentFilter, setDepartmentFilter] = useState("all");
-  const [viewMode, setViewMode] = useState<"company" | "accounting">("company");
+  const [viewMode, setViewMode] = useState<"table" | "company" | "accounting">("table");
+  const [sortKey, setSortKey] = useState<"nome" | "empresa" | "total">("empresa");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [showSyncPanel, setShowSyncPanel] = useState(false);
 
   // ── Sync state ────────────────────────────────────────────────────────────
@@ -437,6 +461,22 @@ export default function VerbasPage() {
   // ── Job polling state ─────────────────────────────────────────────────────
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<VerbasSyncJob | null>(null);
+
+  // ── Preview state ─────────────────────────────────────────────────────────
+  const [previewing, setPreviewing] = useState(false);
+  const [previewResult, setPreviewResult] = useState<{
+    distinct_cpfs_in_source: number;
+    cpfs_matched: number;
+    cpfs_sem_empresa: number;
+    sem_empresa_records: Array<{ cpf: string; nome: string }>;
+    cpfs_not_found: number;
+    received: number;
+    failed: number;
+  } | null>(null);
+
+  // ── Recalcular associações (apply_payroll_staging) ─────────────────────────
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalcResult, setRecalcResult] = useState<{ staging_rows: number; inserted_or_updated: number; cpfs_sem_empresa: number } | null>(null);
 
   useEffect(() => {
     if (!activeJobId) return;
@@ -457,12 +497,15 @@ export default function VerbasPage() {
     return () => clearInterval(interval);
   }, [activeJobId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync company filter and reset dependent filters when global company changes
+  // Debounce text inputs — só atualiza queryKey 400ms após parar de digitar
   useEffect(() => {
-    setCompanyFilter(selectedCompanyId || "all");
-    setPositionFilter("all");
-    setDepartmentFilter("all");
-  }, [selectedCompanyId]);
+    const t = setTimeout(() => setCpf(cpfInput.replace(/\D/g, "")), 400);
+    return () => clearTimeout(t);
+  }, [cpfInput]);
+  useEffect(() => {
+    const t = setTimeout(() => setNome(nomeInput), 400);
+    return () => clearTimeout(t);
+  }, [nomeInput]);
 
   const availableYears = useMemo(() => {
     const years = new Set<string>();
@@ -489,73 +532,91 @@ export default function VerbasPage() {
     });
   };
 
-  const { data: verbasCard, isLoading: cardLoading } = useQuery({
-    queryKey: ["ec-verbas-card"],
+  // Lista estática de empresas — carregada independentemente dos dados de verbas
+  // para evitar o problema de loop: filtrar por empresa → dropdown só tem 1 opção
+  const { data: companiesList } = useQuery({
+    queryKey: ["companies-list-verbas"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("ec_cards")
-        .select("id, title")
-        .ilike("title", "%verbas%")
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
+        .from("companies")
+        .select("id, name")
+        .order("name");
       if (error) throw error;
-      return data;
+      return (data || []) as Array<{ id: string; name: string }>;
     },
+    staleTime: 5 * 60_000,
   });
 
-  // KEY FIX: never inject selectedCompanyId — user must choose company explicitly.
-  // pageSize: 1000 loads enough data to build the full 3-level hierarchy client-side.
+  // Query direta ao banco — sem edge function — para máxima performance no carregamento.
+  // A edge function verbas-secure-query é chamada APENAS para operações de sync/preview.
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: [
-      "verbas-hierarchy-v3",
-      selectedCompanyId,
+      "verbas-pivot-direct",
       selectedYears.join(","),
       cpf, nome, tipoVerba,
       companyFilter, positionFilter, departmentFilter,
     ],
     queryFn: async () => {
       const yearsToQuery = selectedYears.length ? selectedYears : [String(currentYear)];
+      const allRows: VerbasRow[] = [];
 
-      const responses = await Promise.all(
-        yearsToQuery.map(async (year) => {
-          const body: Record<string, unknown> = {
-            ano: Number(year),
-            fetchAll: true,
-            autoSyncWhenEmpty: false,
-          };
-          if (companyFilter !== "all") body.companyId = companyFilter;
-          if (cpf.trim()) body.cpf = cpf.trim();
-          if (nome.trim()) body.nome = nome.trim();
-          if (tipoVerba !== "all") body.tipoVerba = tipoVerba;
-          if (departmentFilter !== "all") body.department = departmentFilter;
-          if (positionFilter !== "all") body.position = positionFilter;
+      for (const year of yearsToQuery) {
+        let q = supabase
+          .from("payroll_verba_pivot")
+          .select("*")
+          .eq("ano", Number(year));
 
-          const { data: response, error: invokeError } = await supabase.functions.invoke(
-            "verbas-secure-query",
-            { body },
-          );
+        if (companyFilter !== "all") q = q.eq("company_id", companyFilter);
+        if (cpf.trim()) q = q.ilike("cpf", `%${cpf.trim().replace(/\D/g, "")}%`);
+        if (nome.trim()) q = q.ilike("nome_funcionario", `%${nome.trim()}%`);
+        if (tipoVerba !== "all") q = q.eq("tipo_verba", tipoVerba);
+        if (departmentFilter !== "all") q = q.eq("employee_department", departmentFilter);
+        if (positionFilter !== "all") q = q.eq("employee_position", positionFilter);
 
-          if (invokeError) {
-            const details = await extractInvokeErrorDetails(invokeError);
-            throw new Error(details || "Falha ao consultar verbas");
-          }
+        const { data: rows, error: qErr } = await q.limit(5000);
+        if (qErr) throw new Error(qErr.message);
 
-          return (response || { rows: [], total: 0, access: "masked" }) as VerbasResponse;
-        }),
-      );
+        for (const row of rows || []) {
+          allRows.push({
+            company_id: row.company_id,
+            razao_social: row.razao_social,
+            cpf: hasFullAccess ? row.cpf : maskCpf(row.cpf),
+            nome_funcionario: row.nome_funcionario,
+            employee_department: row.employee_department ?? null,
+            employee_unit: row.employee_unidade ?? null,
+            employee_position: row.employee_position ?? null,
+            employee_accounting_group: row.employee_accounting_group ?? null,
+            compare_group_key: null,
+            tipo_verba: row.tipo_verba,
+            ano: row.ano,
+            janeiro: row.janeiro,
+            fevereiro: row.fevereiro,
+            marco: row.marco,
+            abril: row.abril,
+            maio: row.maio,
+            junho: row.junho,
+            julho: row.julho,
+            agosto: row.agosto,
+            setembro: row.setembro,
+            outubro: row.outubro,
+            novembro: row.novembro,
+            dezembro: row.dezembro,
+            masked: !hasFullAccess,
+          });
+        }
+      }
 
       return {
         success: true,
-        access: responses.some((r) => r.access === "full") ? "full" : "masked",
+        access: hasFullAccess ? "full" as const : "masked" as const,
         page: 1,
         pageSize: 0,
-        total: responses.reduce((s, r) => s + (r.total || 0), 0),
-        rows: responses.flatMap((r) => r.rows || []),
+        total: allRows.length,
+        rows: allRows,
       } as VerbasResponse;
     },
-    enabled: !permissionsLoading && !cardLoading && !!verbasCard && hasCardPermission(verbasCard.id, "view"),
-    staleTime: 60_000,
+    enabled: hasFullAccess,
+    staleTime: 2 * 60_000,
     refetchOnWindowFocus: false,
   });
 
@@ -571,6 +632,7 @@ export default function VerbasPage() {
     setSyncChecklist([]);
     setActiveJobId(null);
     setJobStatus(null);
+    setPreviewResult(null);
 
     try {
       const targetYears = selectedYears.map(Number).filter(Number.isFinite).sort((a, b) => b - a);
@@ -614,7 +676,7 @@ export default function VerbasPage() {
           if (includeFilters) {
             // Prefer explicit company filter; otherwise fall back to the global company selector.
             // This prevents running an unscoped sync across all companies by accident.
-            const effectiveCompanyId = companyFilter !== "all" ? companyFilter : (selectedCompanyId || null);
+            const effectiveCompanyId = companyFilter !== "all" ? companyFilter : null;
             if (effectiveCompanyId) body.companyId = effectiveCompanyId;
             if (departmentFilter !== "all") body.department = departmentFilter;
             if (positionFilter !== "all") body.position = positionFilter;
@@ -707,31 +769,87 @@ export default function VerbasPage() {
     { includeFilters: false, allPages: true, maxPages: 5000 },
   );
 
+  const handlePreview = async () => {
+    setPreviewing(true);
+    setPreviewResult(null);
+    setSyncError(null);
+    try {
+      const targetYears = selectedYears.map(Number).filter(Number.isFinite).sort((a, b) => b - a);
+      if (!targetYears.length) throw new Error("Selecione ao menos 1 ano para o preview.");
+      const year = targetYears[0]; // Preview usa sempre o primeiro ano selecionado
+      const month = Number(closingMonth);
+      const body: Record<string, unknown> = {
+        ano: year,
+        autoSyncWhenEmpty: false,
+        previewOnly: true,
+        syncAllPages: true,
+        syncMaxPages: 5000,
+        page: 1,
+        pageSize: 1,
+      };
+      if (Number.isFinite(month) && month >= 1 && month <= 12) {
+        body.syncMonth = month;
+      }
+      const { data: response, error: invokeError } = await supabase.functions.invoke(
+        "verbas-secure-query",
+        { body },
+      );
+      if (invokeError) throw new Error(String(invokeError));
+      const preview = (response as any)?.preview;
+      if (preview) setPreviewResult(preview);
+      else throw new Error("Resposta de preview inválida.");
+    } catch (err) {
+      setSyncError((err as Error).message || "Erro ao executar preview");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const handleMonthlyClose = () => {
     const m = Number(closingMonth);
     if (!Number.isFinite(m) || m < 1 || m > 12) { setSyncError("Mês inválido."); return; }
     runSync([m], "Fechamento mensal", { includeFilters: false, allPages: true });
   };
 
-  // ── Filter options derived from loaded rows ───────────────────────────────
+  const handleRecalcAssociations = async () => {
+    setRecalculating(true);
+    setRecalcResult(null);
+    setSyncError(null);
+    try {
+      const targetYear = selectedYears.length ? Number(selectedYears[0]) : null;
+      const { data, error } = await supabase.functions.invoke("verbas-secure-query", {
+        body: { action: "recalcPivot", ano: targetYear },
+      });
+      if (error) throw new Error((error as any)?.message || String(error));
+      const result = data as { staging_rows: number; inserted_or_updated: number; cpfs_sem_empresa: number };
+      setRecalcResult(result);
+      void refetch().catch(() => null);
+    } catch (err) {
+      setSyncError((err as Error).message || "Erro ao recalcular associações");
+    } finally {
+      setRecalculating(false);
+    }
+  };
+
+  // ── Filter options ────────────────────────────────────────────────────────
+  // Empresas: lista estática do banco (independente dos dados filtrados)
+  // Cargo/Setor: derivados dos dados carregados (relevantes para a seleção atual)
   const filterOptions = useMemo(() => {
-    const companies = new Map<string, string>();
     const positions = new Set<string>();
     const departments = new Set<string>();
     for (const row of data?.rows || []) {
-      if (row.company_id) companies.set(row.company_id, row.razao_social || row.company_id);
       if (row.employee_position) positions.add(row.employee_position);
       if (row.employee_department) departments.add(row.employee_department);
     }
     return {
-      companies: [...companies.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+      companies: (companiesList || []).map((c) => ({ id: c.id, name: c.name || c.id })),
       positions: [...positions].sort((a, b) => a.localeCompare(b)),
       departments: [...departments].sort((a, b) => a.localeCompare(b)),
     };
-  }, [data?.rows]);
+  }, [companiesList, data?.rows]);
 
   // ── Hierarchy: EMPRESA → GRUPO CONTÁBIL → CARGO → FUNCIONÁRIO ────────────
-  const { companyNodes, accountingRootNodes, kpi } = useMemo(() => {
+  const { companyNodes, accountingRootNodes, kpi, tableRows } = useMemo(() => {
     // Step 1: flatten rows into employee nodes
     const employeesMap = new Map<string, EmployeeNode>();
 
@@ -932,9 +1050,43 @@ export default function VerbasPage() {
     }
     globalNodes.sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
 
+    // ── Flat table rows (for Excel-like table view) ──────────────────────────
+    const tableRowsRaw: TableRow[] = [];
+    for (const emp of employeesMap.values()) {
+      const months: MonthMap = {
+        janeiro: 0, fevereiro: 0, marco: 0, abril: 0, maio: 0, junho: 0,
+        julho: 0, agosto: 0, setembro: 0, outubro: 0, novembro: 0, dezembro: 0,
+      };
+      for (const tipo of emp.tipos) {
+        for (const [, ym] of tipo.yearsMap.entries()) {
+          for (const m of MONTH_COLUMNS) months[m] += ym[m];
+        }
+      }
+      tableRowsRaw.push({
+        companyId: emp.companyId,
+        razaoSocial: emp.razaoSocial,
+        cpf: emp.cpf,
+        nome: emp.nome,
+        cargo: emp.position,
+        setor: emp.department,
+        grupoContabil: emp.accountingGroup,
+        months,
+        total: emp.total,
+      });
+    }
+
+    tableRowsRaw.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "nome") cmp = a.nome.localeCompare(b.nome, "pt-BR");
+      else if (sortKey === "empresa") cmp = a.razaoSocial.localeCompare(b.razaoSocial, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR");
+      else if (sortKey === "total") cmp = Math.abs(b.total) - Math.abs(a.total);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+
     return {
       companyNodes: nodes,
       accountingRootNodes: globalNodes,
+      tableRows: tableRowsRaw,
       kpi: {
         totalMassa,
         totalEmployees: totalEmployeesAll,
@@ -942,10 +1094,10 @@ export default function VerbasPage() {
         totalCompanies: nodes.length,
       },
     };
-  }, [data?.rows]);
+  }, [data?.rows, sortKey, sortDir]);
 
   // ── Guards ────────────────────────────────────────────────────────────────
-  if (permissionsLoading || cardLoading) {
+  if (!role) {
     return (
       <MainLayout>
         <div className="space-y-4">
@@ -959,21 +1111,25 @@ export default function VerbasPage() {
     );
   }
 
-  if (verbasCard && !hasCardPermission(verbasCard.id, "view")) {
+  if (!hasFullAccess) {
     return (
       <MainLayout>
         <div className="flex flex-col items-center justify-center h-64 gap-4">
           <ShieldAlert className="h-12 w-12 text-muted-foreground" />
-          <p className="text-muted-foreground text-lg">Você não tem permissão para acessar VERBAS</p>
-          <Button variant="outline" onClick={() => navigate("/governanca-ec/pessoas-cultura")}>
-            Voltar para Pessoas &amp; Cultura
+          <p className="text-muted-foreground text-lg">Acesso restrito a diretoria</p>
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            Voltar
           </Button>
         </div>
       </MainLayout>
     );
   }
 
-  const hasData = !isLoading && !error && (viewMode === "company" ? companyNodes.length > 0 : accountingRootNodes.length > 0);
+  const hasData = !isLoading && !error && (
+    viewMode === "table" ? tableRows.length > 0
+    : viewMode === "company" ? companyNodes.length > 0
+    : accountingRootNodes.length > 0
+  );
 
   return (
     <MainLayout>
@@ -1013,9 +1169,9 @@ export default function VerbasPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: "Massa Salarial", value: isLoading ? null : formatCurrency(kpi.totalMassa, true), sub: selectedYears.join(" · "), icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-950" },
-            { label: "Colaboradores", value: isLoading ? null : (kpi.totalEmployees || 0).toLocaleString("pt-BR"), sub: "únicos na seleção", icon: Users, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-950" },
-            { label: "Média / Colaborador", value: isLoading ? null : formatCurrency(kpi.avgPerEmployee, true), sub: "no período", icon: TrendingUp, color: "text-violet-600", bg: "bg-violet-100 dark:bg-violet-950" },
-            { label: "Empresas na visão", value: isLoading ? null : (kpi.totalCompanies || 0).toString(), sub: "com dados carregados", icon: Building2, color: "text-orange-600", bg: "bg-orange-100 dark:bg-orange-950" },
+            { label: "Colaboradores", value: isLoading ? null : (kpi.totalEmployees || 0).toLocaleString("pt-BR"), sub: companyFilter !== "all" ? (filterOptions.companies.find(c => c.id === companyFilter)?.name ?? "empresa selecionada") : "todas as empresas", icon: Users, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-950" },
+            { label: "Média / Colaborador", value: isLoading ? null : formatCurrency(kpi.avgPerEmployee, true), sub: "no período selecionado", icon: TrendingUp, color: "text-violet-600", bg: "bg-violet-100 dark:bg-violet-950" },
+            { label: companyFilter !== "all" ? "Grupos contábeis" : "Empresas na visão", value: isLoading ? null : (companyFilter !== "all" ? companyNodes[0]?.accountingGroupNodes.length ?? 0 : kpi.totalCompanies).toString(), sub: companyFilter !== "all" ? "na empresa selecionada" : "com dados no período", icon: Building2, color: "text-orange-600", bg: "bg-orange-100 dark:bg-orange-950" },
           ].map((card) => (
             <Card key={card.label}>
               <CardHeader className="pb-2 pt-4 px-4">
@@ -1041,7 +1197,7 @@ export default function VerbasPage() {
         {/* ── Filters ────────────────────────────────────────────────────── */}
         <Card>
           <CardContent className="p-4">
-            <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex flex-wrap gap-x-3 gap-y-2 items-end">
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Período</p>
                 <DropdownMenu>
@@ -1062,21 +1218,11 @@ export default function VerbasPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Empresa</p>
-                <Select value={companyFilter} onValueChange={setCompanyFilter} disabled={isFetching}>
+                <Select value={companyFilter} onValueChange={(v) => { setCompanyFilter(v); setPositionFilter("all"); setDepartmentFilter("all"); }} disabled={isFetching}>
                   <SelectTrigger className="w-56"><SelectValue placeholder="Todas as empresas" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas as empresas</SelectItem>
                     {filterOptions.companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Visão</p>
-                <Select value={viewMode} onValueChange={(v) => setViewMode(v as "company" | "accounting")} disabled={isFetching}>
-                  <SelectTrigger className="w-56"><SelectValue placeholder="Selecionar" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="company">Por empresa</SelectItem>
-                    <SelectItem value="accounting">Por grupo contábil</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1112,16 +1258,18 @@ export default function VerbasPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">Nome</p>
-                <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Buscar nome..." className="w-48" disabled={isFetching} onKeyDown={(e) => e.key === "Enter" && refetch()} />
+                <Input value={nomeInput} onChange={(e) => setNomeInput(e.target.value)} placeholder="Buscar nome..." className="w-48" />
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">CPF</p>
-                <Input value={cpf} onChange={(e) => setCpf(e.target.value)} placeholder="000.000.000-00" className="w-40" disabled={isFetching} onKeyDown={(e) => e.key === "Enter" && refetch()} />
+                <Input value={cpfInput} onChange={(e) => setCpfInput(e.target.value)} placeholder="000.000.000-00" className="w-40" />
               </div>
-              <Button onClick={() => refetch()} disabled={isFetching} className="self-end">
-                {isFetching ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
-                Buscar
-              </Button>
+              {isFetching && (
+                <div className="self-end flex items-center gap-1.5 text-xs text-muted-foreground pb-2.5">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  Carregando...
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1173,11 +1321,99 @@ export default function VerbasPage() {
                     </div>
                     <Button variant="outline" onClick={handleMonthlyClose} disabled={syncing}>Fechamento mensal (1 mês)</Button>
                   </div>
+                  <Button variant="secondary" onClick={handlePreview} disabled={syncing || previewing}>
+                    {previewing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Search className="h-4 w-4 mr-2" />}
+                    Preview (sem importar)
+                  </Button>
+                  <Button variant="outline" onClick={handleRecalcAssociations} disabled={syncing || recalculating}>
+                    {recalculating ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                    Recalcular associações
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => navigate("/admin/datalake?tab=logs")}>Ver logs</Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Obs.: a sincronização anual ignora o mês de fechamento; para sincronizar apenas um mês, use &ldquo;Fechamento mensal (1 mês)&rdquo;.
+                  Obs.: a sincronização anual ignora o mês de fechamento; para sincronizar apenas um mês, use &ldquo;Fechamento mensal (1 mês)&rdquo;. O Preview usa o mês de fechamento selecionado.
+                  {" "}<strong>Recalcular associações</strong> re-executa o JOIN staging → empresas sem re-buscar dados do DAB.
                 </p>
+
+                {/* ── Resultado recalcular ───────────────────────────────────── */}
+                {recalcResult && (
+                  <div className="rounded-md border bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800 p-3 flex items-center gap-4 text-sm">
+                    <span className="text-emerald-700 dark:text-emerald-300 font-semibold">✓ Associações recalculadas</span>
+                    <span className="text-foreground tabular-nums"><strong>{recalcResult.staging_rows}</strong> staging</span>
+                    <span className="text-foreground tabular-nums"><strong>{recalcResult.inserted_or_updated}</strong> no pivot</span>
+                    {recalcResult.cpfs_sem_empresa > 0 && (
+                      <span className="text-amber-600 tabular-nums"><strong>{recalcResult.cpfs_sem_empresa}</strong> CPFs sem empresa</span>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Preview result panel ───────────────────────────────────── */}
+                {previewResult && (
+                  <div className="rounded-md border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 p-4 space-y-3">
+                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                      Preview — {selectedYears[0]} / Mês {closingMonth}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="rounded-md bg-white dark:bg-blue-900/30 p-3 text-center">
+                        <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{previewResult.distinct_cpfs_in_source}</p>
+                        <p className="text-xs text-muted-foreground mt-1">CPFs no DAB</p>
+                      </div>
+                      <div className="rounded-md bg-white dark:bg-blue-900/30 p-3 text-center">
+                        <p className="text-2xl font-bold text-green-700 dark:text-green-400">{previewResult.cpfs_matched}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Com empresa (importáveis)</p>
+                      </div>
+                      <div className="rounded-md bg-white dark:bg-blue-900/30 p-3 text-center">
+                        <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{previewResult.cpfs_sem_empresa}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Sem empresa associada</p>
+                      </div>
+                      <div className="rounded-md bg-white dark:bg-blue-900/30 p-3 text-center">
+                        <p className="text-2xl font-bold text-slate-500">{previewResult.cpfs_not_found}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Não cadastrados (ignorados)</p>
+                      </div>
+                    </div>
+                    {previewResult.cpfs_sem_empresa > 0 && (
+                      <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                          {previewResult.cpfs_sem_empresa} colaborador(es) encontrado(s) no DAB sem empresa associada no GA 360
+                        </p>
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          Esses funcionários existem em <strong>Funcionários Externos</strong> mas sem <code>company_id</code> resolvível.
+                          Edite o cadastro de cada um para associar a empresa correta.
+                        </p>
+                        {(previewResult.sem_empresa_records || []).length > 0 && (
+                          <div className="max-h-48 overflow-y-auto rounded border border-amber-200 dark:border-amber-700 bg-white dark:bg-amber-900/20">
+                            <table className="w-full text-xs">
+                              <thead className="bg-amber-100 dark:bg-amber-900/40">
+                                <tr>
+                                  <th className="text-left px-2 py-1.5 font-medium text-amber-900 dark:text-amber-200">Nome</th>
+                                  <th className="text-left px-2 py-1.5 font-medium text-amber-900 dark:text-amber-200 tabular-nums">CPF</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(previewResult.sem_empresa_records || []).map((r, i) => (
+                                  <tr key={r.cpf + i} className="border-t border-amber-100 dark:border-amber-800">
+                                    <td className="px-2 py-1.5 text-foreground">{r.nome}</td>
+                                    <td className="px-2 py-1.5 text-muted-foreground tabular-nums">{r.cpf}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {previewResult.cpfs_not_found > 0 && (
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                        {previewResult.cpfs_not_found} CPF(s) encontrado(s) no DAB sem nenhum cadastro na tabela de funcionários externos — serão ignorados na importação.
+                      </p>
+                    )}
+                    <Button size="sm" onClick={handleSyncVerbas} disabled={syncing}>
+                      {syncing ? <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1.5" />}
+                      Confirmar importação
+                    </Button>
+                  </div>
+                )}
 
                 {/* ── Progresso legado (enquanto job ainda não retornou job_id) ── */}
                 {syncing && !activeJobId && !jobStatus && syncProgress && (
@@ -1310,6 +1546,53 @@ export default function VerbasPage() {
         </Collapsible>
         </RoleGuard>
 
+        {/* ── View mode toggle + result count ────────────────────────────── */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {!isLoading && !error && (
+              <>
+                <Users className="h-4 w-4" />
+                <span>
+                  <strong className="text-foreground">{kpi.totalEmployees}</strong> colaboradores ·{" "}
+                  <strong className="text-foreground">{formatCurrency(kpi.totalMassa, true)}</strong> massa
+                  {companyFilter !== "all" && (
+                    <> · <Badge variant="outline" className="ml-1 text-xs">{filterOptions.companies.find(c => c.id === companyFilter)?.name ?? "empresa selecionada"}</Badge></>
+                  )}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-1 rounded-lg border p-1">
+            <Button
+              variant={viewMode === "table" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-2.5 text-xs gap-1.5"
+              onClick={() => setViewMode("table")}
+            >
+              <Table2 className="h-3.5 w-3.5" />
+              Tabela
+            </Button>
+            <Button
+              variant={viewMode === "company" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-2.5 text-xs gap-1.5"
+              onClick={() => setViewMode("company")}
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              Por empresa
+            </Button>
+            <Button
+              variant={viewMode === "accounting" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-2.5 text-xs gap-1.5"
+              onClick={() => setViewMode("accounting")}
+            >
+              <PieChart className="h-3.5 w-3.5" />
+              Por grupo contábil
+            </Button>
+          </div>
+        </div>
+
         {/* ── Main hierarchy: EMPRESA → GRUPO → CARGO → FUNCIONÁRIO ─────── */}
         <Card>
           <CardContent className="p-0">
@@ -1319,18 +1602,145 @@ export default function VerbasPage() {
               </div>
             ) : error ? (
               <div className="p-6 text-sm text-destructive">{(error as Error).message}</div>
-            ) : (viewMode === "company" ? companyNodes.length === 0 : accountingRootNodes.length === 0) ? (
+            ) : !hasData ? (
               <div className="p-12 text-center space-y-3">
                 <Users className="h-10 w-10 text-muted-foreground mx-auto" />
                 <p className="text-muted-foreground font-medium">Nenhum registro encontrado.</p>
                 {(cpf || nome || tipoVerba !== "all" || positionFilter !== "all" || departmentFilter !== "all") ? (
-                  <p className="text-xs text-muted-foreground">Ajuste os filtros e clique em Buscar.</p>
+                  <p className="text-xs text-muted-foreground">Ajuste os filtros acima.</p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     Nenhum dado para o período e empresa selecionados.
                     Use o painel de <span className="font-medium">Sincronização</span> para importar dados do Datalake.
                   </p>
                 )}
+              </div>
+            ) : viewMode === "table" ? (
+              /* ── TABELA PLANA (Excel-like) ──────────────────────────────── */
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 border-b sticky top-0 z-10">
+                    <tr>
+                      {[
+                        { key: "empresa" as const, label: "Empresa", className: "text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap min-w-[160px]" },
+                        { key: "nome" as const, label: "Nome", className: "text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap min-w-[180px]" },
+                        { key: null, label: "CPF", className: "text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap" },
+                        { key: null, label: "Cargo", className: "text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap" },
+                        { key: null, label: "Setor", className: "text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap" },
+                      ].map((col) => (
+                        <th key={col.label} className={col.className}>
+                          {col.key ? (
+                            <button
+                              className="flex items-center gap-1 hover:text-foreground transition-colors"
+                              onClick={() => {
+                                if (sortKey === col.key) setSortDir(d => d === "asc" ? "desc" : "asc");
+                                else { setSortKey(col.key!); setSortDir("asc"); }
+                              }}
+                            >
+                              {col.label}
+                              {sortKey === col.key
+                                ? sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                                : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                            </button>
+                          ) : col.label}
+                        </th>
+                      ))}
+                      {MONTH_COLUMNS.map((m) => (
+                        <th key={m} className="text-right px-3 py-3 font-medium text-muted-foreground whitespace-nowrap tabular-nums min-w-[80px]">
+                          {MONTH_LABELS[m]}
+                        </th>
+                      ))}
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap min-w-[100px]">
+                        <button
+                          className="flex items-center gap-1 ml-auto hover:text-foreground transition-colors"
+                          onClick={() => {
+                            if (sortKey === "total") setSortDir(d => d === "asc" ? "desc" : "asc");
+                            else { setSortKey("total"); setSortDir("desc"); }
+                          }}
+                        >
+                          Total
+                          {sortKey === "total"
+                            ? sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                            : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                        </button>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const rows: ReactNode[] = [];
+                      let lastCompanyId = "";
+                      let companySubtotal = 0;
+                      let companyEmployees = 0;
+                      const companyMonths: MonthMap = { janeiro: 0, fevereiro: 0, marco: 0, abril: 0, maio: 0, junho: 0, julho: 0, agosto: 0, setembro: 0, outubro: 0, novembro: 0, dezembro: 0 };
+
+                      const flushCompanyRow = (companyId: string, razaoSocial: string) => {
+                        rows.push(
+                          <tr key={`subtotal-${companyId}`} className="bg-muted/30 border-y font-semibold text-xs">
+                            <td className="px-4 py-2 text-foreground" colSpan={2}>
+                              <span className="flex items-center gap-1.5">
+                                <Building2 className="h-3.5 w-3.5 text-blue-500" />
+                                {razaoSocial}
+                                <Badge variant="secondary" className="ml-1 text-xs font-normal">{companyEmployees} colab.</Badge>
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-muted-foreground" colSpan={3} />
+                            {MONTH_COLUMNS.map((m) => (
+                              <td key={m} className={cn("px-3 py-2 text-right tabular-nums", companyMonths[m] !== 0 ? "text-foreground" : "text-muted-foreground/40")}>
+                                {companyMonths[m] !== 0 ? formatCurrency(companyMonths[m], true) : "—"}
+                              </td>
+                            ))}
+                            <td className="px-4 py-2 text-right tabular-nums text-emerald-700 dark:text-emerald-400">
+                              {formatCurrency(companySubtotal, true)}
+                            </td>
+                          </tr>
+                        );
+                      };
+
+                      for (let i = 0; i < tableRows.length; i++) {
+                        const row = tableRows[i];
+                        const isFirstOfCompany = row.companyId !== lastCompanyId;
+
+                        if (isFirstOfCompany && lastCompanyId) {
+                          flushCompanyRow(lastCompanyId, tableRows.find(r => r.companyId === lastCompanyId)?.razaoSocial ?? lastCompanyId);
+                          companySubtotal = 0;
+                          companyEmployees = 0;
+                          for (const m of MONTH_COLUMNS) companyMonths[m] = 0;
+                        }
+
+                        if (isFirstOfCompany) lastCompanyId = row.companyId;
+                        companySubtotal += row.total;
+                        companyEmployees++;
+                        for (const m of MONTH_COLUMNS) companyMonths[m] += row.months[m];
+
+                        rows.push(
+                          <tr key={row.cpf + i} className="border-b hover:bg-muted/20 transition-colors">
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground truncate max-w-[160px]">{row.razaoSocial}</td>
+                            <td className="px-4 py-2.5 font-medium truncate max-w-[180px]">{row.nome}</td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground tabular-nums whitespace-nowrap">{row.cpf}</td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground truncate max-w-[140px]">{row.cargo}</td>
+                            <td className="px-4 py-2.5 text-xs text-muted-foreground truncate max-w-[120px]">{row.setor}</td>
+                            {MONTH_COLUMNS.map((m) => (
+                              <td key={m} className={cn("px-3 py-2.5 text-right tabular-nums text-xs whitespace-nowrap", row.months[m] !== 0 ? "text-foreground" : "text-muted-foreground/30")}>
+                                {row.months[m] !== 0 ? formatCurrency(row.months[m], true) : "—"}
+                              </td>
+                            ))}
+                            <td className="px-4 py-2.5 text-right tabular-nums text-sm font-semibold whitespace-nowrap">
+                              {formatCurrency(row.total, true)}
+                            </td>
+                          </tr>
+                        );
+
+                        // Last row — flush last company subtotal
+                        if (i === tableRows.length - 1) {
+                          flushCompanyRow(lastCompanyId, row.razaoSocial);
+                        }
+                      }
+
+                      return rows;
+                    })()}
+                  </tbody>
+                </table>
               </div>
             ) : viewMode === "company" ? (
               <Accordion type="multiple" className="w-full">
@@ -1625,7 +2035,7 @@ export default function VerbasPage() {
             {hasData && (
               <div className="px-6 py-3 border-t flex items-center justify-between bg-muted/20">
                 <p className="text-xs text-muted-foreground">
-                  {data?.total || 0} registros · {kpi.totalEmployees} colaboradores · {kpi.totalCompanies} empresa{kpi.totalCompanies !== 1 ? "s" : ""}
+                  {kpi.totalEmployees} colaboradores · <strong className="text-foreground">{formatCurrency(kpi.totalMassa, true)}</strong> massa · {kpi.totalCompanies} empresa{kpi.totalCompanies !== 1 ? "s" : ""}
                 </p>
                 <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching}>
                   {isFetching ? <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}

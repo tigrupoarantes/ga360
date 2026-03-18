@@ -1,0 +1,79 @@
+import { useMemo } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
+import { FileText, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
+
+interface Props {
+  documents: VIDocument[];
+  total: number;
+}
+
+export function VIStatusDashboard({ documents, total }: Props) {
+  const stats = useMemo(() => {
+    const signed = documents.filter((d) => d.d4sign_status === 'signed').length;
+    const pending = documents.filter((d) =>
+      ['draft', 'uploaded', 'signers_added'].includes(d.d4sign_status),
+    ).length;
+    const awaiting = documents.filter((d) =>
+      ['sent_to_sign', 'waiting_signature'].includes(d.d4sign_status),
+    ).length;
+    const errors = documents.filter((d) =>
+      ['error', 'expired', 'cancelled'].includes(d.d4sign_status),
+    ).length;
+    const pct = total > 0 ? Math.round((signed / total) * 100) : 0;
+    return { signed, pending, awaiting, errors, pct };
+  }, [documents, total]);
+
+  const cards = [
+    {
+      label: 'Total de documentos',
+      value: total,
+      icon: FileText,
+      iconClass: 'text-blue-500',
+      bgClass: 'bg-blue-50 dark:bg-blue-950/30',
+    },
+    {
+      label: 'Aguardando assinatura',
+      value: stats.awaiting,
+      icon: Clock,
+      iconClass: 'text-amber-500',
+      bgClass: 'bg-amber-50 dark:bg-amber-950/30',
+    },
+    {
+      label: 'Assinados',
+      value: stats.signed,
+      icon: CheckCircle2,
+      iconClass: 'text-green-500',
+      bgClass: 'bg-green-50 dark:bg-green-950/30',
+      extra: total > 0 ? `${stats.pct}% do total` : undefined,
+    },
+    {
+      label: 'Erros / Cancelados',
+      value: stats.errors,
+      icon: AlertCircle,
+      iconClass: 'text-red-500',
+      bgClass: 'bg-red-50 dark:bg-red-950/30',
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {cards.map((c) => (
+        <Card key={c.label} className="border-none shadow-sm">
+          <CardContent className={`p-4 rounded-lg ${c.bgClass}`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">{c.label}</p>
+                <p className="text-3xl font-bold mt-1">{c.value}</p>
+                {c.extra && (
+                  <p className="text-xs text-muted-foreground mt-1">{c.extra}</p>
+                )}
+              </div>
+              <c.icon className={`h-6 w-6 ${c.iconClass}`} />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}

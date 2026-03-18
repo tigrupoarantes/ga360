@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import { MainLayout } from "@/components/layout/MainLayout";
-import { BackButton } from "@/components/ui/back-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Database, FileSearch, Link2, History, Server } from "lucide-react";
@@ -22,17 +20,13 @@ export default function AdminDatalake() {
   }, [searchParams]);
 
   return (
-    <MainLayout>
-      <div className="space-y-6">
-        <div className="flex items-center gap-4 animate-fade-in">
-          <BackButton to="/admin" />
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Integração Datalake</h1>
-            <p className="text-muted-foreground mt-1">
-              Configure conexões com SQL Server e queries de sincronização
-            </p>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Integração Datalake</h1>
+        <p className="text-muted-foreground mt-1">
+          Configure conexões com SQL Server e queries de sincronização
+        </p>
+      </div>
 
         {/* Info Card */}
         <Card className="p-4 bg-primary/5 border-primary/20">
@@ -117,7 +111,6 @@ export default function AdminDatalake() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
-    </MainLayout>
+    </div>
   );
 }

@@ -112,6 +112,13 @@ export function ECCard({ card, record, viewMode, onEdit, onDelete }: ECCardProps
       return;
     }
 
+    // Special handling for VERBAS INDENIZATÓRIAS card (deve vir antes do check de verbas genérico)
+    const isVerbasIndenizatoriasCard = titleLower.includes('indenizat');
+    if (isVerbasIndenizatoriasCard) {
+      navigate('/governanca-ec/pessoas-cultura/verbas-indenizatorias');
+      return;
+    }
+
     // Special handling for VERBAS card
     const isVerbasCard = titleLower === 'verbas' || titleLower.includes('verbas');
     if (isVerbasCard) {

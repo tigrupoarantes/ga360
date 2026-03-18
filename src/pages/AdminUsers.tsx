@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/external-client';
-import { MainLayout } from '@/components/layout/MainLayout';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Search, Edit, Loader2, UserCheck, UserX } from 'lucide-react';
+import { Search, Edit, Loader2, UserCheck, UserX } from 'lucide-react';
 import { UserEditDialog } from '@/components/admin/UserEditDialog';
 
 interface Area {
@@ -62,7 +60,6 @@ const roleColors: Record<string, string> = {
 };
 
 export default function AdminUsers() {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { user, role } = useAuth();
   const [users, setUsers] = useState<UserWithDetails[]>([]);
@@ -287,32 +284,20 @@ export default function AdminUsers() {
   const inactiveUsers = users.filter((u) => !u.is_active).length;
 
   return (
-    <MainLayout>
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="animate-fade-in">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/admin')}
-            className="mb-4"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Voltar
-          </Button>
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-foreground">
-                Gestão de Usuários
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Administre usuários, permissões e acessos
-              </p>
-            </div>
-          </div>
+    <div className="max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">
+            Gestão de Usuários
+          </h1>
+          <p className="text-muted-foreground mt-0.5">
+            Administre usuários, permissões e acessos
+          </p>
         </div>
+      </div>
 
-        {/* Stats */}
+      {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="p-4">
             <p className="text-sm text-muted-foreground">Total de Usuários</p>
@@ -512,7 +497,6 @@ export default function AdminUsers() {
             </li>
           </ul>
         </Card>
-      </div>
 
       <UserEditDialog
         open={dialogOpen}
@@ -526,6 +510,6 @@ export default function AdminUsers() {
         onSave={handleSave}
       />
 
-    </MainLayout>
+    </div>
   );
 }
