@@ -199,6 +199,7 @@ serve(async (req: Request) => {
           mes,
           tipoVerba: "VERBA_INDENIZATORIA",
           fetchAll: true,
+          autoSyncWhenEmpty: false,   // VI nunca dispara sync — usa dados já sincronizados pelo card Verbas
         }),
       });
 
@@ -263,6 +264,7 @@ serve(async (req: Request) => {
           mes,
           tipoVerba: "VERBA_INDENIZATORIA",
           fetchAll: true,
+          autoSyncWhenEmpty: false,   // VI nunca dispara sync — usa dados já sincronizados pelo card Verbas
         }),
       });
 
