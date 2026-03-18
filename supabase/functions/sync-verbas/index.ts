@@ -1019,7 +1019,31 @@ async function loadRowsFromDatalake(
     }
 
     const nextLink = extractNextLink(payload);
-    currentUrl = nextLink ? new URL(nextLink, currentUrl).toString() : "";
+    if (nextLink) {
+      // O DAB pode retornar nextLink com host interno (ex: localhost:5000).
+      // Para evitar usar o host errado, reaproveitamos a URL da primeira página
+      // (firstPageBaseUrl) como base e apenas substituímos/adicionamos o $after token.
+      try {
+        const nextLinkParsed = new URL(nextLink, currentUrl);
+        const afterToken = nextLinkParsed.searchParams.get("$after") || nextLinkParsed.searchParams.get("%24after");
+        if (afterToken && firstPageBaseUrl) {
+          // Reconstrói a URL com o host correto (da primeira requisição bem-sucedida)
+          const rebased = new URL(firstPageBaseUrl);
+          // Copia todos os searchParams da URL atual e adiciona/substitui $after
+          const existingParams = new URL(currentUrl).searchParams;
+          existingParams.forEach((v, k) => rebased.searchParams.set(k, v));
+          rebased.searchParams.set("$after", afterToken);
+          currentUrl = rebased.toString();
+        } else {
+          // Sem $after token — tenta usar a URL absoluta do nextLink se o host for válido
+          currentUrl = nextLinkParsed.toString();
+        }
+      } catch {
+        currentUrl = "";
+      }
+    } else {
+      currentUrl = "";
+    }
   }
 
   const effectiveQueryId = await ensureQueryIdForRun(supabase, connection.id, chosenEndpointPath, queryId);
