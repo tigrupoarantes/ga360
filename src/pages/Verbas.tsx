@@ -559,50 +559,63 @@ export default function VerbasPage() {
     queryFn: async () => {
       const yearsToQuery = selectedYears.length ? selectedYears : [String(currentYear)];
       const allRows: VerbasRow[] = [];
+      // PostgREST can cap each response below the requested range.
+      // We page using the effective safe ceiling and keep fetching until no rows remain.
+      const batchSize = 1000;
 
       for (const year of yearsToQuery) {
-        let q = supabase
-          .from("payroll_verba_pivot")
-          .select("*")
-          .eq("ano", Number(year));
+        for (let batch = 0; ; batch += 1) {
+          const from = batch * batchSize;
+          const to = from + batchSize - 1;
 
-        if (companyFilter !== "all") q = q.eq("company_id", companyFilter);
-        if (cpf.trim()) q = q.ilike("cpf", `%${cpf.trim().replace(/\D/g, "")}%`);
-        if (nome.trim()) q = q.ilike("nome_funcionario", `%${nome.trim()}%`);
-        if (tipoVerba !== "all") q = q.eq("tipo_verba", tipoVerba);
-        if (departmentFilter !== "all") q = q.eq("employee_department", departmentFilter);
-        if (positionFilter !== "all") q = q.eq("employee_position", positionFilter);
+          let q = supabase
+            .from("payroll_verba_pivot")
+            .select("*")
+            .eq("ano", Number(year))
+            .range(from, to);
 
-        const { data: rows, error: qErr } = await q.limit(5000);
-        if (qErr) throw new Error(qErr.message);
+          if (companyFilter !== "all") q = q.eq("company_id", companyFilter);
+          if (cpf.trim()) q = q.ilike("cpf", `%${cpf.trim().replace(/\D/g, "")}%`);
+          if (nome.trim()) q = q.ilike("nome_funcionario", `%${nome.trim()}%`);
+          if (tipoVerba !== "all") q = q.eq("tipo_verba", tipoVerba);
+          if (departmentFilter !== "all") q = q.eq("employee_department", departmentFilter);
+          if (positionFilter !== "all") q = q.eq("employee_position", positionFilter);
 
-        for (const row of rows || []) {
-          allRows.push({
-            company_id: row.company_id,
-            razao_social: row.razao_social,
-            cpf: hasFullAccess ? row.cpf : maskCpf(row.cpf),
-            nome_funcionario: row.nome_funcionario,
-            employee_department: row.employee_department ?? null,
-            employee_unit: row.employee_unidade ?? null,
-            employee_position: row.employee_position ?? null,
-            employee_accounting_group: row.employee_accounting_group ?? null,
-            compare_group_key: null,
-            tipo_verba: row.tipo_verba,
-            ano: row.ano,
-            janeiro: row.janeiro,
-            fevereiro: row.fevereiro,
-            marco: row.marco,
-            abril: row.abril,
-            maio: row.maio,
-            junho: row.junho,
-            julho: row.julho,
-            agosto: row.agosto,
-            setembro: row.setembro,
-            outubro: row.outubro,
-            novembro: row.novembro,
-            dezembro: row.dezembro,
-            masked: !hasFullAccess,
-          });
+          const { data: rows, error: qErr } = await q;
+          if (qErr) throw new Error(qErr.message);
+
+          for (const row of rows || []) {
+            allRows.push({
+              company_id: row.company_id,
+              razao_social: row.razao_social,
+              cpf: hasFullAccess ? row.cpf : maskCpf(row.cpf),
+              nome_funcionario: row.nome_funcionario,
+              employee_department: row.employee_department ?? null,
+              employee_unit: row.employee_unidade ?? null,
+              employee_position: row.employee_position ?? null,
+              employee_accounting_group: row.employee_accounting_group ?? null,
+              compare_group_key: null,
+              tipo_verba: row.tipo_verba,
+              ano: row.ano,
+              janeiro: row.janeiro,
+              fevereiro: row.fevereiro,
+              marco: row.marco,
+              abril: row.abril,
+              maio: row.maio,
+              junho: row.junho,
+              julho: row.julho,
+              agosto: row.agosto,
+              setembro: row.setembro,
+              outubro: row.outubro,
+              novembro: row.novembro,
+              dezembro: row.dezembro,
+              masked: !hasFullAccess,
+            });
+          }
+
+          if (!rows || rows.length === 0) {
+            break;
+          }
         }
       }
 

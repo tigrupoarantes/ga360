@@ -1521,9 +1521,15 @@ serve(async (req) => {
           }
         } else {
           // Sync real: empurra para staging sem company_id
+          const normalizedCompanyExternalId =
+            normalizeCnpj(item.company_external_id || item.cnpj_empresa || null) ||
+            fallbackExternalId ||
+            null;
+
           upsertRows.push({
             cpf,
             nome_funcionario: (item.nome_funcionario || item.nome || "NOME_NAO_INFORMADO").trim(),
+            company_external_id: normalizedCompanyExternalId,
             razao_social: String(item.razao_social || "").trim(),
             tenant_id: String(item.tenant_id || "").trim(),
             ano: Number(ano),
@@ -1559,7 +1565,6 @@ serve(async (req) => {
         (rec.tipo_verba as string) ||
         COD_EVENTO_TO_TIPO[rec.cod_evento as number] ||
         "OUTROS";
-      if (tipoVerba === "OUTROS") continue;
 
       const cpfNorm = normalizeDigits(rec.cpf as string);
       const key = `${cpfNorm}|${tipoVerba}|${rec.ano}`;
@@ -1568,6 +1573,7 @@ serve(async (req) => {
         stagingMap.set(key, {
           cpf: cpfNorm,
           nome_funcionario: String(rec.nome_funcionario || "NOME_NAO_INFORMADO"),
+          company_external_id: String(rec.company_external_id || "").trim(),
           razao_social: String(rec.razao_social || "").trim(),
           tenant_id: String(rec.tenant_id || "").trim(),
           tipo_verba: tipoVerba,
@@ -1580,7 +1586,10 @@ serve(async (req) => {
       }
 
       const stg = stagingMap.get(key)!;
-      // Keep first non-empty razao_social / tenant_id seen for this CPF
+      // Keep first non-empty company identity fields seen for this CPF
+      if (!stg.company_external_id && rec.company_external_id) {
+        stg.company_external_id = String(rec.company_external_id).trim();
+      }
       if (!stg.razao_social && rec.razao_social) stg.razao_social = String(rec.razao_social).trim();
       if (!stg.tenant_id && rec.tenant_id) stg.tenant_id = String(rec.tenant_id).trim();
       const monthField = MONTH_NUMBER_TO_FIELD[rec.mes as number];
