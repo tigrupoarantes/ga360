@@ -28,3 +28,7 @@ dist-ssr
 
 # Supabase CLI local artifacts
 supabase/.temp/
+
+# Local dev caches / machine-specific artifacts
+.npm-cache/
+.vite-dev.err

@@ -28,6 +28,7 @@ import {
   Search,
   Target,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/external-client";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +50,9 @@ interface Goal {
   end_date: string | null;
   cadence: "monthly" | "activity" | "quarterly" | "annual";
   status: "active" | "completed" | "paused" | "cancelled";
+  indicator_type?: string | null;
+  evaluation_points?: number | null;
+  effective_value?: number | null;
   created_at: string;
 }
 
@@ -73,6 +77,12 @@ interface GoalUpdate {
 }
 
 interface AreaOption {
+  id: string;
+  name: string;
+  company_id?: string | null;
+}
+
+interface CompanyOption {
   id: string;
   name: string;
 }
@@ -150,6 +160,144 @@ const formatDate = (value: string | null) => {
   return new Date(value).toLocaleDateString("pt-BR");
 };
 
+type ImportHeader =
+  | "EMPRESA"
+  | "ÁREA / DEPARTAMENTO"
+  | "TIPO INDICADOR"
+  | "PILAR ESTRATÉGICO"
+  | "KPI"
+  | "META"
+  | "PONTOS POR AVALIAÇÃO"
+  | "FRENQUENCIA AVALIAÇÃO"
+  | "EFETIVO";
+
+type ImportRow = Record<ImportHeader, string>;
+
+interface ImportPreviewRow {
+  rowNumber: number;
+  raw: ImportRow;
+  companyId: string | null;
+  companyName: string | null;
+  areaId: string | null;
+  areaName: string | null;
+  goalType: Goal["type"];
+  cadence: Goal["cadence"];
+  pillar: Goal["pillar"];
+  targetValue: number | null;
+  currentValue: number;
+  evaluationPoints: number | null;
+  effectiveValue: number | null;
+  errors: string[];
+}
+
+const REQUIRED_IMPORT_HEADERS: ImportHeader[] = [
+  "EMPRESA",
+  "ÁREA / DEPARTAMENTO",
+  "TIPO INDICADOR",
+  "PILAR ESTRATÉGICO",
+  "KPI",
+  "META",
+  "PONTOS POR AVALIAÇÃO",
+  "FRENQUENCIA AVALIAÇÃO",
+  "EFETIVO",
+];
+
+function normalizeImportText(value: string | null | undefined) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function parseImportNumber(value: string | null | undefined): number | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const normalized = raw
+    .replace(/\s/g, "")
+    .replace(/[^0-9,.-]/g, "");
+
+  if (!normalized) return null;
+
+  const hasComma = normalized.includes(",");
+  const hasDot = normalized.includes(".");
+  const numberText = hasComma && hasDot
+    ? normalized.replace(/\./g, "").replace(",", ".")
+    : hasComma
+      ? normalized.replace(",", ".")
+      : normalized;
+
+  const parsed = Number(numberText);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function mapImportCadence(value: string): Goal["cadence"] {
+  const normalized = normalizeImportText(value);
+  if (normalized.includes("trimes")) return "quarterly";
+  if (normalized.includes("anual")) return "annual";
+  if (normalized.includes("atividade")) return "activity";
+  return "monthly";
+}
+
+function mapImportGoalType(value: string): Goal["type"] {
+  const normalized = normalizeImportText(value);
+  if (normalized.includes("process")) return "activity";
+  if (normalized.includes("performance")) return "numeric";
+  return "hybrid";
+}
+
+function mapImportPillar(value: string): Goal["pillar"] {
+  const normalized = normalizeImportText(value);
+  if (normalized.includes("(fat)") || normalized === "fat") return "FAT";
+  if (normalized.includes("(rt)") || normalized === "rt") return "RT";
+  if (normalized.includes("(ms)") || normalized === "ms") return "MS";
+  if (normalized.includes("(sc)") || normalized === "sc") return "SC";
+  if (normalized.includes("(dn)") || normalized === "dn") return "DN";
+  if (normalized.includes("(co)") || normalized === "co") return "CO";
+  if (normalized.includes("esg")) return "ESG";
+  return null;
+}
+
+function splitCsvLine(line: string, delimiter: string) {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const next = line[i + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === delimiter && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values.map((item) => item.replace(/^"|"$/g, "").trim());
+}
+
+function detectCsvDelimiter(headerLine: string) {
+  const semicolons = (headerLine.match(/;/g) || []).length;
+  const commas = (headerLine.match(/,/g) || []).length;
+  return semicolons >= commas ? ";" : ",";
+}
+
 export default function Metas() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -168,6 +316,15 @@ export default function Metas() {
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [goalFormData, setGoalFormData] = useState<GoalFormData>(defaultGoalFormData);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState("");
+  const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([]);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importSummary, setImportSummary] = useState<{
+    totalRows: number;
+    validRows: number;
+    invalidRows: number;
+  } | null>(null);
 
   const [progressValue, setProgressValue] = useState("0");
 
@@ -181,12 +338,25 @@ export default function Metas() {
   const activitiesKey = ["metas", "activities", selectedGoalId] as const;
   const updatesKey = ["metas", "updates", selectedGoalId] as const;
 
+  const companiesQuery = useQuery({
+    queryKey: ["metas", "companies"],
+    queryFn: async () => {
+      const { data, error } = await db
+        .from<CompanyOption[]>("companies")
+        .select("id, name")
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      return (data || []) as CompanyOption[];
+    },
+  });
+
   const areasQuery = useQuery({
     queryKey: areasKey,
     queryFn: async () => {
       let query = db
         .from("areas")
-        .select("id, name")
+        .select("id, name, company_id")
         .order("name", { ascending: true });
 
       if (selectedCompanyId) {
@@ -205,7 +375,7 @@ export default function Metas() {
       let query = db
         .from<Goal[]>("goals")
         .select(
-          "id, company_id, area_id, title, description, type, pillar, unit, target_value, current_value, start_date, end_date, cadence, status, created_at"
+          "id, company_id, area_id, title, description, type, pillar, unit, target_value, current_value, start_date, end_date, cadence, status, indicator_type, evaluation_points, effective_value, created_at"
         )
         .order("created_at", { ascending: false });
 
@@ -229,6 +399,23 @@ export default function Metas() {
     [areasQuery.data]
   );
 
+  const companyByNameMap = useMemo(
+    () =>
+      new Map(
+        (companiesQuery.data || []).map((company) => [normalizeImportText(company.name), company])
+      ),
+    [companiesQuery.data]
+  );
+
+  const areaByCompanyAndNameMap = useMemo(() => {
+    const map = new Map<string, AreaOption>();
+    for (const area of areasQuery.data || []) {
+      const key = `${area.company_id || "global"}|${normalizeImportText(area.name)}`;
+      map.set(key, area);
+    }
+    return map;
+  }, [areasQuery.data]);
+
   const filteredGoals = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
 
@@ -242,6 +429,109 @@ export default function Metas() {
       return statusMatch && searchMatch;
     });
   }, [goalsQuery.data, searchTerm, statusFilter]);
+
+  const closeImportDialog = () => {
+    setImportDialogOpen(false);
+    setImportFileName("");
+    setImportPreview([]);
+    setImportErrors([]);
+    setImportSummary(null);
+  };
+
+  const buildImportPreview = (rows: ImportRow[]) => {
+    const previewRows: ImportPreviewRow[] = rows.map((row, index) => {
+      const errors: string[] = [];
+      const companyNameRaw = row["EMPRESA"] || "";
+      const areaNameRaw = row["ÁREA / DEPARTAMENTO"] || "";
+      const kpi = row["KPI"] || "";
+      const company =
+        companyByNameMap.get(normalizeImportText(companyNameRaw)) ||
+        (selectedCompanyId
+          ? (companiesQuery.data || []).find((entry) => entry.id === selectedCompanyId) || null
+          : null);
+
+      if (!company) errors.push("Empresa não encontrada");
+      if (!kpi.trim()) errors.push("KPI obrigatório");
+
+      const area =
+        company && areaNameRaw.trim()
+          ? areaByCompanyAndNameMap.get(`${company.id}|${normalizeImportText(areaNameRaw)}`) || null
+          : null;
+
+      if (areaNameRaw.trim() && !area) {
+        errors.push("Área/Departamento não encontrado");
+      }
+
+      const targetValue = parseImportNumber(row["META"]);
+      const currentValue = parseImportNumber(row["EFETIVO"]) ?? 0;
+      const evaluationPoints = parseImportNumber(row["PONTOS POR AVALIAÇÃO"]);
+      const effectiveValue = parseImportNumber(row["EFETIVO"]);
+
+      return {
+        rowNumber: index + 2,
+        raw: row,
+        companyId: company?.id || null,
+        companyName: company?.name || null,
+        areaId: area?.id || null,
+        areaName: area?.name || null,
+        goalType: mapImportGoalType(row["TIPO INDICADOR"]),
+        cadence: mapImportCadence(row["FRENQUENCIA AVALIAÇÃO"]),
+        pillar: mapImportPillar(row["PILAR ESTRATÉGICO"]),
+        targetValue,
+        currentValue,
+        evaluationPoints,
+        effectiveValue,
+        errors,
+      };
+    });
+
+    setImportPreview(previewRows);
+    setImportErrors(previewRows.flatMap((row) => row.errors.map((error) => `Linha ${row.rowNumber}: ${error}`)));
+    setImportSummary({
+      totalRows: previewRows.length,
+      validRows: previewRows.filter((row) => row.errors.length === 0).length,
+      invalidRows: previewRows.filter((row) => row.errors.length > 0).length,
+    });
+  };
+
+  const handleImportFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const lines = text
+        .replace(/^\uFEFF/, "")
+        .split(/\r?\n/)
+        .filter((line) => line.trim().length > 0);
+
+      if (lines.length < 2) {
+        throw new Error("O arquivo precisa ter cabeçalho e pelo menos uma linha de dados.");
+      }
+
+      const delimiter = detectCsvDelimiter(lines[0]);
+      const headers = splitCsvLine(lines[0], delimiter) as ImportHeader[];
+      const missingHeaders = REQUIRED_IMPORT_HEADERS.filter((header) => !headers.includes(header));
+
+      if (missingHeaders.length > 0) {
+        throw new Error(`Cabeçalhos ausentes: ${missingHeaders.join(", ")}`);
+      }
+
+      const rows: ImportRow[] = lines.slice(1).map((line) => {
+        const values = splitCsvLine(line, delimiter);
+        return REQUIRED_IMPORT_HEADERS.reduce((acc, header) => {
+          const index = headers.indexOf(header);
+          acc[header] = index >= 0 ? (values[index] || "") : "";
+          return acc;
+        }, {} as ImportRow);
+      });
+
+      setImportFileName(file.name);
+      buildImportPreview(rows);
+    } catch (error) {
+      setImportFileName(file.name);
+      setImportPreview([]);
+      setImportSummary(null);
+      setImportErrors([error instanceof Error ? error.message : "Falha ao ler o arquivo de importação."]);
+    }
+  };
 
   const activitiesQuery = useQuery({
     queryKey: activitiesKey,
@@ -382,6 +672,61 @@ export default function Metas() {
     onError: (error) => {
       toast({
         title: "Erro ao salvar meta",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const importGoalsMutation = useMutation({
+    mutationFn: async () => {
+      const validRows = importPreview.filter((row) => row.errors.length === 0);
+      if (validRows.length === 0) {
+        throw new Error("Nenhuma linha válida encontrada para importação.");
+      }
+
+      const payload = validRows.map((row) => {
+        const indicatorType = row.raw["TIPO INDICADOR"]?.trim() || null;
+        const areaDepartment = row.raw["ÁREA / DEPARTAMENTO"]?.trim();
+        const rawDescription = [
+          row.raw["KPI"]?.trim() ? null : null,
+          indicatorType ? `Tipo indicador: ${indicatorType}` : null,
+          row.raw["PILAR ESTRATÉGICO"]?.trim() ? `Pilar original: ${row.raw["PILAR ESTRATÉGICO"].trim()}` : null,
+          areaDepartment ? `Área/Departamento origem: ${areaDepartment}` : null,
+        ].filter(Boolean).join(" | ");
+
+        return {
+          company_id: row.companyId,
+          area_id: row.areaId,
+          title: row.raw["KPI"].trim(),
+          description: rawDescription || null,
+          type: row.goalType,
+          pillar: row.pillar,
+          target_value: row.targetValue,
+          current_value: row.currentValue,
+          cadence: row.cadence,
+          status: "active" as Goal["status"],
+          indicator_type: indicatorType,
+          evaluation_points: row.evaluationPoints,
+          effective_value: row.effectiveValue,
+        };
+      });
+
+      const { error } = await db.from("goals").insert(payload);
+      if (error) throw error;
+      return payload.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: goalsKey });
+      closeImportDialog();
+      toast({
+        title: "Importação concluída",
+        description: `${count} meta(s) importada(s) com sucesso.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Erro ao importar metas",
         description: error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive",
       });
@@ -544,10 +889,22 @@ export default function Metas() {
           </div>
 
           {canCreate && (
-            <Button onClick={openCreateGoalDialog} className="gap-2" disabled={!selectedCompanyId}>
-              <Plus className="h-4 w-4" />
-              Nova Meta
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                onClick={() => setImportDialogOpen(true)}
+                disabled={companiesQuery.isLoading || areasQuery.isLoading}
+              >
+                <Upload className="h-4 w-4" />
+                Importar Metas
+              </Button>
+              <Button onClick={openCreateGoalDialog} className="gap-2" disabled={!selectedCompanyId}>
+                <Plus className="h-4 w-4" />
+                Nova Meta
+              </Button>
+            </div>
           )}
         </div>
 
@@ -707,6 +1064,18 @@ export default function Metas() {
                         {selectedGoal.target_value !== null ? ` / ${selectedGoal.target_value}` : ""}
                         {selectedGoal.unit ? ` ${selectedGoal.unit}` : ""}
                       </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Tipo do indicador</p>
+                      <p className="text-sm">{selectedGoal.indicator_type || "—"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Pontos por avaliação</p>
+                      <p className="text-sm">{selectedGoal.evaluation_points ?? "—"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Efetivo</p>
+                      <p className="text-sm">{selectedGoal.effective_value ?? "—"}</p>
                     </div>
                   </div>
 
@@ -882,6 +1251,137 @@ export default function Metas() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={importDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) closeImportDialog();
+          else setImportDialogOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Importar Metas em Lote</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Card className="p-4 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Use o template <strong>Layout Portal Metas Ga360</strong>, salve a aba principal em
+                <strong> CSV UTF-8</strong> e envie o arquivo abaixo. O importador lê as colunas
+                EMPRESA, ÁREA / DEPARTAMENTO, TIPO INDICADOR, PILAR ESTRATÉGICO, KPI, META,
+                PONTOS POR AVALIAÇÃO, FRENQUENCIA AVALIAÇÃO e EFETIVO.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <Input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void handleImportFile(file);
+                  }}
+                />
+                {importFileName && (
+                  <Badge variant="outline">{importFileName}</Badge>
+                )}
+              </div>
+
+              {importSummary && (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="secondary">Linhas: {importSummary.totalRows}</Badge>
+                  <Badge variant="secondary">Válidas: {importSummary.validRows}</Badge>
+                  <Badge variant={importSummary.invalidRows > 0 ? "destructive" : "secondary"}>
+                    Inválidas: {importSummary.invalidRows}
+                  </Badge>
+                </div>
+              )}
+
+              {importErrors.length > 0 && (
+                <div className="max-h-32 overflow-y-auto rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+                  {importErrors.slice(0, 20).map((error) => (
+                    <p key={error}>{error}</p>
+                  ))}
+                  {importErrors.length > 20 && (
+                    <p>… e mais {importErrors.length - 20} erro(s).</p>
+                  )}
+                </div>
+              )}
+            </Card>
+
+            <Card className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">Preview da importação</h3>
+                <Button
+                  type="button"
+                  onClick={() => importGoalsMutation.mutate()}
+                  disabled={
+                    importGoalsMutation.isPending ||
+                    !importSummary ||
+                    importSummary.validRows === 0
+                  }
+                >
+                  {importGoalsMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Importar linhas válidas"
+                  )}
+                </Button>
+              </div>
+
+              {importPreview.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Faça upload de um CSV derivado do template para visualizar o preview.
+                </p>
+              ) : (
+                <div className="max-h-[420px] overflow-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr>
+                        <th className="p-2 text-left">Linha</th>
+                        <th className="p-2 text-left">Empresa</th>
+                        <th className="p-2 text-left">Área</th>
+                        <th className="p-2 text-left">KPI</th>
+                        <th className="p-2 text-left">Tipo</th>
+                        <th className="p-2 text-left">Cadência</th>
+                        <th className="p-2 text-left">Meta</th>
+                        <th className="p-2 text-left">Efetivo</th>
+                        <th className="p-2 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.map((row) => (
+                        <tr key={`${row.rowNumber}-${row.raw.KPI}`} className="border-t align-top">
+                          <td className="p-2">{row.rowNumber}</td>
+                          <td className="p-2">{row.companyName || row.raw["EMPRESA"] || "—"}</td>
+                          <td className="p-2">{row.areaName || row.raw["ÁREA / DEPARTAMENTO"] || "—"}</td>
+                          <td className="p-2 min-w-[260px]">{row.raw.KPI || "—"}</td>
+                          <td className="p-2">{row.raw["TIPO INDICADOR"] || "—"}</td>
+                          <td className="p-2">{row.cadence}</td>
+                          <td className="p-2">{row.targetValue ?? "—"}</td>
+                          <td className="p-2">{row.effectiveValue ?? "—"}</td>
+                          <td className="p-2">
+                            {row.errors.length === 0 ? (
+                              <Badge variant="secondary">Pronta</Badge>
+                            ) : (
+                              <div className="space-y-1">
+                                <Badge variant="destructive">Com erro</Badge>
+                                {row.errors.map((error) => (
+                                  <p key={error} className="text-xs text-destructive">{error}</p>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={goalDialogOpen}
