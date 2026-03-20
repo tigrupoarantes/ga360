@@ -45,6 +45,9 @@ verify_jwt = false
 [functions.verify-2fa-code]
 verify_jwt = false
 
+[functions.request-password-reset]
+verify_jwt = false
+
 [functions.import-users]
 verify_jwt = true
 

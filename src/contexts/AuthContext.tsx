@@ -450,8 +450,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = async (email: string) => {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+      const appUrl = (
+        import.meta.env.VITE_PUBLIC_SITE_URL ||
+        import.meta.env.VITE_APP_URL ||
+        window.location.origin
+      ).replace(/\/$/, '');
+
+      const { error } = await supabase.functions.invoke('request-password-reset', {
+        body: {
+          email,
+          appUrl,
+        },
       });
 
       if (error) {
@@ -463,7 +472,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         toast({
           title: 'Email enviado!',
-          description: 'Verifique sua caixa de entrada para redefinir sua senha.',
+          description: 'Se o email existir em nossa base, você receberá as instruções de recuperação.',
         });
       }
 

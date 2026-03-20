@@ -42,7 +42,31 @@ export default function ChangePassword() {
   useEffect(() => {
     const processTokenFromUrl = async () => {
       setSessionLoading(true);
-      
+
+      const searchParams = new URLSearchParams(location.search);
+      const tokenHash = searchParams.get('token_hash');
+      const recoveryType = searchParams.get('type');
+
+      if (tokenHash && recoveryType === 'recovery') {
+        console.log('ChangePassword: token_hash encontrado na query, validando via verifyOtp...');
+
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'recovery',
+        });
+
+        if (verifyError) {
+          console.error('ChangePassword: Erro ao validar token_hash:', verifyError);
+          toast({
+            title: 'Link inválido',
+            description: 'O link de recuperação expirou ou já foi utilizado. Solicite um novo.',
+            variant: 'destructive',
+          });
+          navigate('/reset-password');
+          return;
+        }
+      }
+
       // Verificar se há hash com token na URL
       const hash = window.location.hash;
       console.log('ChangePassword: Verificando hash na URL:', hash ? 'presente' : 'ausente');
@@ -106,7 +130,7 @@ export default function ChangePassword() {
     };
 
     processTokenFromUrl();
-  }, [navigate, toast]);
+  }, [location.search, navigate, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
