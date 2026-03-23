@@ -85,7 +85,7 @@ export function D4SignTemplateManager({ companyId }: Props) {
       if (!response.ok) throw new Error('Falha ao desativar template');
     },
     onSuccess: () => {
-      toast.success('Template desativado');
+      toast.success('Template excluído');
       queryClient.invalidateQueries({ queryKey: ['d4sign-templates', companyId] });
       setDeleteTarget(null);
     },
@@ -183,10 +183,10 @@ export function D4SignTemplateManager({ companyId }: Props) {
       <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Desativar template?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir template?</AlertDialogTitle>
             <AlertDialogDescription>
-              O template <strong>{deleteTarget?.name}</strong> será desativado e não poderá
-              ser usado em novos documentos. Documentos já gerados não são afetados.
+              O template <strong>{deleteTarget?.name}</strong> será excluído permanentemente.
+              Documentos já gerados não são afetados.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -195,7 +195,7 @@ export function D4SignTemplateManager({ companyId }: Props) {
               className="bg-destructive hover:bg-destructive/90"
               onClick={() => deleteTarget && deactivateMutation.mutate(deleteTarget.id)}
             >
-              Desativar
+              Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

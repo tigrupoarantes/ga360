@@ -84,24 +84,16 @@ serve(async (req: Request) => {
     // companyId é opcional para super_admin — null/vazio cria template global (todas as empresas)
     const resolvedCompanyId: string | null = companyId || null;
 
-    // Desativar template
+    // Excluir template
     if (deactivate && templateId) {
-      let deactivateQuery = supabase
+      const { error: deleteError } = await supabase
         .from("d4sign_document_templates")
-        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .delete()
         .eq("id", templateId);
 
-      if (resolvedCompanyId) {
-        deactivateQuery = deactivateQuery.eq("company_id", resolvedCompanyId);
-      } else {
-        deactivateQuery = deactivateQuery.is("company_id", null);
-      }
-
-      const { error: deactivateError } = await deactivateQuery;
-
-      if (deactivateError) {
+      if (deleteError) {
         return new Response(
-          JSON.stringify({ error: "Falha ao desativar template", details: deactivateError.message }),
+          JSON.stringify({ error: "Falha ao excluir template", details: deleteError.message }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
