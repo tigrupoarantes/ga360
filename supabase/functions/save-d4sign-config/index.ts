@@ -47,13 +47,13 @@ serve(async (req: Request) => {
     );
 
     // Apenas super_admin pode salvar configuração D4Sign
-    const { data: profile } = await supabase
-      .from("profiles")
+    const { data: userRole } = await supabase
+      .from("user_roles")
       .select("role")
-      .eq("id", user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
-    if (profile?.role !== "super_admin") {
+    if (userRole?.role !== "super_admin") {
       return new Response(JSON.stringify({ error: "forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
