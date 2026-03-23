@@ -16,6 +16,12 @@ interface EmailConfig {
   from_name?: string;
   from_email?: string;
   reply_to?: string;
+  smtp?: {
+    host?: string;
+    port?: string;
+    user?: string;
+    encryption?: 'tls' | 'ssl' | 'none';
+  };
 }
 
 function buildEmailHtml(params: { resetUrl: string; firstName?: string | null; fromName: string }) {
@@ -143,15 +149,17 @@ serve(async (req) => {
 
     const emailConfig = emailConfigData?.value as EmailConfig | null;
 
-    const smtpHost = Deno.env.get("SMTP_HOST");
-    const smtpPort = parseInt(Deno.env.get("SMTP_PORT") || "587");
-    const smtpUser = Deno.env.get("SMTP_USER");
-    const smtpPassword = Deno.env.get("SMTP_PASSWORD");
-    const smtpEncryption = (Deno.env.get("SMTP_ENCRYPTION") || "tls") as "tls" | "ssl" | "none";
+    // Config SMTP: banco tem prioridade, env vars são fallback
+    // (mesma lógica do send-invite — usuário configura em Configurações do Sistema → Email)
+    const smtpHost = emailConfig?.smtp?.host || Deno.env.get("SMTP_HOST");
+    const smtpPort = parseInt(emailConfig?.smtp?.port || Deno.env.get("SMTP_PORT") || "465");
+    const smtpUser = emailConfig?.smtp?.user || Deno.env.get("SMTP_USER");
+    const smtpPassword = Deno.env.get("SMTP_PASSWORD"); // senha nunca fica no banco
+    const smtpEncryption = (emailConfig?.smtp?.encryption || Deno.env.get("SMTP_ENCRYPTION") || "ssl") as "tls" | "ssl" | "none";
 
     if (!smtpHost || !smtpUser || !smtpPassword) {
-      console.error("[request-password-reset] SMTP não configurado.");
-      return new Response(JSON.stringify({ error: "SMTP não configurado" }), {
+      console.error("[request-password-reset] SMTP não configurado. host:", smtpHost, "user:", smtpUser, "password set:", !!smtpPassword);
+      return new Response(JSON.stringify({ error: "SMTP não configurado. Configure em Configurações do Sistema → Email." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

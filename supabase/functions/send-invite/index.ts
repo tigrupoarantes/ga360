@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,139 +21,6 @@ interface EmailConfig {
   };
 }
 
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-const SMTP_TIMEOUT_MS = 10000;
-
-function encodeQuotedPrintable(str: string): string {
-  const utf8 = unescape(encodeURIComponent(str));
-  let result = '';
-  let lineLen = 0;
-  for (let i = 0; i < utf8.length; i++) {
-    const code = utf8.charCodeAt(i);
-    let encoded: string;
-    if (code === 13 && utf8.charCodeAt(i + 1) === 10) {
-      encoded = '\r\n';
-      i++;
-      lineLen = 0;
-      result += encoded;
-      continue;
-    } else if (code === 10) {
-      encoded = '\r\n';
-      lineLen = 0;
-      result += encoded;
-      continue;
-    } else if (code === 9 || (code >= 32 && code <= 126 && code !== 61)) {
-      encoded = String.fromCharCode(code);
-    } else {
-      encoded = '=' + code.toString(16).toUpperCase().padStart(2, '0');
-    }
-    if (lineLen + encoded.length > 75) {
-      result += '=\r\n';
-      lineLen = 0;
-    }
-    result += encoded;
-    lineLen += encoded.length;
-  }
-  return result;
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`Timeout: ${label} after ${ms}ms`)), ms)
-    ),
-  ]);
-}
-
-async function readResponse(conn: Deno.Conn): Promise<string> {
-  const buffer = new Uint8Array(4096);
-  const n = await withTimeout(
-    conn.read(buffer).then(n => {
-      if (n === null) throw new Error('No response from SMTP server');
-      return n;
-    }),
-    SMTP_TIMEOUT_MS,
-    'SMTP read'
-  );
-  return decoder.decode(buffer.subarray(0, n as number));
-}
-
-async function sendCommand(conn: Deno.Conn, cmd: string, expectedCode: string, label: string): Promise<string> {
-  await withTimeout(conn.write(encoder.encode(cmd + '\r\n')), SMTP_TIMEOUT_MS, `SMTP write ${label}`);
-  const response = await readResponse(conn);
-  console.log(`[SMTP] ${label}: ${response.trim()}`);
-  if (!response.startsWith(expectedCode)) {
-    throw new Error(`SMTP ${label} failed: expected ${expectedCode}, got: ${response.trim()}`);
-  }
-  return response;
-}
-
-async function sendEmail(opts: {
-  host: string; port: number; user: string; password: string;
-  encryption: string; fromName: string; fromAddress: string;
-  replyTo: string; toEmail: string; subject: string; html: string;
-}) {
-  const { host, port, user, password, encryption, fromName, fromAddress, replyTo, toEmail, subject, html } = opts;
-
-  console.log(`[SMTP] Connecting to ${host}:${port} (${encryption})...`);
-
-  let conn: Deno.Conn;
-  if (encryption === 'ssl' || encryption === 'tls') {
-    conn = await withTimeout(Deno.connectTls({ hostname: host, port }), SMTP_TIMEOUT_MS, 'TLS connect');
-  } else {
-    conn = await withTimeout(Deno.connect({ hostname: host, port }), SMTP_TIMEOUT_MS, 'TCP connect');
-  }
-
-  try {
-    const greeting = await readResponse(conn);
-    console.log(`[SMTP] Greeting: ${greeting.trim()}`);
-    if (!greeting.startsWith('220')) throw new Error(`Bad greeting: ${greeting.trim()}`);
-
-    await sendCommand(conn, 'EHLO localhost', '250', 'EHLO');
-    await sendCommand(conn, 'AUTH LOGIN', '334', 'AUTH LOGIN');
-    await sendCommand(conn, btoa(user), '334', 'USERNAME');
-    await sendCommand(conn, btoa(password), '235', 'PASSWORD');
-    await sendCommand(conn, `MAIL FROM:<${fromAddress}>`, '250', 'MAIL FROM');
-    await sendCommand(conn, `RCPT TO:<${toEmail}>`, '250', 'RCPT TO');
-    await sendCommand(conn, 'DATA', '354', 'DATA');
-
-    const headers = [
-      `From: "${fromName}" <${fromAddress}>`,
-      `To: ${toEmail}`,
-      `Subject: =?UTF-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
-      `MIME-Version: 1.0`,
-      `Content-Type: text/html; charset=UTF-8`,
-      `Content-Transfer-Encoding: quoted-printable`,
-    ];
-    if (replyTo) headers.push(`Reply-To: ${replyTo}`);
-    headers.push(`Date: ${new Date().toUTCString()}`);
-
-    const qpBody = encodeQuotedPrintable(html);
-
-    const message = [
-      ...headers,
-      '',
-      qpBody,
-      '',
-      '.',
-    ].join('\r\n');
-
-    await withTimeout(conn.write(encoder.encode(message + '\r\n')), SMTP_TIMEOUT_MS, 'DATA body write');
-    const dataResponse = await readResponse(conn);
-    console.log(`[SMTP] DATA response: ${dataResponse.trim()}`);
-    if (!dataResponse.startsWith('250')) {
-      throw new Error(`DATA send failed: ${dataResponse.trim()}`);
-    }
-
-    await conn.write(encoder.encode('QUIT\r\n'));
-    console.log(`✅ [SMTP] Email sent successfully to ${toEmail}`);
-  } finally {
-    try { conn.close(); } catch (_) { /* ignore */ }
-  }
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -170,6 +38,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    // Busca o token do convite
     const { data: invite, error: inviteError } = await supabase
       .from('user_invites')
       .select('token')
@@ -180,22 +49,37 @@ serve(async (req) => {
       throw new Error('Invite not found');
     }
 
+    // Busca configuração de email do banco (salva em Configurações do Sistema)
     const { data: emailConfigData } = await supabase
       .from('system_settings')
       .select('value')
       .eq('key', 'email_config')
       .single();
 
-    const emailConfig = emailConfigData?.value as unknown as EmailConfig | null;
-    const fromName = emailConfig?.from_name || 'GA 360';
-    const configuredPublicUrl = Deno.env.get('PUBLIC_SITE_URL');
-    const APP_URL = (configuredPublicUrl || appUrl || 'http://localhost:3000').replace(/\/$/, '');
-    const registrationUrl = `${APP_URL}/auth?invite=${invite.token}`;
+    const emailConfig = emailConfigData?.value as EmailConfig | null;
 
+    // Config SMTP: banco tem prioridade, env vars são fallback
+    const host = emailConfig?.smtp?.host || Deno.env.get('SMTP_HOST') || '';
+    const port = parseInt(emailConfig?.smtp?.port || Deno.env.get('SMTP_PORT') || '465');
+    const user = emailConfig?.smtp?.user || Deno.env.get('SMTP_USER') || '';
+    const encryption = (emailConfig?.smtp?.encryption || Deno.env.get('SMTP_ENCRYPTION') || 'ssl') as 'tls' | 'ssl' | 'none';
+    const fromName = emailConfig?.from_name || Deno.env.get('SMTP_FROM_NAME') || 'GA 360';
+    const fromAddress = emailConfig?.from_email || user;
+    const replyTo = emailConfig?.reply_to || '';
+
+    // Senha vem sempre de env var (nunca armazenada no banco)
     const password = Deno.env.get('SMTP_PASSWORD');
     if (!password) {
       throw new Error('SMTP_PASSWORD secret não configurado.');
     }
+
+    if (!host || !user) {
+      throw new Error('Configuração SMTP não encontrada. Configure em Configurações do Sistema → Email.');
+    }
+
+    const configuredPublicUrl = Deno.env.get('PUBLIC_SITE_URL');
+    const APP_URL = (configuredPublicUrl || appUrl || 'http://localhost:3000').replace(/\/$/, '');
+    const registrationUrl = `${APP_URL}/auth?invite=${invite.token}`;
 
     const emailHtml = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -272,23 +156,38 @@ Se você não solicitou este convite, ignore este email.
 </body>
 </html>`;
 
-    const subject = `Convite para ${fromName}`;
-    const host = emailConfig?.smtp?.host || Deno.env.get('SMTP_HOST') || '';
-    const port = parseInt(emailConfig?.smtp?.port || Deno.env.get('SMTP_PORT') || '465');
-    const user = emailConfig?.smtp?.user || Deno.env.get('SMTP_USER') || '';
-    const encryption = emailConfig?.smtp?.encryption || Deno.env.get('SMTP_ENCRYPTION') || 'ssl';
-    const fromAddress = emailConfig.from_email || user;
-    const replyTo = emailConfig.reply_to || '';
+    // Envia via denomailer (suporta SSL implícito e STARTTLS corretamente)
+    const clientConfig: Record<string, unknown> = {
+      connection: {
+        hostname: host,
+        port,
+        auth: {
+          username: user,
+          password,
+        },
+      },
+    };
 
-    if (!host || !user) {
-      throw new Error('Configuração SMTP não encontrada (host/user).');
+    if (encryption === 'ssl') {
+      (clientConfig.connection as Record<string, unknown>).tls = true;   // SSL implícito porta 465
+    } else if (encryption === 'tls') {
+      (clientConfig.connection as Record<string, unknown>).tls = false;  // STARTTLS porta 587
     }
 
-    await sendEmail({
-      host, port, user, password, encryption,
-      fromName, fromAddress, replyTo, toEmail: email,
-      subject, html: emailHtml,
+    const client = new SMTPClient(clientConfig);
+
+    await client.send({
+      from: `${fromName} <${fromAddress}>`,
+      to: email,
+      subject: `Convite para ${fromName}`,
+      html: emailHtml,
+      content: `Você foi convidado para o ${fromName}. Acesse: ${registrationUrl}`,
+      headers: replyTo ? { 'Reply-To': replyTo } : undefined,
     });
+
+    await client.close();
+
+    console.log(`✅ Convite enviado para ${email}`);
 
     return new Response(
       JSON.stringify({ success: true, message: 'Convite enviado com sucesso' }),
