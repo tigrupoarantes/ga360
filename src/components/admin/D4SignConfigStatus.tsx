@@ -15,7 +15,7 @@ type ConnectionStatus = 'idle' | 'testing' | 'ok' | 'error';
 export function D4SignConfigStatus({ config }: Props) {
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
-  const [safes, setSafes] = useState<Array<{ uuid: string; name?: string; safeName?: string }>>([]);
+  const [safes, setSafes] = useState<Array<Record<string, unknown>>>([]);
   const [errorMessage, setErrorMessage] = useState('');
 
   async function testConnection() {
@@ -114,13 +114,12 @@ export function D4SignConfigStatus({ config }: Props) {
             <p className="text-sm font-medium">Cofres disponíveis:</p>
             <ul className="space-y-1">
               {safes.map((safe, idx) => {
-                const anyObj = safe as Record<string, unknown>;
-                const uuid = (anyObj.uuid || anyObj.uuidSafe || anyObj.id || '') as string;
-                const name = (anyObj.safeName || anyObj.name || anyObj.safe_name || anyObj.safename || '') as string;
+                const uuid = (safe['uuid_safe'] || safe['uuid'] || '') as string;
+                const name = (safe['name-safe'] || safe['safeName'] || safe['name'] || '') as string;
                 return (
                   <li key={uuid || idx} className="text-sm text-muted-foreground flex items-center gap-2">
                     <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-                    <span className="font-mono text-xs">{uuid || JSON.stringify(anyObj)}</span>
+                    <span className="font-mono text-xs">{uuid}</span>
                     {name && <span>— {name}</span>}
                   </li>
                 );
