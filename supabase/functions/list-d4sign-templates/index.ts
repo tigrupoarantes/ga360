@@ -49,18 +49,21 @@ serve(async (req: Request) => {
     const body = await req.json();
     const { companyId } = body;
 
-    if (!companyId) {
-      return new Response(JSON.stringify({ error: "companyId é obrigatório" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { data: templates, error: queryError } = await supabase
+    // Retorna templates globais (company_id IS NULL) + templates da empresa se fornecida
+    let query = supabase
       .from("d4sign_document_templates")
       .select("id, company_id, name, description, is_active, created_at")
-      .eq("company_id", companyId)
       .order("created_at", { ascending: false });
+
+    if (companyId) {
+      // Templates da empresa OU globais
+      query = query.or(`company_id.eq.${companyId},company_id.is.null`);
+    } else {
+      // Só templates globais
+      query = query.is("company_id", null);
+    }
+
+    const { data: templates, error: queryError } = await query;
 
     if (queryError) {
       return new Response(

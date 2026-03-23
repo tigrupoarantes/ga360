@@ -81,20 +81,23 @@ serve(async (req: Request) => {
     const body = await req.json();
     const { templateId, companyId, template, deactivate } = body;
 
-    if (!companyId) {
-      return new Response(JSON.stringify({ error: "companyId é obrigatório" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // companyId é opcional para super_admin — null/vazio cria template global (todas as empresas)
+    const resolvedCompanyId: string | null = companyId || null;
 
     // Desativar template
     if (deactivate && templateId) {
-      const { error: deactivateError } = await supabase
+      let deactivateQuery = supabase
         .from("d4sign_document_templates")
         .update({ is_active: false, updated_at: new Date().toISOString() })
-        .eq("id", templateId)
-        .eq("company_id", companyId);
+        .eq("id", templateId);
+
+      if (resolvedCompanyId) {
+        deactivateQuery = deactivateQuery.eq("company_id", resolvedCompanyId);
+      } else {
+        deactivateQuery = deactivateQuery.is("company_id", null);
+      }
+
+      const { error: deactivateError } = await deactivateQuery;
 
       if (deactivateError) {
         return new Response(
@@ -121,7 +124,7 @@ serve(async (req: Request) => {
 
     if (templateId) {
       // Editar
-      const { error: updateError } = await supabase
+      let updateQuery = supabase
         .from("d4sign_document_templates")
         .update({
           name: template.name,
@@ -130,8 +133,15 @@ serve(async (req: Request) => {
           is_active: template.is_active ?? true,
           updated_at: now,
         })
-        .eq("id", templateId)
-        .eq("company_id", companyId);
+        .eq("id", templateId);
+
+      if (resolvedCompanyId) {
+        updateQuery = updateQuery.eq("company_id", resolvedCompanyId);
+      } else {
+        updateQuery = updateQuery.is("company_id", null);
+      }
+
+      const { error: updateError } = await updateQuery;
 
       if (updateError) {
         return new Response(
@@ -144,7 +154,7 @@ serve(async (req: Request) => {
       const { error: insertError } = await supabase
         .from("d4sign_document_templates")
         .insert({
-          company_id: companyId,
+          company_id: resolvedCompanyId,
           name: template.name,
           description: template.description || null,
           template_html: template.template_html,

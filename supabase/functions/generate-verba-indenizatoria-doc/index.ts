@@ -199,6 +199,18 @@ serve(async (req: Request) => {
     const hoje = new Date();
     const dataGeracao = `${String(hoje.getDate()).padStart(2, "0")}/${String(hoje.getMonth() + 1).padStart(2, "0")}/${hoje.getFullYear()}`;
 
+    // Primeiro e último dia do mês da competência
+    const primeiroDia = `01/${String(mes).padStart(2, "0")}/${ano}`;
+    const ultimoDia = new Date(parseInt(ano), mes, 0); // dia 0 do mês seguinte = último dia
+    const ultimoDiaStr = `${String(ultimoDia.getDate()).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano}`;
+
+    // Data por extenso PT-BR maiúsculo (ex: "05 DE MARÇO DE 2026")
+    const MESES_EXT = [
+      "JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
+      "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO",
+    ];
+    const dataExtenso = `${String(hoje.getDate()).padStart(2, "0")} DE ${MESES_EXT[hoje.getMonth()]} DE ${hoje.getFullYear()}`;
+
     const placeholders: Record<string, string> = {
       nome_funcionario: employeeName,
       cpf: employeeCpf,
@@ -212,6 +224,9 @@ serve(async (req: Request) => {
       valor_total: formatBRL(valorTotal),
       data_geracao: dataGeracao,
       grupo_contabilizacao: grupoContabilizacao,
+      data_inicio_periodo: primeiroDia,
+      data_fim_periodo: ultimoDiaStr,
+      data_extenso: dataExtenso,
     };
 
     // 3. Gerar PDF
@@ -276,7 +291,7 @@ serve(async (req: Request) => {
         const testLine = line ? `${line} ${word}` : word;
         if (testLine.length * charWidth > maxWidth) {
           if (y < 80) break;
-          page.drawText(line, { x: 45, y, size: 9, font: fontReg, color: black });
+          page.drawText(sanitize(line), { x: 45, y, size: 9, font: fontReg, color: black });
           y -= 14;
           line = word;
         } else {

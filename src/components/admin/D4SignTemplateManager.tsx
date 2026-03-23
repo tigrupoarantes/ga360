@@ -61,7 +61,7 @@ export function D4SignTemplateManager({ companyId }: Props) {
       const result = await response.json();
       return result.templates ?? [];
     },
-    enabled: !!companyId,
+    enabled: true,
   });
 
   const deactivateMutation = useMutation({
