@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ArrowLeft, Plus, RefreshCw, AlertTriangle, Building2 } from 'lucide-react';
+import { ArrowLeft, Plus, RefreshCw, AlertTriangle, Building2, Users } from 'lucide-react';
 import { VIStatusDashboard } from '@/components/verbas-indenizatorias/VIStatusDashboard';
 import { VIFilters } from '@/components/verbas-indenizatorias/VIFilters';
 import { VIDocumentTable } from '@/components/verbas-indenizatorias/VIDocumentTable';
 import { VIGenerateDialog } from '@/components/verbas-indenizatorias/VIGenerateDialog';
+import { VIBatchGenerateDialog } from '@/components/verbas-indenizatorias/VIBatchGenerateDialog';
 import { useVerbasIndenizatorias, useVIAccountingGroups, type VIQueryFilters } from '@/hooks/useVerbasIndenizatorias';
 import { resolveAccountingGroupLabel } from '@/lib/accountingGroups';
 import { useCardPermissions } from '@/hooks/useCardPermissions';
@@ -24,6 +25,7 @@ export default function VerbasIndenizatorias() {
 
   const [filters, setFilters] = useState<VIQueryFilters>({ page: 1, pageSize: 50 });
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
 
   // Buscar UUID do card "Verbas Indenizatórias" para verificar permissão granular
   const { data: viCardId } = useQuery<string | null>({
@@ -104,10 +106,20 @@ export default function VerbasIndenizatorias() {
             </Button>
 
             {canFill && (
-              <Button size="sm" onClick={() => setGenerateOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Gerar documento
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setBatchOpen(true)}
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Gerar em lote
+                </Button>
+                <Button size="sm" onClick={() => setGenerateOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Gerar documento
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -207,12 +219,21 @@ export default function VerbasIndenizatorias() {
           />
         )}
 
-        {/* Dialog de geração */}
+        {/* Dialog de geração individual */}
         {selectedCompanyId && (
           <VIGenerateDialog
             companyId={selectedCompanyId}
             open={generateOpen}
             onClose={() => setGenerateOpen(false)}
+          />
+        )}
+
+        {/* Dialog de geração em lote */}
+        {selectedCompanyId && (
+          <VIBatchGenerateDialog
+            companyId={selectedCompanyId}
+            open={batchOpen}
+            onClose={() => { setBatchOpen(false); refetch(); }}
           />
         )}
       </div>

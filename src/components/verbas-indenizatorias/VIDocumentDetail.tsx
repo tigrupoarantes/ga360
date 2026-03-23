@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
@@ -5,11 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { VIStatusBadge } from './VIStatusBadge';
+import { VIDocumentPreview } from './VIDocumentPreview';
+import { VITimelineLog } from './VITimelineLog';
 import { useVIResend, useVICancel } from '@/hooks/useVerbasIndenizatorias';
 import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Mail, XCircle, ExternalLink, Download } from 'lucide-react';
+import { Mail, XCircle, Eye, Download } from 'lucide-react';
 
 interface Props {
   document: VIDocument | null;
@@ -35,6 +38,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
 export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Props) {
   const resendMutation = useVIResend();
   const cancelMutation = useVICancel();
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   if (!doc) return null;
 
@@ -96,47 +100,12 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
 
           <Separator />
 
-          {/* Datas */}
+          {/* Histórico de eventos */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
               Histórico
             </p>
-            <div className="space-y-2">
-              <InfoRow
-                label="Gerado em"
-                value={format(new Date(doc.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-              />
-              {doc.d4sign_sent_at && (
-                <InfoRow
-                  label="Enviado para assinatura"
-                  value={format(new Date(doc.d4sign_sent_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                />
-              )}
-              {doc.email_sent_at && (
-                <InfoRow
-                  label="E-mail enviado"
-                  value={format(new Date(doc.email_sent_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                />
-              )}
-              {doc.email_reminder_count > 0 && (
-                <InfoRow
-                  label="Lembretes enviados"
-                  value={String(doc.email_reminder_count)}
-                />
-              )}
-              {doc.d4sign_signed_at && (
-                <InfoRow
-                  label="Assinado em"
-                  value={format(new Date(doc.d4sign_signed_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                />
-              )}
-              {doc.d4sign_cancelled_at && (
-                <InfoRow
-                  label="Cancelado em"
-                  value={format(new Date(doc.d4sign_cancelled_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                />
-              )}
-            </div>
+            <VITimelineLog documentId={doc.id} />
           </div>
 
           {doc.d4sign_error_message && (
@@ -159,12 +128,23 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
               </Button>
             )}
 
-            {doc.signed_file_path && (
-              <Button variant="outline" className="w-full" asChild>
-                <a href="#" download>
-                  <Download className="h-4 w-4 mr-2" />
-                  Baixar documento assinado
-                </a>
+            {(doc.generated_file_path || doc.signed_file_path) && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setPreviewOpen(true)}
+              >
+                {doc.signed_file_path ? (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Visualizar / Baixar documento assinado
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4 mr-2" />
+                    Visualizar documento gerado
+                  </>
+                )}
               </Button>
             )}
 
@@ -187,6 +167,12 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
           </div>
         </div>
       </SheetContent>
+
+      <VIDocumentPreview
+        document={doc}
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+      />
     </Sheet>
   );
 }

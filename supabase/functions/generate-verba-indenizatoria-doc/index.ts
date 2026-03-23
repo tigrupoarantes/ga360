@@ -382,7 +382,7 @@ serve(async (req: Request) => {
       const { data: d4config } = await supabase
         .from("d4sign_config")
         .select("safe_id, base_url")
-        .eq("company_id", companyId)
+        .is("company_id", null)   // config global (sem vínculo a empresa)
         .eq("is_active", true)
         .maybeSingle();
 
