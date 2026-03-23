@@ -67,7 +67,15 @@ export function InvitesList() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Extrai mensagem real do corpo da resposta da Edge Function
+        let errorMessage = error.message;
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) errorMessage = body.error;
+        } catch {}
+        throw new Error(errorMessage);
+      }
 
       toast({
         title: 'Convite reenviado!',
