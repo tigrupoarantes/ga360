@@ -46,7 +46,7 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Apenas super_admin pode salvar configuração D4Sign
+    // Apenas super_admin pode acessar configuração D4Sign
     const { data: userRole } = await supabase
       .from("user_roles")
       .select("role")
@@ -60,10 +60,56 @@ serve(async (req: Request) => {
       });
     }
 
+    // GET — retorna configuração existente com credenciais mascaradas
+    if (req.method === "GET") {
+      const { data: existing } = await supabase
+        .from("d4sign_config")
+        .select("token_api, crypt_key, safe_id, environment, base_url, webhook_url, is_active")
+        .is("company_id", null)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (!existing) {
+        return new Response(JSON.stringify({ config: null }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Retorna credenciais mascaradas — apenas primeiros 8 chars + "..."
+      return new Response(JSON.stringify({
+        config: {
+          token_api_masked: existing.token_api
+            ? `${String(existing.token_api).slice(0, 8)}...` : "",
+          crypt_key_masked: existing.crypt_key
+            ? `${String(existing.crypt_key).slice(0, 8)}...` : "",
+          safe_id: existing.safe_id ?? "",
+          environment: existing.environment ?? "sandbox",
+          base_url: existing.base_url ?? "",
+          webhook_url: existing.webhook_url ?? "",
+          is_active: existing.is_active ?? true,
+          configured: !!(existing.token_api && existing.crypt_key),
+        },
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const body = await req.json();
     const { config } = body;
 
-    if (!config?.token_api || !config?.crypt_key) {
+    // Busca config existente para manter credenciais se não foram informadas
+    const { data: existing } = await supabase
+      .from("d4sign_config")
+      .select("id, token_api, crypt_key")
+      .is("company_id", null)
+      .maybeSingle();
+
+    const token_api = config?.token_api?.trim() || existing?.token_api;
+    const crypt_key = config?.crypt_key?.trim() || existing?.crypt_key;
+
+    if (!token_api || !crypt_key) {
       return new Response(
         JSON.stringify({ error: "token_api e crypt_key são obrigatórios" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -71,8 +117,8 @@ serve(async (req: Request) => {
     }
 
     const configData = {
-      token_api: config.token_api,
-      crypt_key: config.crypt_key,
+      token_api,
+      crypt_key,
       safe_id: config.safe_id || null,
       environment: config.environment || "sandbox",
       base_url: config.base_url || "https://sandbox.d4sign.com.br/api/v1",
@@ -80,14 +126,6 @@ serve(async (req: Request) => {
       is_active: config.is_active ?? true,
       updated_at: new Date().toISOString(),
     };
-
-    // Two-step upsert: busca config global existente (company_id IS NULL) e atualiza,
-    // ou insere nova linha global
-    const { data: existing } = await supabase
-      .from("d4sign_config")
-      .select("id")
-      .is("company_id", null)
-      .maybeSingle();
 
     let upsertError;
 
