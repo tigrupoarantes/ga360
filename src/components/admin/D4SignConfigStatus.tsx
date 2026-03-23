@@ -15,7 +15,7 @@ type ConnectionStatus = 'idle' | 'testing' | 'ok' | 'error';
 export function D4SignConfigStatus({ config }: Props) {
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
-  const [safes, setSafes] = useState<Array<{ uuid: string; name: string }>>([]);
+  const [safes, setSafes] = useState<Array<{ uuid: string; name?: string; safeName?: string }>>([]);
   const [errorMessage, setErrorMessage] = useState('');
 
   async function testConnection() {
@@ -117,7 +117,7 @@ export function D4SignConfigStatus({ config }: Props) {
                 <li key={safe.uuid} className="text-sm text-muted-foreground flex items-center gap-2">
                   <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
                   <span className="font-mono text-xs">{safe.uuid}</span>
-                  {safe.name && <span>— {safe.name}</span>}
+                  {(safe.safeName || safe.name) && <span>— {safe.safeName || safe.name}</span>}
                 </li>
               ))}
             </ul>
