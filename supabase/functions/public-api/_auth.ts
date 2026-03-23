@@ -3,10 +3,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export interface ApiKeyContext {
   apiKeyId: string;
-  companyId: string;
+  companyId: string | null;
   companyName: string;
   keyPrefix: string;
   permissions: string[];
+  isGlobal: boolean;
 }
 
 // Computa SHA-256 hex de uma string (Web Crypto API — disponível no Deno)
@@ -31,7 +32,7 @@ export async function validateApiKey(req: Request): Promise<ApiKeyContext | null
 
   const { data: keyRow, error } = await supabase
     .from("public_api_keys")
-    .select("id, company_id, key_prefix, permissions, companies(name)")
+    .select("id, company_id, is_global, key_prefix, permissions, companies(name)")
     .eq("key_hash", hash)
     .eq("is_active", true)
     .maybeSingle();
@@ -45,12 +46,15 @@ export async function validateApiKey(req: Request): Promise<ApiKeyContext | null
     .eq("id", keyRow.id)
     .then(() => {});
 
+  const isGlobal = keyRow.is_global ?? false;
+
   return {
     apiKeyId: keyRow.id,
-    companyId: keyRow.company_id,
-    companyName: (keyRow.companies as any)?.name ?? "",
+    companyId: keyRow.company_id ?? null,
+    companyName: (keyRow.companies as any)?.name ?? (isGlobal ? "Global" : ""),
     keyPrefix: keyRow.key_prefix,
     permissions: keyRow.permissions ?? [],
+    isGlobal,
   };
 }
 
