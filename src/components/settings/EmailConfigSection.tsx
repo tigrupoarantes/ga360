@@ -149,26 +149,15 @@ export function EmailConfigSection() {
     setTesting(true);
     setTestResult(null);
     try {
-      const EXTERNAL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/test-smtp-connection`;
-      const EXTERNAL_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
-
-      const response = await fetch(EXTERNAL_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': EXTERNAL_ANON_KEY,
-        },
-        body: JSON.stringify({
+      // Usa supabase.functions.invoke para que o token JWT seja adicionado automaticamente
+      const { data, error } = await supabase.functions.invoke('test-smtp-connection', {
+        body: {
           ...config.smtp,
           password: smtpPassword || undefined,
-        }),
+        },
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.message || data?.error || `HTTP ${response.status}`);
-      }
+      if (error) throw new Error(error.message);
 
       if (data?.success) {
         setTestResult('success');
