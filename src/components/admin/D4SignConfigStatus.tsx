@@ -113,13 +113,18 @@ export function D4SignConfigStatus({ config }: Props) {
           <div className="space-y-1">
             <p className="text-sm font-medium">Cofres disponíveis:</p>
             <ul className="space-y-1">
-              {safes.map((safe) => (
-                <li key={safe.uuid} className="text-sm text-muted-foreground flex items-center gap-2">
-                  <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-                  <span className="font-mono text-xs">{safe.uuid}</span>
-                  {(safe.safeName || safe.name) && <span>— {safe.safeName || safe.name}</span>}
-                </li>
-              ))}
+              {safes.map((safe, idx) => {
+                const anyObj = safe as Record<string, unknown>;
+                const uuid = (anyObj.uuid || anyObj.uuidSafe || anyObj.id || '') as string;
+                const name = (anyObj.safeName || anyObj.name || anyObj.safe_name || anyObj.safename || '') as string;
+                return (
+                  <li key={uuid || idx} className="text-sm text-muted-foreground flex items-center gap-2">
+                    <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                    <span className="font-mono text-xs">{uuid || JSON.stringify(anyObj)}</span>
+                    {name && <span>— {name}</span>}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
