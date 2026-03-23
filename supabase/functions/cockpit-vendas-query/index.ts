@@ -1,10 +1,14 @@
 // @ts-nocheck
-// cockpit-vendas-query — Edge Function para o Cockpit de Vendas (Chok Distribuidora)
-// Fonte: gold.vw_venda_diaria_chokdist via DAB REST API
-// Endpoint e credenciais lidos de dl_queries + dl_connections (/admin/datalake)
+// cockpit-vendas-query — Edge Function para o Cockpit de Vendas (multi-tenant)
 //
-// Limitação conhecida: DAB sem índice na coluna 'data' → queries sem filtro de pessoa timeout.
-// Estratégia: diretoria sem filtro → retorna sync_pending; todos os outros → DAB com escopo.
+// Fontes:
+//   - Chok Distribuidora: gold.vw_venda_diaria_chokdist via DAB (query cockpit_vendas_chokdist)
+//   - Outras empresas:    dbo.vw_sales_product_detail_api via DAB (fallback genérico com tenant_id)
+//
+// Endpoint e credenciais lidos de dl_queries + dl_connections (/admin/datalake)
+// Limitação Chok: DAB sem índice na coluna 'data' → queries sem filtro de pessoa timeout.
+// Estratégia Chok: diretoria sem filtro → retorna sync_pending; todos os outros → DAB com escopo.
+// Estratégia genérica: usa sales_product_detail com $filter=tenant_id eq '{code}'
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.85.0";
@@ -25,6 +29,8 @@ interface QueryRequest {
   page?: number;
   page_size?: number;
   cod_vendedor_filtro?: string;
+  /** Código do tenant no DAB (ex: "5"). Se presente, tenta query genérica se Chok não disponível */
+  tenant_id?: string;
 }
 
 interface KpiResult {
@@ -79,7 +85,63 @@ async function getQueryConfig(supabaseAdmin: any) {
   const baseUrl = conn.base_url.replace(/\/+$/, "");
   const endpointPath = query.endpoint_path.startsWith("/") ? query.endpoint_path : `/${query.endpoint_path}`;
 
-  return { endpointUrl: `${baseUrl}${endpointPath}`, headers };
+  return { endpointUrl: `${baseUrl}${endpointPath}`, headers, baseUrl };
+}
+
+/** Config genérica: usa sales_product_detail com tenant_id para empresas não-Chok */
+async function getGenericConfig(supabaseAdmin: any) {
+  const { data: conn, error } = await supabaseAdmin
+    .from("dl_connections")
+    .select("*")
+    .eq("is_enabled", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !conn) throw new Error("Nenhuma dl_connection habilitada encontrada");
+
+  const headersJson = conn.headers_json || {};
+  const authConfig = conn.auth_config_json || {};
+  const apiKey =
+    conn.api_key ||
+    (authConfig.authHeaderName ? headersJson[authConfig.authHeaderName] : undefined) ||
+    headersJson["X-API-Key"] || headersJson["x-api-key"] ||
+    authConfig.apiKey || authConfig.api_key;
+
+  const headers: Record<string, string> = { "Accept": "application/json" };
+  for (const [k, v] of Object.entries(headersJson)) {
+    if (k && v != null) headers[k] = String(v);
+  }
+  if (apiKey && !headers["X-API-Key"]) headers["X-API-Key"] = apiKey;
+
+  const baseUrl = conn.base_url.replace(/\/+$/, "");
+  return { endpointUrl: `${baseUrl}/sales_product_detail`, headers, baseUrl };
+}
+
+/** Monta $filter OData para endpoint genérico (sales_product_detail) */
+function buildGenericFilter(tenantId: string, dataInicio: string, dataFim: string): string {
+  return `tenant_id eq '${tenantId}' and dt_venda ge '${dataInicio}' and dt_venda le '${dataFim}'`;
+}
+
+/** Agrega KPIs a partir de dados genéricos (sales_product_detail) */
+function aggregateGenericKpis(items: any[]): KpiResult {
+  const pedidos = new Set<string>();
+  let faturamento = 0;
+
+  for (const row of items) {
+    if (row.id_pedido) pedidos.add(String(row.id_pedido));
+    faturamento += parseFloat(row.vl_venda || 0);
+  }
+
+  const totalPedidos = pedidos.size;
+  return {
+    faturamento_total: Math.round(faturamento * 100) / 100,
+    total_pedidos: totalPedidos,
+    ticket_medio: Math.round((totalPedidos > 0 ? faturamento / totalPedidos : 0) * 100) / 100,
+    clientes_visitados: 0,
+    cobertura_pct: null,
+    nao_vendas: 0,
+  };
 }
 
 // ──────────────────────────────────────────────────────────
@@ -325,16 +387,55 @@ serve(async (req: Request) => {
     const cached = await getCache(supabaseAdmin, cacheKey);
     if (cached) return respond(cached);
 
-    // 6. Chama DAB (sempre com filtro de escopo — garante query rápida)
-    const dab = await getQueryConfig(supabaseAdmin);
-    const filter = buildFilter(nivel_acesso, cod_vendedor, data_inicio, data_fim, cod_vendedor_filtro);
-    const $select = SELECT_MAP[endpoint];
+    // 6. Resolve endpoint DAB — Chok-specific ou genérico multi-tenant
+    let useGeneric = false;
+    let dab: { endpointUrl: string; headers: Record<string, string>; baseUrl: string };
+    try {
+      dab = await getQueryConfig(supabaseAdmin);
+    } catch (_e) {
+      // Query Chok não configurada — usar fallback genérico
+      if (body.tenant_id) {
+        dab = await getGenericConfig(supabaseAdmin);
+        useGeneric = true;
+      } else {
+        throw _e;
+      }
+    }
+
+    // Se tenant_id informado e não é Chok, usar genérico
+    if (body.tenant_id && !useGeneric) {
+      // Verifica se é Chok consultando company
+      const { data: company } = await supabaseAdmin
+        .from("companies")
+        .select("name")
+        .eq("id", company_id)
+        .maybeSingle();
+      const isChok = company?.name?.toLowerCase().includes("chok");
+      if (!isChok) {
+        dab = await getGenericConfig(supabaseAdmin);
+        useGeneric = true;
+      }
+    }
+
+    let filter: string;
+    let $select: string;
+
+    if (useGeneric) {
+      // Endpoint genérico: sales_product_detail com tenant_id
+      filter = buildGenericFilter(body.tenant_id!, data_inicio, data_fim);
+      $select = "id_pedido,dt_venda,vl_venda,tenant_id";
+    } else {
+      // Endpoint Chok: venda_diaria_chokdist com filtro de pessoa
+      filter = buildFilter(nivel_acesso, cod_vendedor, data_inicio, data_fim, cod_vendedor_filtro);
+      $select = SELECT_MAP[endpoint];
+    }
 
     let result: any;
 
     if (endpoint === "kpis") {
       const items = await fetchAllPages(dab.endpointUrl, dab.headers, { $filter: filter, $select, $first: "2000" }, 10);
-      result = { kpis: aggregateKpis(items), cached_at: new Date().toISOString() };
+      const kpis = useGeneric ? aggregateGenericKpis(items) : aggregateKpis(items);
+      result = { kpis, cached_at: new Date().toISOString(), source: useGeneric ? "generic" : "chok" };
     } else if (endpoint === "ranking") {
       const items = await fetchAllPages(dab.endpointUrl, dab.headers, { $filter: filter, $select, $first: "2000" }, 10);
 

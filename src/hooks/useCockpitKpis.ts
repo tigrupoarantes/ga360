@@ -46,10 +46,10 @@ async function callEdgeFunction(token: string, body: object) {
 
 export function useCockpitKpis({ dataInicio, dataFim, codVendedorFiltro }: UseCockpitKpisParams) {
   const { user } = useAuth();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompany } = useCompany();
 
   return useQuery<CockpitKpisResult>({
-    queryKey: ['cockpit-kpis', selectedCompanyId, dataInicio, dataFim, codVendedorFiltro],
+    queryKey: ['cockpit-kpis', selectedCompany?.id, dataInicio, dataFim, codVendedorFiltro],
     queryFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -57,13 +57,14 @@ export function useCockpitKpis({ dataInicio, dataFim, codVendedorFiltro }: UseCo
 
       return callEdgeFunction(token, {
         endpoint: 'kpis',
-        company_id: selectedCompanyId,
+        company_id: selectedCompany?.id,
         data_inicio: dataInicio,
         data_fim: dataFim,
         cod_vendedor_filtro: codVendedorFiltro,
+        tenant_id: selectedCompany?.external_id || undefined,
       });
     },
-    enabled: !!user?.id && !!selectedCompanyId && !!dataInicio && !!dataFim,
+    enabled: !!user?.id && !!selectedCompany?.id && !!dataInicio && !!dataFim,
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });
@@ -71,10 +72,10 @@ export function useCockpitKpis({ dataInicio, dataFim, codVendedorFiltro }: UseCo
 
 export function useCockpitRanking({ dataInicio, dataFim }: { dataInicio: string; dataFim: string }) {
   const { user } = useAuth();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompany } = useCompany();
 
   return useQuery({
-    queryKey: ['cockpit-ranking', selectedCompanyId, dataInicio, dataFim],
+    queryKey: ['cockpit-ranking', selectedCompany?.id, dataInicio, dataFim],
     queryFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -82,12 +83,13 @@ export function useCockpitRanking({ dataInicio, dataFim }: { dataInicio: string;
 
       return callEdgeFunction(token, {
         endpoint: 'ranking',
-        company_id: selectedCompanyId,
+        company_id: selectedCompany?.id,
         data_inicio: dataInicio,
         data_fim: dataFim,
+        tenant_id: selectedCompany?.external_id || undefined,
       });
     },
-    enabled: !!user?.id && !!selectedCompanyId && !!dataInicio && !!dataFim,
+    enabled: !!user?.id && !!selectedCompany?.id && !!dataInicio && !!dataFim,
     staleTime: 5 * 60 * 1000,
     retry: 1,
   });
