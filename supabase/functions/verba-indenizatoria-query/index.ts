@@ -165,7 +165,15 @@ serve(async (req: Request) => {
       );
     }
 
-    // Modo: descobrir grupos contábeis disponíveis no DAB (sem sync)
+    // Mapeamento mês (número) → nome da coluna em payroll_verba_pivot
+    const MES_MAP: Record<string, string> = {
+      "01": "janeiro",  "02": "fevereiro", "03": "marco",
+      "04": "abril",    "05": "maio",      "06": "junho",
+      "07": "julho",    "08": "agosto",    "09": "setembro",
+      "10": "outubro",  "11": "novembro",  "12": "dezembro",
+    };
+
+    // Modo: descobrir grupos contábeis disponíveis (lê payroll_verba_pivot diretamente)
     if (fetchAccountingGroups) {
       if (!competencia) {
         return new Response(
@@ -174,50 +182,35 @@ serve(async (req: Request) => {
         );
       }
 
-      const [yearStr] = competencia.split("-");
+      const [yearStr, mesStr] = competencia.split("-");
       const ano = parseInt(yearStr, 10);
-      const mes = parseInt(competencia.split("-")[1], 10);
 
-      if (isNaN(ano) || isNaN(mes)) {
+      if (isNaN(ano) || !mesStr) {
         return new Response(
           JSON.stringify({ error: "Formato de competencia inválido. Use YYYY-MM" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      const vsqUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/verbas-secure-query`;
-      const vsqResp = await fetch(vsqUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-          "Content-Type": "application/json",
-          "apikey": Deno.env.get("SUPABASE_ANON_KEY")!,
-        },
-        body: JSON.stringify({
-          companyId,
-          ano,
-          mes,
-          tipoVerba: "VERBA_INDENIZATORIA",
-          fetchAll: true,
-          autoSyncWhenEmpty: false,   // VI nunca dispara sync — usa dados já sincronizados pelo card Verbas
-        }),
-      });
+      const { data: groupRows, error: groupsError } = await supabase
+        .from("payroll_verba_pivot")
+        .select("employee_accounting_group")
+        .eq("company_id", companyId)
+        .eq("ano", ano)
+        .ilike("tipo_verba", "%INDENIZ%")
+        .not("employee_accounting_group", "is", null);
 
-      if (!vsqResp.ok) {
-        const errText = await vsqResp.text();
+      if (groupsError) {
         return new Response(
-          JSON.stringify({ error: "Falha ao consultar verbas", details: errText }),
+          JSON.stringify({ error: "Falha ao consultar grupos", details: groupsError.message }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      const vsqData = await vsqResp.json();
-      const rows: Array<Record<string, unknown>> = vsqData.rows ?? vsqData.data ?? [];
-
       const groups = [
         ...new Set(
-          rows
-            .map((r) => String(r.accounting_group || r.employee_accounting_group || "").trim())
+          (groupRows ?? [])
+            .map((r) => String(r.employee_accounting_group || "").trim())
             .filter((g) => g.length > 0),
         ),
       ].sort();
@@ -229,6 +222,7 @@ serve(async (req: Request) => {
     }
 
     // Modo: listar funcionários com VERBA_INDENIZATORIA lançada na competência
+    // Lê diretamente de payroll_verba_pivot via RPC (agrega verba + adiantamento por CPF)
     if (fetchEmployeesWithVerba) {
       if (!competencia) {
         return new Response(
@@ -237,59 +231,41 @@ serve(async (req: Request) => {
         );
       }
 
-      // Competencia no formato YYYY-MM
-      const [yearStr] = competencia.split("-");
+      const [yearStr, mesStr] = competencia.split("-");
       const ano = parseInt(yearStr, 10);
-      const mes = parseInt(competencia.split("-")[1], 10);
+      const mesNome = MES_MAP[mesStr];
 
-      if (isNaN(ano) || isNaN(mes)) {
+      if (isNaN(ano) || !mesNome) {
         return new Response(
           JSON.stringify({ error: "Formato de competencia inválido. Use YYYY-MM" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      // Chamar verbas-secure-query com filtro VERBA_INDENIZATORIA
-      const vsqUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/verbas-secure-query`;
-      const vsqResp = await fetch(vsqUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-          "Content-Type": "application/json",
-          "apikey": Deno.env.get("SUPABASE_ANON_KEY")!,
-        },
-        body: JSON.stringify({
-          companyId,
-          ano,
-          mes,
-          tipoVerba: "VERBA_INDENIZATORIA",
-          fetchAll: true,
-          autoSyncWhenEmpty: false,   // VI nunca dispara sync — usa dados já sincronizados pelo card Verbas
-        }),
-      });
+      const { data: rows, error: rpcError } = await supabase
+        .rpc("get_vi_employees_for_competencia", {
+          p_company_id: companyId,
+          p_ano: ano,
+          p_mes_nome: mesNome,
+        });
 
-      if (!vsqResp.ok) {
-        const errText = await vsqResp.text();
+      if (rpcError) {
         return new Response(
-          JSON.stringify({ error: "Falha ao consultar verbas", details: errText }),
+          JSON.stringify({ error: "Falha ao consultar funcionários", details: rpcError.message }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      const vsqData = await vsqResp.json();
-      const rows: Array<Record<string, unknown>> = vsqData.rows ?? vsqData.data ?? [];
-
-      // Mapear para campos normalizados
-      const allEmployees = rows.map((r) => ({
-        cpf: String(r.cpf || r.employee_cpf || ""),
-        nome: String(r.nome || r.employee_name || ""),
-        email: r.email || r.employee_email || null,
-        valor_verba: Number(r.valor_verba || r.verba_indenizatoria || 0),
-        valor_adiantamento: Number(r.valor_adiantamento || r.adiantamento || 0),
-        department: r.department || r.employee_department || null,
-        position: r.position || r.employee_position || null,
-        unit: r.unit || r.employee_unit || null,
-        accounting_group: String(r.accounting_group || r.employee_accounting_group || "").trim() || null,
+      const allEmployees = (rows ?? []).map((r: Record<string, unknown>) => ({
+        cpf: String(r.cpf || ""),
+        nome: String(r.nome_funcionario || ""),
+        email: r.employee_email ?? null,
+        valor_verba: Number(r.valor_verba ?? 0),
+        valor_adiantamento: Number(r.valor_adiantamento ?? 0),
+        department: r.employee_department ?? null,
+        position: r.employee_position ?? null,
+        unit: r.employee_unidade ?? null,
+        accounting_group: String(r.employee_accounting_group || "").trim() || null,
       }));
 
       // Filtrar por grupos contábeis configurados (se informado)

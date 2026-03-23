@@ -117,63 +117,84 @@ serve(async (req: Request) => {
       });
     }
 
-    // 2. Buscar dados do funcionário no Datalake (via verbas-secure-query)
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    // 2. Buscar dados do funcionário diretamente de payroll_verba_pivot (já sincronizado)
+    const MES_MAP: Record<string, string> = {
+      "01": "janeiro",  "02": "fevereiro", "03": "marco",
+      "04": "abril",    "05": "maio",      "06": "junho",
+      "07": "julho",    "08": "agosto",    "09": "setembro",
+      "10": "outubro",  "11": "novembro",  "12": "dezembro",
+    };
 
     const [ano, mesStr] = competencia.split("-");
     const mes = parseInt(mesStr, 10);
+    const mesNome = MES_MAP[mesStr];
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
-    const verbasResp = await fetch(`${supabaseUrl}/functions/v1/verbas-secure-query`, {
-      method: "POST",
-      headers: {
-        Authorization: authHeader,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        companyId,
-        cpf: employeeCpf,
-        ano: parseInt(ano, 10),
-        mes,
-        pageSize: 10,
-      }),
-    });
-
-    if (!verbasResp.ok) {
-      const errData = await verbasResp.json().catch(() => ({}));
+    if (!mesNome) {
       return new Response(
-        JSON.stringify({ error: "Falha ao buscar dados do Datalake", details: errData }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        JSON.stringify({ error: "Mês inválido na competência fornecida" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const verbasData = await verbasResp.json();
-    const rows: Record<string, unknown>[] = verbasData.rows ?? [];
+    const cpfNorm = employeeCpf.replace(/\D/g, "");
 
-    // Encontrar VERBA_INDENIZATORIA e ADIANTAMENTO
-    const verbaRow = rows.find((r) =>
-      String(r.tipo_verba || "").toUpperCase().includes("INDENIZ") ||
-      String(r.tipo_evento || "").toUpperCase().includes("INDENIZ")
-    ) ?? rows[0];
+    const { data: verbaRows, error: verbaError } = await supabase
+      .from("payroll_verba_pivot")
+      .select(
+        `cpf, nome_funcionario, tipo_verba, razao_social,
+         employee_department, employee_position, employee_unidade, employee_accounting_group,
+         ${mesNome}`
+      )
+      .eq("company_id", companyId)
+      .eq("ano", parseInt(ano, 10))
+      .ilike("cpf", `%${cpfNorm}%`)
+      .ilike("tipo_verba", "%INDENIZ%");
 
-    if (!verbaRow) {
+    if (verbaError) {
+      return new Response(
+        JSON.stringify({ error: "Falha ao consultar verba", details: verbaError.message }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Separar linha verba e linha adiantamento (rows distintos por tipo_verba)
+    type PivotRow = Record<string, unknown>;
+    const verbaRow = (verbaRows as PivotRow[] ?? []).find(
+      (r: PivotRow) => !String(r.tipo_verba || "").toUpperCase().includes("ADIANT"),
+    );
+    const adiantRow = (verbaRows as PivotRow[] ?? []).find(
+      (r: PivotRow) => String(r.tipo_verba || "").toUpperCase().includes("ADIANT"),
+    );
+
+    if (!verbaRow && !adiantRow) {
       return new Response(
         JSON.stringify({ error: "Nenhuma verba encontrada para este funcionário/competência" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const valorVerba = Number(verbaRow.valor_verba ?? verbaRow.valor ?? 0);
-    const valorAdiantamento = Number(verbaRow.valor_adiantamento ?? 0);
+    const baseRow = verbaRow ?? adiantRow!;
+    const valorVerba = Number((verbaRow as Record<string, unknown>)?.[mesNome] ?? 0);
+    const valorAdiantamento = Number((adiantRow as Record<string, unknown>)?.[mesNome] ?? 0);
     const valorTotal = valorVerba + valorAdiantamento;
 
-    const employeeName = String(verbaRow.nome_funcionario ?? verbaRow.nome ?? "");
-    const employeeEmail = signerEmail || String(verbaRow.email ?? "");
-    const empresa = String(verbaRow.razao_social ?? verbaRow.empresa ?? "");
-    const departamento = String(verbaRow.departamento ?? "");
-    const cargo = String(verbaRow.cargo ?? "");
-    const unidade = String(verbaRow.unidade ?? "");
-    const grupoContabilizacao = String(verbaRow.grupo_contabilizacao ?? "");
+    // Buscar email do funcionário em external_employees
+    const { data: empData } = await supabase
+      .from("external_employees")
+      .select("email")
+      .ilike("cpf", `%${cpfNorm}%`)
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    const employeeName = String(baseRow.nome_funcionario ?? "");
+    const employeeEmail = signerEmail || empData?.email || "";
+    const empresa = String(baseRow.razao_social ?? "");
+    const departamento = String(baseRow.employee_department ?? "");
+    const cargo = String(baseRow.employee_position ?? "");
+    const unidade = String(baseRow.employee_unidade ?? "");
+    const grupoContabilizacao = String(baseRow.employee_accounting_group ?? "");
 
     const hoje = new Date();
     const dataGeracao = `${String(hoje.getDate()).padStart(2, "0")}/${String(hoje.getMonth() + 1).padStart(2, "0")}/${hoje.getFullYear()}`;
