@@ -21,10 +21,9 @@ const ALLOWED_PATHS = new Set([
   "produtos",
   "stock_lots",
   "sales_product_detail",
-  // Cockpit GA - Chok Distribuidora (detalhe operacional, obrigatório: $filter=data)
+  // Cockpit GA - Chok Distribuidora (detalhe operacional, v2 — obrigatório: $filter=data)
   "venda_diaria_chokdist",
-  "venda_diaria_chokdist_lite",
-  // Cockpit GA - Verbas/Comissões (obrigatório: $filter=ano)
+  // GA360 - Verbas/Comissões (obrigatório: $filter=ano)
   "verbas-ga360",
   "verbas",
 ]);
