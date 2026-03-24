@@ -330,6 +330,40 @@ export function useCockpitVIConfig(companyId: string | null) {
   });
 }
 
+export function useVIDelete() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      documentId: string;
+      companyId: string;
+      generatedFilePath: string | null;
+      signedFilePath: string | null;
+    }) => {
+      const filesToRemove = [params.generatedFilePath, params.signedFilePath].filter(Boolean) as string[];
+      if (filesToRemove.length > 0) {
+        const { error: storageError } = await supabase.storage
+          .from('verbas-indenizatorias')
+          .remove(filesToRemove);
+        if (storageError) throw new Error(`Erro ao remover arquivo: ${storageError.message}`);
+      }
+
+      const { error: dbError } = await supabase
+        .from('verba_indenizatoria_documents')
+        .delete()
+        .eq('id', params.documentId);
+      if (dbError) throw new Error(`Erro ao excluir registro: ${dbError.message}`);
+    },
+    onSuccess: (_, vars) => {
+      toast.success('Documento excluído');
+      queryClient.invalidateQueries({ queryKey: ['verbas-indenizatorias', vars.companyId] });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
+}
+
 export function useVIDocumentLogs(documentId: string | null) {
 
 

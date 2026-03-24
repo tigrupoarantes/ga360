@@ -8,11 +8,11 @@ import { Separator } from '@/components/ui/separator';
 import { VIStatusBadge } from './VIStatusBadge';
 import { VIDocumentPreview } from './VIDocumentPreview';
 import { VITimelineLog } from './VITimelineLog';
-import { useVIResend, useVICancel } from '@/hooks/useVerbasIndenizatorias';
+import { useVIResend, useVICancel, useVIDelete } from '@/hooks/useVerbasIndenizatorias';
 import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Mail, XCircle, Eye, Download } from 'lucide-react';
+import { Mail, XCircle, Eye, Download, Trash2 } from 'lucide-react';
 
 interface Props {
   document: VIDocument | null;
@@ -38,7 +38,9 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
 export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Props) {
   const resendMutation = useVIResend();
   const cancelMutation = useVICancel();
+  const deleteMutation = useVIDelete();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!doc) return null;
 
@@ -129,23 +131,63 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
             )}
 
             {(doc.generated_file_path || doc.signed_file_path) && (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => setPreviewOpen(true)}
-              >
-                {doc.signed_file_path ? (
-                  <>
-                    <Download className="h-4 w-4 mr-2" />
-                    Visualizar / Baixar documento assinado
-                  </>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setPreviewOpen(true)}
+                >
+                  {doc.signed_file_path ? (
+                    <>
+                      <Download className="h-4 w-4 mr-2" />
+                      Visualizar / Baixar documento assinado
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="h-4 w-4 mr-2" />
+                      Visualizar documento gerado
+                    </>
+                  )}
+                </Button>
+                {confirmDelete ? (
+                  <div className="flex gap-1">
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      disabled={deleteMutation.isPending}
+                      onClick={() =>
+                        deleteMutation.mutate(
+                          {
+                            documentId: doc.id,
+                            companyId,
+                            generatedFilePath: doc.generated_file_path,
+                            signedFilePath: doc.signed_file_path,
+                          },
+                          { onSuccess: onClose },
+                        )
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setConfirmDelete(false)}
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </Button>
+                  </div>
                 ) : (
-                  <>
-                    <Eye className="h-4 w-4 mr-2" />
-                    Visualizar documento gerado
-                  </>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 )}
-              </Button>
+              </div>
             )}
 
             {canCancel && (
