@@ -264,7 +264,7 @@ function normalizeFetchedEmployee(rawEmployee: DabEmployee | DabEmployeeRaw): No
   const raw = rawEmployee as DabEmployeeRaw;
   const cpf = normalizeDocument(raw.cpf ?? raw.CPF);
   const externalId = (raw.id_funcionario || cpf || "").trim();
-  const fullName = (raw.nome_funcionario ?? raw.Nome_Funcionario || "").trim();
+  const fullName = (raw.nome_funcionario ?? raw.Nome_Funcionario ?? "").trim();
 
   if (!externalId) {
     return {
