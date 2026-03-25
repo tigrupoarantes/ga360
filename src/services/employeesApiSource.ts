@@ -57,6 +57,54 @@ export interface DabEmployee {
   cod_empresa?: number | null;
   cod_contabilizacao?: number | string | null;
   nome_fantasia?: string | null;
+  data_demissao?: string | null;
+  situacao_raw?: number | string | null;
+}
+
+interface DabEmployeeRaw {
+  id_funcionario?: string | null;
+  cpf?: string | null;
+  nome_funcionario?: string | null;
+  email?: string | null;
+  sexo?: string | null;
+  data_nascimento?: string | null;
+  idade?: number | string | null;
+  primeiro_emprego?: string | null;
+  data_admissao?: string | null;
+  data_demissao?: string | null;
+  contabilizacao?: string | null;
+  cargo?: string | null;
+  categoria?: string | null;
+  unidade?: string | null;
+  departamento?: string | null;
+  funcao?: string | null;
+  cod_empresa?: number | null;
+  cod_contabilizacao?: number | string | null;
+  nome_fantasia?: string | null;
+  Situacao?: number | string | null;
+  CPF?: string | null;
+  Nome_Funcionario?: string | null;
+  Email?: string | null;
+  Sexo?: string | null;
+  Data_Nascimento?: string | null;
+  Idade?: number | string | null;
+  Data_Admissao?: string | null;
+  Data_Demissao?: string | null;
+  Primeiro_Emprego?: string | null;
+  Contabilizacao?: string | null;
+  Cargo?: string | null;
+  Categoria?: string | null;
+  Departamento?: string | null;
+  Funcao?: string | null;
+  Cod_Empresa?: number | string | null;
+  Cod_Contabilizacao?: number | string | null;
+  Nome_Fantasia?: string | null;
+}
+
+interface NormalizedEmployeeResult {
+  employee: DabEmployee | null;
+  error?: string;
+  maskedCpf: string;
 }
 
 function resolveUnit(employee: DabEmployee): string | null {
@@ -196,10 +244,69 @@ function normalizeInteger(value: string | number | null | undefined): number | n
   return Math.trunc(parsed);
 }
 
+function normalizeSituacaoToIsActive(value: number | string | null | undefined): boolean {
+  if (value === null || value === undefined || value === "") return true;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "0" || normalized === "inativo" || normalized === "desligado") return false;
+  if (normalized === "1" || normalized === "ativo") return true;
+
+  return true;
+}
+
 function maskSensitiveForLog(value: string | null | undefined): string {
   const digits = (value || "").replace(/\D/g, "");
   if (digits.length < 4) return "***";
   return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+}
+
+function normalizeFetchedEmployee(rawEmployee: DabEmployee | DabEmployeeRaw): NormalizedEmployeeResult {
+  const raw = rawEmployee as DabEmployeeRaw;
+  const cpf = normalizeDocument(raw.cpf ?? raw.CPF);
+  const externalId = (raw.id_funcionario || cpf || "").trim();
+  const fullName = (raw.nome_funcionario ?? raw.Nome_Funcionario || "").trim();
+
+  if (!externalId) {
+    return {
+      employee: null,
+      error: "Registro descartado: funcionário sem id_funcionario e sem CPF válido.",
+      maskedCpf: maskSensitiveForLog(raw.cpf ?? raw.CPF),
+    };
+  }
+
+  if (!fullName) {
+    return {
+      employee: null,
+      error: "Registro descartado: funcionário sem nome.",
+      maskedCpf: maskSensitiveForLog(raw.cpf ?? raw.CPF),
+    };
+  }
+
+  return {
+    employee: {
+      id_funcionario: externalId,
+      cpf,
+      nome_funcionario: fullName,
+      email: raw.email ?? raw.Email ?? null,
+      sexo: raw.sexo ?? raw.Sexo ?? null,
+      data_nascimento: raw.data_nascimento ?? raw.Data_Nascimento ?? null,
+      idade: raw.idade ?? raw.Idade ?? null,
+      primeiro_emprego: raw.primeiro_emprego ?? raw.Primeiro_Emprego ?? null,
+      data_admissao: raw.data_admissao ?? raw.Data_Admissao ?? null,
+      data_demissao: raw.data_demissao ?? raw.Data_Demissao ?? null,
+      contabilizacao: raw.contabilizacao ?? raw.Contabilizacao ?? null,
+      cargo: raw.cargo ?? raw.Cargo ?? null,
+      categoria: raw.categoria ?? raw.Categoria ?? null,
+      unidade: raw.unidade ?? null,
+      departamento: raw.departamento ?? raw.Departamento ?? null,
+      funcao: raw.funcao ?? raw.Funcao ?? null,
+      cod_empresa: normalizeInteger(raw.cod_empresa ?? raw.Cod_Empresa),
+      cod_contabilizacao: raw.cod_contabilizacao ?? raw.Cod_Contabilizacao ?? null,
+      nome_fantasia: raw.nome_fantasia ?? raw.Nome_Fantasia ?? null,
+      situacao_raw: raw.Situacao ?? null,
+    },
+    maskedCpf: maskSensitiveForLog(raw.cpf ?? raw.CPF),
+  };
 }
 
 function trackEmployeesApiError(status: number | undefined, context: string, details?: unknown) {
@@ -956,6 +1063,38 @@ export async function syncEmployeesFromDab(
 
   let syncLogCompanyId = options?.companyId || null;
   let syncLogId: string | null = null;
+  const normalizedEmployees: DabEmployee[] = [];
+  const normalizationErrors: Array<{ employee: string | null; reason: string }> = [];
+
+  for (const fetchedEmployee of fetchedEmployees) {
+    const normalizedResult = normalizeFetchedEmployee(fetchedEmployee);
+    if (normalizedResult.employee) {
+      normalizedEmployees.push(normalizedResult.employee);
+      continue;
+    }
+
+    normalizationErrors.push({
+      employee: normalizedResult.maskedCpf,
+      reason: normalizedResult.error || "unknown_error",
+    });
+  }
+
+  if (normalizedEmployees.length === 0) {
+    throw new Error(
+      `Nenhum funcionario valido foi normalizado a partir do payload da API. ${JSON.stringify({
+        total_fetched: fetchedEmployees.length,
+        discarded_records: normalizationErrors.length,
+        normalization_errors: normalizationErrors,
+        pages_fetched: diagnostics.pagesFetched,
+        first_page_count: diagnostics.firstPageCount,
+        had_next_link: diagnostics.hadNextLink,
+        used_offset_fallback: diagnostics.usedOffsetFallback,
+        retried_without_connection: diagnostics.retriedWithoutConnection,
+        retried_default_connection: diagnostics.retriedWithDefaultConnection,
+        connection_id: diagnostics.connectionId,
+      })}`,
+    );
+  }
 
   onProgress?.({
     stage: "preparing",
@@ -969,17 +1108,23 @@ export async function syncEmployeesFromDab(
     }
 
     const uniquePayloadByKey = new Map<string, ExternalEmployeeInsert>();
+    let companyResolvedCount = 0;
+    let companyUnresolvedCount = 0;
 
-    for (const employee of fetchedEmployees) {
-      if (!employee.id_funcionario || !employee.nome_funcionario) continue;
-
+    for (const employee of normalizedEmployees) {
       const resolvedContractCompanyId = resolveContractCompanyId(employee, companyLookup);
       const resolvedAccountingCompanyId = resolveAccountingCompanyId(employee, companyLookup);
       const contractCompanyId = resolvedContractCompanyId || options?.companyId || null;
       const accountingCompanyId = resolvedAccountingCompanyId || null;
-        const accountingLabel = resolveAccountingLabel(employee);
-        const accountingCode = resolveAccountingCode(employee);
+      const accountingLabel = resolveAccountingLabel(employee);
+      const accountingCode = resolveAccountingCode(employee);
       const uniqueKey = buildEmployeeUniqueKey(contractCompanyId, employee.id_funcionario);
+
+      if (contractCompanyId) {
+        companyResolvedCount += 1;
+      } else {
+        companyUnresolvedCount += 1;
+      }
 
       uniquePayloadByKey.set(uniqueKey, {
         external_id: employee.id_funcionario,
@@ -1007,6 +1152,8 @@ export async function syncEmployeesFromDab(
           categoria: employee.categoria || null,
           sexo_raw: employee.sexo || null,
           primeiro_emprego_raw: employee.primeiro_emprego || null,
+          dismissal_date: normalizeDate(employee.data_demissao),
+          situacao_raw: employee.situacao_raw ?? null,
           contract_company_id: contractCompanyId,
           accounting_company_id: accountingCompanyId,
           cpf_masked: maskSensitiveForLog(employee.cpf),
@@ -1014,7 +1161,7 @@ export async function syncEmployeesFromDab(
         contract_company_id: contractCompanyId,
         accounting_company_id: accountingCompanyId,
         company_id: contractCompanyId,
-        is_active: true,
+        is_active: normalizeSituacaoToIsActive(employee.situacao_raw),
         synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -1031,6 +1178,11 @@ export async function syncEmployeesFromDab(
       recordsReceived: fetchedEmployees.length,
       diagnostics: {
         phase: "full_refresh",
+        normalized_records: normalizedEmployees.length,
+        discarded_records: normalizationErrors.length,
+        company_resolved_records: companyResolvedCount,
+        company_unresolved_records: companyUnresolvedCount,
+        normalization_errors: normalizationErrors,
         pages_fetched: diagnostics.pagesFetched,
         first_page_count: diagnostics.firstPageCount,
         had_next_link: diagnostics.hadNextLink,
@@ -1098,10 +1250,15 @@ export async function syncEmployeesFromDab(
       status: "success",
       created: inserted,
       updated: 0,
-      failed: 0,
+      failed: normalizationErrors.length,
       recordsReceived: fetchedEmployees.length,
       errors: {
         phase: "full_refresh",
+        normalized_records: normalizedEmployees.length,
+        discarded_records: normalizationErrors.length,
+        company_resolved_records: companyResolvedCount,
+        company_unresolved_records: companyUnresolvedCount,
+        normalization_errors: normalizationErrors,
         pages_fetched: diagnostics.pagesFetched,
         first_page_count: diagnostics.firstPageCount,
         had_next_link: diagnostics.hadNextLink,
@@ -1135,6 +1292,8 @@ export async function syncEmployeesFromDab(
 
   let inserted = 0;
   let updated = 0;
+  let companyResolvedCount = 0;
+  let companyUnresolvedCount = 0;
 
   if (!syncLogCompanyId) {
     syncLogCompanyId = options?.companyId || null;
@@ -1145,6 +1304,9 @@ export async function syncEmployeesFromDab(
     recordsReceived: fetchedEmployees.length,
     diagnostics: {
       phase: "incremental",
+      normalized_records: normalizedEmployees.length,
+      discarded_records: normalizationErrors.length,
+      normalization_errors: normalizationErrors,
       pages_fetched: diagnostics.pagesFetched,
       first_page_count: diagnostics.firstPageCount,
       had_next_link: diagnostics.hadNextLink,
@@ -1155,13 +1317,18 @@ export async function syncEmployeesFromDab(
     },
   });
 
-  for (const employee of fetchedEmployees) {
-    if (!employee.id_funcionario || !employee.nome_funcionario) continue;
-
-    const contractCompanyId = resolveContractCompanyId(employee, companyLookup);
+  for (const employee of normalizedEmployees) {
+    const contractCompanyId = resolveContractCompanyId(employee, companyLookup) || options?.companyId || null;
     const accountingCompanyId = resolveAccountingCompanyId(employee, companyLookup);
     const accountingLabel = resolveAccountingLabel(employee);
     const accountingCode = resolveAccountingCode(employee);
+
+    if (contractCompanyId) {
+      companyResolvedCount += 1;
+    } else {
+      companyUnresolvedCount += 1;
+    }
+
     const payload: ExternalEmployeeInsert = {
       external_id: employee.id_funcionario,
       source_system: SOURCE_SYSTEM,
@@ -1188,6 +1355,8 @@ export async function syncEmployeesFromDab(
         categoria: employee.categoria || null,
         sexo_raw: employee.sexo || null,
         primeiro_emprego_raw: employee.primeiro_emprego || null,
+        dismissal_date: normalizeDate(employee.data_demissao),
+        situacao_raw: employee.situacao_raw ?? null,
         contract_company_id: contractCompanyId,
         accounting_company_id: accountingCompanyId,
         cpf_masked: maskSensitiveForLog(employee.cpf),
@@ -1195,7 +1364,7 @@ export async function syncEmployeesFromDab(
       contract_company_id: contractCompanyId,
       accounting_company_id: accountingCompanyId,
       company_id: contractCompanyId,
-      is_active: true,
+      is_active: normalizeSituacaoToIsActive(employee.situacao_raw),
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1298,10 +1467,15 @@ export async function syncEmployeesFromDab(
     status: "success",
     created: inserted,
     updated,
-    failed: 0,
+    failed: normalizationErrors.length,
     recordsReceived: fetchedEmployees.length,
     errors: {
       phase: "incremental",
+      normalized_records: normalizedEmployees.length,
+      discarded_records: normalizationErrors.length,
+      company_resolved_records: companyResolvedCount,
+      company_unresolved_records: companyUnresolvedCount,
+      normalization_errors: normalizationErrors,
       pages_fetched: diagnostics.pagesFetched,
       first_page_count: diagnostics.firstPageCount,
       had_next_link: diagnostics.hadNextLink,

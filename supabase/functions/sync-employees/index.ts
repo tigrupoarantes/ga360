@@ -41,6 +41,39 @@ interface EmployeeRecord {
   phone?: string;
   hire_date?: string;
   metadata?: Record<string, any>;
+
+  // Formato bruto da API DAB
+  Situacao?: number | string | null;
+  CPF?: string | null;
+  Nome_Funcionario?: string | null;
+  Email?: string | null;
+  Sexo?: string | null;
+  Data_Nascimento?: string | null;
+  Idade?: number | string | null;
+  Data_Admissao?: string | null;
+  Data_Demissao?: string | null;
+  Primeiro_Emprego?: string | null;
+  Contabilizacao?: string | null;
+  Cargo?: string | null;
+  Categoria?: string | null;
+  Departamento?: string | null;
+  Funcao?: string | null;
+  Cod_Empresa?: number | string | null;
+  Nome_Fantasia?: string | null;
+  id_funcionario?: string | null;
+  nome_funcionario?: string | null;
+  data_admissao?: string | null;
+  data_demissao?: string | null;
+  nome_fantasia?: string | null;
+  cod_empresa?: number | string | null;
+  primeiro_emprego?: string | null;
+  contabilizacao?: string | null;
+  data_nascimento?: string | null;
+  situacao_raw?: number | string | null;
+  funcao?: string | null;
+  categoria?: string | null;
+  sexo?: string | null;
+  idade?: number | string | null;
 }
 
 // Mapeamento de CPF para email
@@ -165,10 +198,65 @@ function normalizeCnpj(cnpj: string | undefined): string | undefined {
   return cnpj.replace(/\D/g, '');
 }
 
+function normalizeCpf(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.replace(/\D/g, '');
+  return normalized || undefined;
+}
+
+function normalizeSituacao(value: number | string | boolean | null | undefined): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value === 0 || value === '0') return false;
+  if (value === 1 || value === '1') return true;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'ativo') return true;
+    if (normalized === 'inativo') return false;
+  }
+  return true;
+}
+
+function normalizeEmployeeRecord(emp: EmployeeRecord): EmployeeRecord {
+  const cpf = normalizeCpf(emp.cpf ?? emp.CPF);
+  const externalId = emp.id || emp.external_id || emp.id_funcionario || cpf;
+  const fullName = emp.nome || emp.full_name || emp.nome_funcionario || emp.Nome_Funcionario || undefined;
+
+  return {
+    ...emp,
+    id: externalId,
+    external_id: externalId,
+    nome: fullName,
+    full_name: fullName,
+    cpf,
+    email: emp.email ?? emp.Email ?? undefined,
+    cargo: emp.cargo ?? emp.Cargo ?? undefined,
+    position: emp.position ?? emp.cargo ?? emp.Cargo ?? undefined,
+    departamento: emp.departamento ?? emp.Departamento ?? undefined,
+    department: emp.department ?? emp.departamento ?? emp.Departamento ?? undefined,
+    unidade: emp.unidade ?? emp.Nome_Fantasia ?? emp.nome_fantasia ?? undefined,
+    hire_date: emp.hire_date ?? emp.data_admissao ?? emp.Data_Admissao ?? undefined,
+    is_active: emp.is_active ?? normalizeSituacao(emp.situacao_raw ?? emp.Situacao ?? emp.status),
+    metadata: {
+      ...(emp.metadata || {}),
+      function_name: emp.funcao ?? emp.Funcao ?? null,
+      categoria: emp.categoria ?? emp.Categoria ?? null,
+      company_code: emp.cod_empresa ?? emp.Cod_Empresa ?? null,
+      company_name: emp.nome_fantasia ?? emp.Nome_Fantasia ?? null,
+      contabilizacao_raw: emp.contabilizacao ?? emp.Contabilizacao ?? null,
+      dismissal_date: emp.data_demissao ?? emp.Data_Demissao ?? null,
+      situacao_raw: emp.situacao_raw ?? emp.Situacao ?? null,
+      sexo_raw: emp.sexo ?? emp.Sexo ?? null,
+      primeiro_emprego_raw: emp.primeiro_emprego ?? emp.Primeiro_Emprego ?? null,
+      idade_raw: emp.idade ?? emp.Idade ?? null,
+    },
+  };
+}
+
 interface SyncRequest {
   company_external_id?: string; // Agora OPCIONAL (fallback)
   source_system?: string;
-  employees: EmployeeRecord[];
+  employees?: EmployeeRecord[];
+  value?: EmployeeRecord[];
 }
 
 interface CompanyStats {
@@ -211,19 +299,26 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body: SyncRequest = await req.json();
+    const employeesPayload = Array.isArray(body.employees)
+      ? body.employees
+      : Array.isArray(body.value)
+        ? body.value
+        : null;
     const sourceSystem = body.source_system || 'gestao_ativos';
     const globalCompanyExternalId = body.company_external_id;
     const syncTimestamp = new Date().toISOString();
-    
-    console.log(`[sync-employees] Received ${body.employees?.length || 0} records from ${sourceSystem}`);
+
+    console.log(`[sync-employees] Received ${employeesPayload?.length || 0} records from ${sourceSystem}`);
     console.log(`[sync-employees] Global company_external_id: ${globalCompanyExternalId || 'not provided'}`);
 
-    if (!body.employees || !Array.isArray(body.employees)) {
+    if (!employeesPayload) {
       return new Response(
-        JSON.stringify({ error: 'Invalid request body. Required: employees[]' }),
+        JSON.stringify({ error: 'Invalid request body. Required: employees[] or value[]' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const normalizedEmployees = employeesPayload.map((emp) => normalizeEmployeeRecord(emp));
 
     // Carregar todas as empresas para criar mapa CNPJ → ID
     const { data: companies, error: companiesError } = await supabase
@@ -256,7 +351,7 @@ serve(async (req) => {
 
     // Identificar CNPJs únicos no payload
     const uniqueCnpjs = new Set<string>();
-    for (const emp of body.employees) {
+    for (const emp of normalizedEmployees) {
       const cnpj = normalizeCnpj(emp.cnpj_empresa);
       if (cnpj) uniqueCnpjs.add(cnpj);
     }
@@ -293,14 +388,14 @@ serve(async (req) => {
       .insert({
         company_id: firstCompanyId,
         sync_type: 'employees',
-        records_received: body.employees.length,
+        records_received: normalizedEmployees.length,
         status: 'running'
       })
       .select()
       .single();
 
     // Primeira passada: inserir/atualizar funcionários
-    for (const emp of body.employees) {
+    for (const emp of normalizedEmployees) {
       try {
         const externalId = emp.id || emp.external_id;
         const fullName = emp.nome || emp.full_name;
@@ -316,12 +411,7 @@ serve(async (req) => {
         const cnhCategoria = emp.cnh_categoria;
         const cnhValidade = emp.cnh_validade;
 
-        let isActive = true;
-        if (emp.status !== undefined) {
-          isActive = emp.status.toLowerCase() === 'ativo';
-        } else if (emp.is_active !== undefined) {
-          isActive = emp.is_active;
-        }
+        const isActive = normalizeSituacao(emp.situacao_raw ?? emp.Situacao ?? emp.status ?? emp.is_active);
 
         if (!externalId || !fullName) {
           throw new Error('Missing required fields: id/external_id and nome/full_name');
@@ -427,7 +517,7 @@ serve(async (req) => {
     }
 
     // Segunda passada: mapear lider_direto_id
-    for (const emp of body.employees) {
+    for (const emp of normalizedEmployees) {
       const liderExternalId = emp.lider_direto_id;
       if (!liderExternalId) continue;
 
@@ -451,7 +541,7 @@ serve(async (req) => {
     const processedCompanyIds = new Set<string>();
     const companyExternalIdsByCompany = new Map<string, Set<string>>();
 
-    for (const emp of body.employees) {
+    for (const emp of normalizedEmployees) {
       const externalId = emp.id || emp.external_id;
       const empCnpj = normalizeCnpj(emp.cnpj_empresa);
       let companyId: string | null = null;
