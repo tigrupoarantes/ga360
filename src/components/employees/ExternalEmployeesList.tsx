@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCompany } from "@/contexts/CompanyContext";
@@ -11,7 +12,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/external-client";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, MapPin, UserCircle, UserPlus, Pencil, Trash2 } from "lucide-react";
+import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, MapPin, UserCircle, UserPlus, Pencil, Trash2, CheckCircle2, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,7 +29,7 @@ import { toast } from "sonner";
 import { ConvertToUsersDialog } from "./ConvertToUsersDialog";
 import { ImportEmployeesDialog } from "./ImportEmployeesDialog";
 import { EditEmployeeDialog } from "./EditEmployeeDialog";
-import { syncEmployeesFromDab } from "@/services/employeesApiSource";
+import { syncEmployeesFromDab, type EmployeesSyncProgress } from "@/services/employeesApiSource";
 
 interface LinkedProfile {
   id: string;
@@ -86,8 +88,10 @@ export function ExternalEmployeesList() {
   const [loading, setLoading] = useState(true);
   const [syncingApi, setSyncingApi] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<EmployeesSyncProgress | null>(null);
+  const [syncStartedAt, setSyncStartedAt] = useState<number | null>(null);
+  const [syncElapsedSeconds, setSyncElapsedSeconds] = useState(0);
   const [employees, setEmployees] = useState<ExternalEmployee[]>([]);
-  // ... (keep state variables same) ...
   const [filteredEmployees, setFilteredEmployees] = useState<ExternalEmployee[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
@@ -108,6 +112,7 @@ export function ExternalEmployeesList() {
   const [deleting, setDeleting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [syncPanelDismissed, setSyncPanelDismissed] = useState(false);
   // Verificar se o usuário pode ver todas as empresas
   const canViewAllCompanies = role === 'super_admin' || hasAllCompaniesAccess;
 
@@ -125,6 +130,22 @@ export function ExternalEmployeesList() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter, rowsPerPage]);
+
+  useEffect(() => {
+    if (!syncingApi || !syncStartedAt) return;
+
+    const intervalId = window.setInterval(() => {
+      setSyncElapsedSeconds(Math.max(0, Math.floor((Date.now() - syncStartedAt) / 1000)));
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [syncingApi, syncStartedAt]);
+
+  useEffect(() => {
+    if (syncProgress?.stage !== "finishing") return;
+    const timer = setTimeout(() => setSyncPanelDismissed(true), 8000);
+    return () => clearTimeout(timer);
+  }, [syncProgress?.stage]);
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -414,6 +435,13 @@ export function ExternalEmployeesList() {
 
   const handleApiSync = async () => {
     setSyncingApi(true);
+    setSyncPanelDismissed(false);
+    setSyncProgress({
+      stage: "starting",
+      message: "Conectando com a API de funcionarios...",
+    });
+    setSyncStartedAt(Date.now());
+    setSyncElapsedSeconds(0);
     setSyncStatus("Iniciando sincronização...");
     try {
       const fallbackCompanyId =
@@ -425,6 +453,7 @@ export function ExternalEmployeesList() {
         companyId: fallbackCompanyId,
         onProgress: (progress) => {
           setSyncStatus(progress.message);
+          setSyncProgress(progress);
         },
       });
       toast.success(`Sincronização concluída: ${result.totalFetched} lidos, ${result.inserted} novos, ${result.updated} atualizados, ${result.deactivated} inativados.`);
@@ -433,9 +462,22 @@ export function ExternalEmployeesList() {
         await fetchConvertibleCount();
       }
       setSyncStatus(`Concluído: ${result.totalFetched} lidos, ${result.inserted} inseridos/atualizados.`);
-    } catch (error: any) {
-      const status = error?.context?.status ?? error?.status;
-      const details = error?.details || error?.message;
+      setSyncProgress({
+        stage: "finishing",
+        message: `Sincronizacao concluida. ${result.totalFetched} lidos, ${result.inserted} novos, ${result.updated} atualizados, ${result.deactivated} inativados.`,
+        totalFetched: result.totalFetched,
+        inserted: result.inserted + result.updated,
+        totalToInsert: result.totalFetched,
+      });
+    } catch (error: unknown) {
+      const typedError = error as {
+        context?: { status?: number };
+        status?: number;
+        details?: string;
+        message?: string;
+      };
+      const status = typedError?.context?.status ?? typedError?.status;
+      const details = typedError?.details || typedError?.message;
       if (status === 401) {
         toast.error('Sessão inválida. Faça login novamente.');
       } else if (status === 403) {
@@ -452,11 +494,94 @@ export function ExternalEmployeesList() {
         toast.error(details ? `Erro ao sincronizar funcionários via API: ${details}` : 'Erro ao sincronizar funcionários via API.');
       }
       setSyncStatus(details ? `Erro: ${details}` : "Erro na sincronização.");
-      console.error('[employees_api_sync_failed]', { status, message: error?.message, details });
+      setSyncProgress((current) => current ? {
+        ...current,
+        message: details ? `Erro na sincronizacao: ${details}` : "Erro na sincronizacao.",
+      } : null);
+      console.error('[employees_api_sync_failed]', { status, message: typedError?.message, details });
     } finally {
       setSyncingApi(false);
     }
   };
+
+  const getSyncProgressValue = () => {
+    if (!syncProgress) return 0;
+
+    switch (syncProgress.stage) {
+      case "starting":
+        return 5;
+      case "fetching":
+        return 20;
+      case "fallback-pagination":
+        return 30;
+      case "preparing":
+        return 45;
+      case "clearing":
+        return 55;
+      case "inserting":
+        if (syncProgress.totalToInsert && syncProgress.totalToInsert > 0) {
+          const ratio = Math.min((syncProgress.inserted || 0) / syncProgress.totalToInsert, 1);
+          return 60 + ratio * 35;
+        }
+        return 70;
+      case "finishing":
+        return 100;
+      default:
+        return 0;
+    }
+  };
+
+  const getSyncStageLabel = () => {
+    switch (syncProgress?.stage) {
+      case "starting":
+        return "Conectando";
+      case "fetching":
+        return "Lendo dados";
+      case "fallback-pagination":
+        return "Continuando leitura";
+      case "preparing":
+        return "Preparando";
+      case "clearing":
+        return "Limpando base";
+      case "inserting":
+        return "Gravando no banco";
+      case "finishing":
+        return "Finalizando";
+      default:
+        return "Sincronizando";
+    }
+  };
+
+  const formatElapsedTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+
+    if (minutes <= 0) {
+      return `${remainingSeconds}s`;
+    }
+
+    return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
+  };
+
+  const SYNC_STEP_LABELS = ["Conectar", "Ler dados", "Preparar", "Gravar", "Concluído"];
+  const STAGE_TO_STEP: Record<string, number> = {
+    starting: 0,
+    fetching: 1,
+    "fallback-pagination": 1,
+    preparing: 2,
+    clearing: 2,
+    inserting: 3,
+    finishing: 4,
+  };
+  const currentSyncStep = STAGE_TO_STEP[syncProgress?.stage ?? ""] ?? 0;
+
+  const syncProgressValue = getSyncProgressValue();
+  const syncStageLabel = getSyncStageLabel();
+  const syncCounterText = syncProgress?.stage === "inserting" && syncProgress.totalToInsert
+    ? `${syncProgress.inserted || 0}/${syncProgress.totalToInsert} registros gravados`
+    : syncProgress?.totalFetched
+      ? `${syncProgress.totalFetched} registros lidos da API`
+      : "Aguardando resposta da integracao";
 
   return (
     <Card>
@@ -503,7 +628,7 @@ export function ExternalEmployeesList() {
               ) : (
                 <RefreshCw className="h-4 w-4 mr-2" />
               )}
-              Sincronizar API
+              {syncingApi ? "Sincronizando..." : "Sincronizar API"}
             </Button>
             <Button variant="outline" size="sm" onClick={relinkAllEmployees} disabled={relinkingAll}>
               {relinkingAll ? (
@@ -536,6 +661,97 @@ export function ExternalEmployeesList() {
         }}
       />
       <CardContent>
+        {syncProgress && !syncPanelDismissed && (
+          <div className={cn(
+            "mb-6 rounded-xl border p-4 transition-colors duration-300",
+            syncProgress.stage === "finishing"
+              ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/30"
+              : "border-border bg-muted/30"
+          )}>
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {syncProgress.stage === "finishing" ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold">{syncStageLabel}</p>
+                    <Badge
+                      variant="secondary"
+                      className={syncProgress.stage === "finishing"
+                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300"
+                        : ""}
+                    >
+                      {Math.round(syncProgressValue)}%
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {syncProgress.message || syncStatus || "Sincronizando funcionários..."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="hidden sm:block text-right text-xs text-muted-foreground">
+                  <p className="font-medium">{syncCounterText}</p>
+                  <p className="mt-0.5">
+                    {syncingApi
+                      ? `Tempo decorrido: ${formatElapsedTime(syncElapsedSeconds)}`
+                      : "Execução concluída"}
+                  </p>
+                </div>
+                {syncProgress.stage === "finishing" && (
+                  <button
+                    className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                    onClick={() => setSyncPanelDismissed(true)}
+                    aria-label="Fechar painel de progresso"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Step indicator */}
+            <div className="flex items-end gap-1.5 mb-3">
+              {SYNC_STEP_LABELS.map((label, idx) => {
+                const isDone = idx < currentSyncStep;
+                const isActive = idx === currentSyncStep;
+                return (
+                  <div key={label} className="flex-1 flex flex-col items-center gap-1">
+                    <div className={cn(
+                      "h-1.5 w-full rounded-full transition-colors duration-500",
+                      isDone ? "bg-emerald-500" : isActive ? "bg-primary" : "bg-muted"
+                    )} />
+                    <span className={cn(
+                      "text-[9px] hidden sm:block transition-colors leading-none",
+                      isDone ? "text-emerald-600 dark:text-emerald-400"
+                        : isActive ? "text-foreground font-medium"
+                        : "text-muted-foreground/50"
+                    )}>
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Progress bar */}
+            <Progress
+              value={syncProgressValue}
+              className={cn("h-2", syncProgress.stage === "finishing" && "[&>div]:bg-emerald-500")}
+            />
+
+            {/* Mobile counter */}
+            <div className="sm:hidden mt-2 flex justify-between text-xs text-muted-foreground">
+              <span>{syncCounterText}</span>
+              {syncingApi && <span>⏱ {formatElapsedTime(syncElapsedSeconds)}</span>}
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="relative flex-1">
