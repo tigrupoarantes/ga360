@@ -2,16 +2,14 @@ import { useState } from 'react';
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from '@/components/ui/sheet';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { VIStatusBadge } from './VIStatusBadge';
 import { VIDocumentPreview } from './VIDocumentPreview';
 import { VITimelineLog } from './VITimelineLog';
-import { useVIResend, useVICancel, useVIDelete } from '@/hooks/useVerbasIndenizatorias';
+import { useVIResend, useVICancel, useVIDelete, VI_DELETABLE_STATUSES } from '@/hooks/useVerbasIndenizatorias';
 import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { useAuth } from '@/contexts/AuthContext';
 import { Mail, XCircle, Eye, Download, Trash2 } from 'lucide-react';
 
 interface Props {
@@ -36,6 +34,7 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
 }
 
 export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Props) {
+  const { user, role } = useAuth();
   const resendMutation = useVIResend();
   const cancelMutation = useVICancel();
   const deleteMutation = useVIDelete();
@@ -47,6 +46,9 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
   const valorTotal = Number(doc.valor_verba) + Number(doc.valor_adiantamento);
   const canResend = ['sent_to_sign', 'waiting_signature'].includes(doc.d4sign_status) && doc.employee_email;
   const canCancel = doc.d4sign_document_uuid && !['signed', 'cancelled'].includes(doc.d4sign_status);
+  const canDelete =
+    VI_DELETABLE_STATUSES.includes(doc.d4sign_status as (typeof VI_DELETABLE_STATUSES)[number]) &&
+    (role === 'super_admin' || doc.created_by === user?.id);
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -107,7 +109,7 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
               Histórico
             </p>
-            <VITimelineLog documentId={doc.id} />
+            <VITimelineLog documentId={doc.id} companyId={companyId} />
           </div>
 
           {doc.d4sign_error_message && (
@@ -149,45 +151,52 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
                     </>
                   )}
                 </Button>
-                {confirmDelete ? (
-                  <div className="flex gap-1">
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      disabled={deleteMutation.isPending}
-                      onClick={() =>
-                        deleteMutation.mutate(
-                          {
-                            documentId: doc.id,
-                            companyId,
-                            generatedFilePath: doc.generated_file_path,
-                            signedFilePath: doc.signed_file_path,
-                          },
-                          { onSuccess: onClose },
-                        )
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                {canDelete && (
+                  confirmDelete ? (
+                    <div className="flex gap-1">
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        disabled={deleteMutation.isPending}
+                        onClick={() =>
+                          deleteMutation.mutate(
+                            {
+                              documentId: doc.id,
+                              companyId,
+                            },
+                            { onSuccess: onClose },
+                          )
+                        }
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setConfirmDelete(false)}
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={() => setConfirmDelete(false)}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      title="Excluir documento local"
+                      onClick={() => setConfirmDelete(true)}
                     >
-                      <XCircle className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
-                  </div>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => setConfirmDelete(true)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  )
                 )}
               </div>
+            )}
+
+            {!canDelete && (doc.generated_file_path || doc.signed_file_path) && (
+              <p className="text-xs text-muted-foreground">
+                A exclusão local só está disponível para documentos em rascunho, com erro ou cancelados.
+              </p>
             )}
 
             {canCancel && (

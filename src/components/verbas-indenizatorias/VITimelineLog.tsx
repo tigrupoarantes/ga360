@@ -13,6 +13,7 @@ interface LogEntry {
 
 interface Props {
   documentId: string | null;
+  companyId: string | null;
 }
 
 const ACTION_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
@@ -72,8 +73,8 @@ function formatDetails(action: string, details: Record<string, unknown> | null):
   return null;
 }
 
-export function VITimelineLog({ documentId }: Props) {
-  const { data: logs = [], isLoading } = useVIDocumentLogs(documentId);
+export function VITimelineLog({ documentId, companyId }: Props) {
+  const { data: logs = [], isLoading } = useVIDocumentLogs(documentId, companyId);
 
   if (isLoading) {
     return (

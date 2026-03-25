@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+export const VI_DELETABLE_STATUSES = ['draft', 'error', 'cancelled'] as const;
 
 export interface VIDocument {
   id: string;
@@ -337,22 +338,15 @@ export function useVIDelete() {
     mutationFn: async (params: {
       documentId: string;
       companyId: string;
-      generatedFilePath: string | null;
-      signedFilePath: string | null;
     }) => {
-      const filesToRemove = [params.generatedFilePath, params.signedFilePath].filter(Boolean) as string[];
-      if (filesToRemove.length > 0) {
-        const { error: storageError } = await supabase.storage
-          .from('verbas-indenizatorias')
-          .remove(filesToRemove);
-        if (storageError) throw new Error(`Erro ao remover arquivo: ${storageError.message}`);
-      }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Não autenticado');
 
-      const { error: dbError } = await supabase
-        .from('verba_indenizatoria_documents')
-        .delete()
-        .eq('id', params.documentId);
-      if (dbError) throw new Error(`Erro ao excluir registro: ${dbError.message}`);
+      return callEdgeFunction<{ success: true }>(token, 'delete-verba-indenizatoria-doc', {
+        documentId: params.documentId,
+        companyId: params.companyId,
+      });
     },
     onSuccess: (_, vars) => {
       toast.success('Documento excluído');
@@ -364,23 +358,24 @@ export function useVIDelete() {
   });
 }
 
-export function useVIDocumentLogs(documentId: string | null) {
+export function useVIDocumentLogs(documentId: string | null, companyId: string | null) {
 
 
   return useQuery({
-    queryKey: ['vi-logs', documentId],
+    queryKey: ['vi-logs', documentId, companyId],
     queryFn: async () => {
-      if (!documentId) return [];
+      if (!documentId || !companyId) return [];
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) return [];
 
       return callEdgeFunction<{ logs: unknown[] }>(token, 'verba-indenizatoria-query', {
+        companyId,
         documentId,
         fetchLogs: true,
       }).then((r) => r.logs ?? []);
     },
-    enabled: !!documentId,
+    enabled: !!documentId && !!companyId,
     staleTime: 10_000,
   });
 }
