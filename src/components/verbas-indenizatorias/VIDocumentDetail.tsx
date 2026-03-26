@@ -9,8 +9,10 @@ import { VIDocumentPreview } from './VIDocumentPreview';
 import { VITimelineLog } from './VITimelineLog';
 import { useVIResend, useVICancel, useVIDelete, VI_DELETABLE_STATUSES } from '@/hooks/useVerbasIndenizatorias';
 import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Mail, XCircle, Eye, Download, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Props {
   document: VIDocument | null;
@@ -133,24 +135,32 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
             )}
 
             {(doc.generated_file_path || doc.signed_file_path) && (
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2">
                 <Button
                   variant="outline"
-                  className="flex-1"
                   onClick={() => setPreviewOpen(true)}
                 >
-                  {doc.signed_file_path ? (
-                    <>
-                      <Download className="h-4 w-4 mr-2" />
-                      Visualizar / Baixar documento assinado
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="h-4 w-4 mr-2" />
-                      Visualizar documento gerado
-                    </>
-                  )}
+                  <Eye className="h-4 w-4 mr-2" />
+                  Visualizar documento gerado
                 </Button>
+                {doc.signed_file_path && (
+                  <Button
+                    variant="default"
+                    onClick={async () => {
+                      const { data, error } = await supabase.storage
+                        .from('verbas-indenizatorias')
+                        .createSignedUrl(doc.signed_file_path!, 60);
+                      if (error || !data?.signedUrl) {
+                        toast.error('Erro ao gerar link de download');
+                        return;
+                      }
+                      window.open(data.signedUrl, '_blank');
+                    }}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Baixar documento assinado
+                  </Button>
+                )}
                 {canDelete && (
                   confirmDelete ? (
                     <div className="flex gap-1">

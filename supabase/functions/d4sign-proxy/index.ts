@@ -267,9 +267,15 @@ serve(async (req: Request) => {
       }
 
       case "get_balance": {
-        // Retorna saldo de documentos do pacote D4Sign
-        const url = buildD4SignUrl(base_url, "account/balance", token_api, crypt_key);
-        result = await callD4Sign(url, "GET");
+        // Tenta múltiplos endpoints para obter saldo da conta D4Sign
+        const balanceEndpoints = ["account/balance", "account", "users/balance"];
+        let balanceResult: { ok: boolean; status: number; data: unknown } = { ok: false, status: 0, data: null };
+        for (const ep of balanceEndpoints) {
+          const url = buildD4SignUrl(base_url, ep, token_api, crypt_key);
+          balanceResult = await callD4Sign(url, "GET");
+          if (balanceResult.ok && balanceResult.data) break;
+        }
+        result = balanceResult;
         break;
       }
 
