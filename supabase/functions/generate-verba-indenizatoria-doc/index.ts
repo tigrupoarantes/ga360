@@ -46,9 +46,6 @@ function formatCompetencia(competencia: string): string {
   return `${months[parseInt(month, 10) - 1]}/${year}`;
 }
 
-function replacePlaceholders(template: string, data: Record<string, string>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => data[key] ?? "");
-}
 
 interface GenerateRequest {
   companyId: string;
@@ -211,24 +208,6 @@ serve(async (req: Request) => {
     ];
     const dataExtenso = `${String(hoje.getDate()).padStart(2, "0")} DE ${MESES_EXT[hoje.getMonth()]} DE ${hoje.getFullYear()}`;
 
-    const placeholders: Record<string, string> = {
-      nome_funcionario: employeeName,
-      cpf: employeeCpf,
-      empresa,
-      departamento,
-      cargo,
-      unidade,
-      competencia: formatCompetencia(competencia),
-      valor_verba: formatBRL(valorVerba),
-      valor_adiantamento: formatBRL(valorAdiantamento),
-      valor_total: formatBRL(valorTotal),
-      data_geracao: dataGeracao,
-      grupo_contabilizacao: grupoContabilizacao,
-      data_inicio_periodo: primeiroDia,
-      data_fim_periodo: ultimoDiaStr,
-      data_extenso: dataExtenso,
-    };
-
     // 3. Gerar PDF
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595, 842]); // A4
@@ -237,119 +216,72 @@ serve(async (req: Request) => {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-    const blue = rgb(0.067, 0.38, 0.647);
     const black = rgb(0, 0, 0);
-    const white = rgb(1, 1, 1);
-    const lightGray = rgb(0.95, 0.95, 0.95);
 
-    // Header
-    page.drawRectangle({ x: 0, y: height - 70, width, height: 70, color: blue });
-    page.drawText(sanitize("TERMO DE VERBA INDENIZATORIA"), {
-      x: 40,
-      y: height - 42,
-      size: 18,
-      font: fontBold,
-      color: white,
-    });
-    page.drawText(sanitize(`Competencia: ${formatCompetencia(competencia)}`), {
-      x: 40,
-      y: height - 60,
-      size: 10,
-      font: fontReg,
-      color: white,
-    });
+    // Margens e config
+    const margin = 60;
+    const textWidth = width - margin * 2;
+    const fontSize = 11;
+    const lineHeight = 16;
+    const titleSize = 13;
 
-    let y = height - 100;
-
-    function drawSection(title: string) {
-      page.drawRectangle({ x: 40, y: y - 4, width: width - 80, height: 20, color: lightGray });
-      page.drawText(sanitize(title), { x: 45, y, size: 10, font: fontBold, color: blue });
-      y -= 26;
-    }
-
-    function drawRow(label: string, value: string) {
-      page.drawText(sanitize(`${label}:`), { x: 45, y, size: 9, font: fontBold, color: black });
-      page.drawText(sanitize(value), { x: 200, y, size: 9, font: fontReg, color: black });
-      y -= 18;
-    }
-
-    // Se o template tem HTML, usar conteúdo simples do HTML como texto estruturado
-    // Caso contrário, gerar layout padrão
-    if (template.template_html) {
-      const filled = replacePlaceholders(template.template_html, placeholders);
-      // Extrair texto limpo do HTML (remoção de tags)
-      const plainText = filled.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-
-      drawSection("Dados do Documento");
-      // Quebrar o texto em linhas
-      const words = sanitize(plainText).split(" ");
+    // Helper: desenha texto com word-wrap, retorna novo Y
+    function drawWrappedText(text: string, startY: number, font: typeof fontReg, size: number): number {
+      let y = startY;
+      const words = text.split(" ");
       let line = "";
-      const maxWidth = width - 90;
-      const charWidth = 5.5; // estimativa para 9pt
+      const charW = size * 0.52; // estimativa largura média por caractere
 
       for (const word of words) {
-        const testLine = line ? `${line} ${word}` : word;
-        if (testLine.length * charWidth > maxWidth) {
-          if (y < 80) break;
-          page.drawText(sanitize(line), { x: 45, y, size: 9, font: fontReg, color: black });
-          y -= 14;
+        const test = line ? `${line} ${word}` : word;
+        if (test.length * charW > textWidth) {
+          if (y < 100) break;
+          page.drawText(line, { x: margin, y, size, font, color: black });
+          y -= lineHeight;
           line = word;
         } else {
-          line = testLine;
+          line = test;
         }
       }
-      if (line && y >= 80) {
-        page.drawText(line, { x: 45, y, size: 9, font: fontReg, color: black });
-        y -= 14;
+      if (line && y >= 100) {
+        page.drawText(line, { x: margin, y, size, font, color: black });
+        y -= lineHeight;
       }
-    } else {
-      // Layout padrão
-      drawSection("Dados do Funcionario");
-      drawRow("Nome", employeeName);
-      drawRow("CPF", employeeCpf);
-      drawRow("Empresa", empresa);
-      drawRow("Departamento", departamento);
-      drawRow("Cargo", cargo);
-      drawRow("Unidade", unidade);
-      if (grupoContabilizacao) drawRow("Grupo Contab.", grupoContabilizacao);
-
-      y -= 10;
-      drawSection("Dados Financeiros");
-      drawRow("Competencia", formatCompetencia(competencia));
-      drawRow("Verba Indenizatoria", formatBRL(valorVerba));
-      if (valorAdiantamento > 0) drawRow("Adiantamento", formatBRL(valorAdiantamento));
+      return y;
     }
 
-    // Caixa de valor total
-    y -= 10;
-    page.drawRectangle({ x: 40, y: y - 10, width: width - 80, height: 36, color: blue });
-    page.drawText("VALOR TOTAL:", { x: 50, y: y + 8, size: 11, font: fontBold, color: white });
-    page.drawText(sanitize(formatBRL(valorTotal)), {
-      x: 200,
-      y: y + 8,
-      size: 14,
-      font: fontBold,
-      color: white,
-    });
-    y -= 50;
+    // Helper: centralizar texto
+    function drawCentered(text: string, y: number, font: typeof fontReg, size: number) {
+      const tw = font.widthOfTextAtSize(sanitize(text), size);
+      page.drawText(sanitize(text), { x: (width - tw) / 2, y, size, font, color: black });
+    }
 
-    // Assinatura
-    y = Math.min(y, 180);
-    page.drawLine({ start: { x: 40, y: 80 }, end: { x: 240, y: 80 }, thickness: 1, color: black });
-    page.drawText(sanitize(employeeName || "Funcionario"), { x: 40, y: 65, size: 8, font: fontReg, color: black });
-    page.drawText(sanitize(`CPF: ${employeeCpf}`), { x: 40, y: 55, size: 8, font: fontReg, color: black });
+    let y = height - 80;
 
-    page.drawLine({ start: { x: 340, y: 80 }, end: { x: 555, y: 80 }, thickness: 1, color: black });
-    page.drawText(sanitize("Responsavel RH"), { x: 340, y: 65, size: 8, font: fontReg, color: black });
+    // ── Título (centralizado, bold) ──
+    drawCentered("RECIBO DE QUITACAO DE DESPESAS RELATIVAS AO VEICULO DE", y, fontBold, titleSize);
+    y -= lineHeight + 2;
+    drawCentered("MINHA PROPRIEDADE", y, fontBold, titleSize);
+    y -= lineHeight * 2.5;
 
-    // Footer
-    page.drawText(sanitize(`Gerado em: ${dataGeracao} | GA360 - Gestao de Pessoas`), {
-      x: 40,
-      y: 30,
-      size: 7,
-      font: fontReg,
-      color: rgb(0.5, 0.5, 0.5),
-    });
+    // ── Corpo do texto (texto corrido como o modelo de referência) ──
+    const corpoTexto = `Eu, ${employeeName}, ${cargo || "COLABORADOR"} inscrito (a) no CPF sob o n. ${cpfNorm} venho informar que o valor de ${formatBRL(valorTotal)} depositado em minha conta bancaria e lancados em minha folha de pagamento como VERBA INDENIZATORIA no dia ${dataGeracao}, refere se ao adiantamento da verba indenizatoria para visitar 100% dos clientes do roteiro estabelecido entre os dias ${primeiroDia} A ${ultimoDiaStr}. Declaro que o valor recebido se refere aos gastos com combustivel, manutencao, depreciacao, pedagio, contratacao de seguro pessoal, ajuda no custeio com o pagamento de taxas, impostos, licenciamentos etc. e e suficiente, nao tendo desta forma nada o que reclamar.`;
+
+    y = drawWrappedText(sanitize(corpoTexto), y, fontReg, fontSize);
+
+    // ── Data por extenso (centralizada) ──
+    y -= lineHeight * 3;
+    drawCentered(dataExtenso, y, fontBold, fontSize);
+
+    // ── Linha de assinatura (centralizada) ──
+    y -= lineHeight * 4;
+    const lineW = 300;
+    const lineX = (width - lineW) / 2;
+    page.drawLine({ start: { x: lineX, y }, end: { x: lineX + lineW, y }, thickness: 0.8, color: black });
+    y -= lineHeight;
+    drawCentered("Assinatura:", y, fontReg, fontSize - 1);
+    y -= lineHeight;
+    drawCentered(employeeName || "Funcionario", y, fontBold, fontSize);
 
     const pdfBytes = await pdfDoc.save();
 
@@ -524,8 +456,8 @@ serve(async (req: Request) => {
                           page_height: "297",
                           page_width: "210",
                           page: "1",
-                          position_x: "14",
-                          position_y: "269",
+                          position_x: "55",
+                          position_y: "180",
                           type: "0",
                         }],
                       },
