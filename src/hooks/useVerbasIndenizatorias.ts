@@ -379,3 +379,19 @@ export function useVIDocumentLogs(documentId: string | null, companyId: string |
     staleTime: 10_000,
   });
 }
+
+export function useD4SignBalance(companyId: string | null) {
+  return useQuery({
+    queryKey: ['d4sign-balance', companyId],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke('d4sign-proxy', {
+        body: { action: 'get_balance', companyId },
+      });
+      if (error) throw error;
+      return data?.data as Record<string, unknown> | null;
+    },
+    enabled: !!companyId,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+}

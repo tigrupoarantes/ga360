@@ -1,14 +1,17 @@
 import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { FileText, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FileText, Clock, CheckCircle2, AlertCircle, PackageCheck } from 'lucide-react';
 import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
+import { useD4SignBalance } from '@/hooks/useVerbasIndenizatorias';
 
 interface Props {
   documents: VIDocument[];
   total: number;
+  companyId?: string | null;
 }
 
-export function VIStatusDashboard({ documents, total }: Props) {
+export function VIStatusDashboard({ documents, total, companyId }: Props) {
+  const { data: balance } = useD4SignBalance(companyId ?? null);
   const stats = useMemo(() => {
     const signed = documents.filter((d) => d.d4sign_status === 'signed').length;
     const pending = documents.filter((d) =>
@@ -54,10 +57,18 @@ export function VIStatusDashboard({ documents, total }: Props) {
       iconClass: 'text-red-500',
       bgClass: 'bg-red-50 dark:bg-red-950/30',
     },
+    ...(balance ? [{
+      label: 'Saldo D4Sign',
+      value: Number(balance.balance ?? balance.credits ?? 0),
+      icon: PackageCheck,
+      iconClass: 'text-purple-500',
+      bgClass: 'bg-purple-50 dark:bg-purple-950/30',
+      extra: balance.total ? `de ${balance.total} contratados` : undefined,
+    }] : []),
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
       {cards.map((c) => (
         <Card key={c.label} className="border-none shadow-sm">
           <CardContent className={`p-4 rounded-lg ${c.bgClass}`}>

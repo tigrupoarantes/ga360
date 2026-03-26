@@ -142,7 +142,7 @@ export default function VerbasIndenizatorias() {
         )}
 
         {/* KPI cards */}
-        <VIStatusDashboard documents={documents} total={total} />
+        <VIStatusDashboard documents={documents} total={total} companyId={selectedCompanyId} />
 
         {/* Cards por grupo de contabilização */}
         {filters.competencia && accountingGroups.length > 0 && (

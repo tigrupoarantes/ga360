@@ -461,10 +461,13 @@ serve(async (req: Request) => {
                 }),
               });
 
-              // Adicionar signatário
+              // Adicionar signatário (com validação de resposta)
               const signerEmailToUse = employeeEmail || signerEmail;
+              let signerAdded = false;
+              let addSignerBody: Record<string, unknown> = {};
+
               if (signerEmailToUse) {
-                await fetch(`${supabaseUrl}/functions/v1/d4sign-proxy`, {
+                const addSignerRes = await fetch(`${supabaseUrl}/functions/v1/d4sign-proxy`, {
                   method: "POST",
                   headers: { Authorization: authHeader, "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -476,38 +479,84 @@ serve(async (req: Request) => {
                     },
                   }),
                 });
+                addSignerBody = await addSignerRes.json().catch(() => ({})) as Record<string, unknown>;
+                signerAdded = addSignerRes.ok && (addSignerBody?.ok === true);
+
+                if (!signerAdded) {
+                  console.error("[generate-verba-doc] add_signer FALHOU:", JSON.stringify(addSignerBody));
+                  await supabase.from("verba_indenizatoria_logs").insert({
+                    document_id: docRecord.id,
+                    action: "error",
+                    details: { step: "add_signer", email: signerEmailToUse, response: addSignerBody },
+                    performed_by: user.id,
+                  });
+                }
+              } else {
+                console.warn("[generate-verba-doc] signerEmail vazio — add_signer não executado");
+                await supabase.from("verba_indenizatoria_logs").insert({
+                  document_id: docRecord.id,
+                  action: "error",
+                  details: { step: "add_signer", reason: "email do signatário vazio" },
+                  performed_by: user.id,
+                });
               }
 
-              // Enviar para assinatura
-              await fetch(`${supabaseUrl}/functions/v1/d4sign-proxy`, {
-                method: "POST",
-                headers: { Authorization: authHeader, "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  action: "send_to_sign",
-                  companyId,
-                  payload: {
-                    documentUuid: d4signDocUuid,
-                    message: `Por favor, assine o documento de Verba Indenizatoria referente a competencia ${formatCompetencia(competencia)}.`,
-                  },
-                }),
-              });
+              // Enviar para assinatura (só se signatário foi adicionado)
+              let sentToSign = false;
+              let sendBody: Record<string, unknown> = {};
 
-              // Atualizar registro
+              if (signerAdded) {
+                const sendRes = await fetch(`${supabaseUrl}/functions/v1/d4sign-proxy`, {
+                  method: "POST",
+                  headers: { Authorization: authHeader, "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "send_to_sign",
+                    companyId,
+                    payload: {
+                      documentUuid: d4signDocUuid,
+                      message: `Por favor, assine o documento de Verba Indenizatoria referente a competencia ${formatCompetencia(competencia)}.`,
+                    },
+                  }),
+                });
+                sendBody = await sendRes.json().catch(() => ({})) as Record<string, unknown>;
+                sentToSign = sendRes.ok && (sendBody?.ok === true);
+
+                if (!sentToSign) {
+                  console.error("[generate-verba-doc] send_to_sign FALHOU:", JSON.stringify(sendBody));
+                  await supabase.from("verba_indenizatoria_logs").insert({
+                    document_id: docRecord.id,
+                    action: "error",
+                    details: { step: "send_to_sign", response: sendBody },
+                    performed_by: user.id,
+                  });
+                }
+              }
+
+              // Atualizar registro com status real
+              const finalStatus = sentToSign ? "sent_to_sign" : "error";
               await supabase
                 .from("verba_indenizatoria_documents")
                 .update({
                   d4sign_document_uuid: d4signDocUuid,
                   d4sign_safe_uuid: d4config.safe_id,
-                  d4sign_status: "sent_to_sign",
-                  d4sign_signer_email: employeeEmail || signerEmail || null,
-                  d4sign_sent_at: new Date().toISOString(),
+                  d4sign_status: finalStatus,
+                  d4sign_signer_email: signerEmailToUse || null,
+                  d4sign_sent_at: sentToSign ? new Date().toISOString() : null,
+                  d4sign_error_message: !sentToSign
+                    ? `add_signer: ${signerAdded ? "ok" : JSON.stringify(addSignerBody?.data || "falhou")} | send_to_sign: ${sentToSign ? "ok" : JSON.stringify(sendBody?.data || "não executado")}`
+                    : null,
                 })
                 .eq("id", docRecord.id);
 
               await supabase.from("verba_indenizatoria_logs").insert({
                 document_id: docRecord.id,
-                action: "sent_to_sign",
-                details: { d4sign_uuid: d4signDocUuid },
+                action: finalStatus === "sent_to_sign" ? "sent_to_sign" : "error",
+                details: {
+                  d4sign_uuid: d4signDocUuid,
+                  signer_email: signerEmailToUse,
+                  signer_added: signerAdded,
+                  sent: sentToSign,
+                },
                 performed_by: user.id,
               });
             }

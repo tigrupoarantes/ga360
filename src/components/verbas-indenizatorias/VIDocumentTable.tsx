@@ -7,9 +7,11 @@ import { VIStatusBadge } from './VIStatusBadge';
 import { VIDocumentDetail } from './VIDocumentDetail';
 import { useVIResend } from '@/hooks/useVerbasIndenizatorias';
 import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
+import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Eye, Mail, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Props {
   documents: VIDocument[];
@@ -34,6 +36,19 @@ export function VIDocumentTable({
 }: Props) {
   const [selectedDoc, setSelectedDoc] = useState<VIDocument | null>(null);
   const resendMutation = useVIResend();
+
+  const handleDownloadSigned = async (doc: VIDocument) => {
+    const path = doc.signed_file_path || doc.generated_file_path;
+    if (!path) return;
+    const { data, error } = await supabase.storage
+      .from("verbas-indenizatorias")
+      .createSignedUrl(path, 60);
+    if (error || !data?.signedUrl) {
+      toast.error("Erro ao gerar URL de download");
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
+  };
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -124,6 +139,7 @@ export function VIDocumentTable({
                             size="icon"
                             variant="ghost"
                             title="Baixar assinado"
+                            onClick={(e) => { e.stopPropagation(); handleDownloadSigned(doc); }}
                           >
                             <Download className="h-3.5 w-3.5" />
                           </Button>

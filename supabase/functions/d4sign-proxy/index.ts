@@ -15,7 +15,8 @@ type D4SignAction =
   | "list_documents"
   | "download_document"
   | "cancel_document"
-  | "register_webhook";
+  | "register_webhook"
+  | "get_balance";
 
 interface D4SignProxyRequest {
   action: D4SignAction;
@@ -253,6 +254,13 @@ serve(async (req: Request) => {
 
         const url = buildD4SignUrl(base_url, `documents/${documentUuid}/webhooks`, token_api, crypt_key);
         result = await callD4Sign(url, "POST", { url: webhookUrl });
+        break;
+      }
+
+      case "get_balance": {
+        // Retorna saldo de documentos do pacote D4Sign
+        const url = buildD4SignUrl(base_url, "account/balance", token_api, crypt_key);
+        result = await callD4Sign(url, "GET");
         break;
       }
 
