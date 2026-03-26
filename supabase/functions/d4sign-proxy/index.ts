@@ -203,16 +203,14 @@ serve(async (req: Request) => {
       }
 
       case "send_to_sign": {
-        // payload: { documentUuid, message?, workflow? }
+        // payload: { documentUuid }
+        // Endpoint correto: sendtosigner (com "r" no final), body vazio
+        // Ref: https://ajuda.d4sign.com.br/enviar-documento-para-assinatura-api
         const documentUuid = payload.documentUuid as string;
         if (!documentUuid) throw new Error("documentUuid required for send_to_sign");
 
-        const url = buildD4SignUrl(base_url, `documents/${documentUuid}/sendtosign`, token_api, crypt_key);
-        result = await callD4Sign(url, "POST", {
-          message: payload.message || "Por favor, assine o documento de verba indenizatória.",
-          workflow: payload.workflow ?? 0,
-          skip_email: payload.skip_email ?? 0,
-        });
+        const url = buildD4SignUrl(base_url, `documents/${documentUuid}/sendtosigner`, token_api, crypt_key);
+        result = await callD4Sign(url, "POST", {});
         break;
       }
 
