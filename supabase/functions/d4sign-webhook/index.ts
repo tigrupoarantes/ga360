@@ -152,19 +152,22 @@ serve(async (req: Request) => {
                 console.log("[d4sign-webhook] format:", isPdf ? "PDF" : isZip ? "ZIP" : "unknown", "size:", fileBytes.length);
 
                 // D4Sign retorna ZIP com o PDF dentro — extrair o primeiro .pdf
+                let uploadData: Uint8Array | Blob = fileBytes;
+
                 if (isZip) {
                   try {
                     const zipBlob = new Blob([fileBytes]);
                     const zipReader = new ZipReader(new BlobReader(zipBlob));
                     const entries = await zipReader.getEntries();
-                    const pdfEntry = entries.find((e) => e.filename.toLowerCase().endsWith(".pdf"));
+                    console.log("[d4sign-webhook] ZIP entries:", entries.map((e: any) => `${e.filename} (${e.uncompressedSize}b)`));
+                    const pdfEntry = entries.find((e: any) => e.filename.toLowerCase().endsWith(".pdf"));
 
                     if (pdfEntry && pdfEntry.getData) {
-                      const pdfBlob = await pdfEntry.getData(new BlobWriter());
-                      fileBytes = new Uint8Array(await pdfBlob.arrayBuffer());
-                      console.log("[d4sign-webhook] PDF extraído do ZIP:", pdfEntry.filename, "size:", fileBytes.length);
+                      uploadData = await pdfEntry.getData(new BlobWriter("application/pdf"));
+                      console.log("[d4sign-webhook] PDF extraído do ZIP:", pdfEntry.filename, "blob size:", (uploadData as Blob).size);
                     } else {
-                      console.error("[d4sign-webhook] ZIP não contém arquivo .pdf. Entries:", entries.map((e) => e.filename));
+                      // Sem .pdf no ZIP — salvar o ZIP todo como fallback
+                      console.warn("[d4sign-webhook] ZIP não contém .pdf. Entries:", entries.map((e: any) => e.filename));
                     }
                     await zipReader.close();
                   } catch (zipErr) {
@@ -172,26 +175,18 @@ serve(async (req: Request) => {
                   }
                 }
 
-                // Verificar novamente se agora é PDF
-                const finalIsPdf = fileBytes.length > 4 && fileBytes[0] === 0x25 && fileBytes[1] === 0x50 && fileBytes[2] === 0x44 && fileBytes[3] === 0x46;
-
-                if (finalIsPdf) {
-                  await supabase.storage
-                    .from("verbas-indenizatorias")
-                    .upload(storagePath, fileBytes, {
-                      contentType: "application/pdf",
-                      upsert: true,
-                    });
-
-                  extraFields.signed_file_path = storagePath;
-                  console.log("[d4sign-webhook] PDF assinado salvo em", storagePath);
-                } else {
-                  console.error("[d4sign-webhook] Arquivo final NÃO é PDF após extração.");
-                  await supabase.from("verba_indenizatoria_logs").insert({
-                    document_id: doc.id,
-                    action: "error",
-                    details: { step: "download_signed", reason: "arquivo não é PDF após extração ZIP", size: fileBytes.length },
+                const { error: uploadError } = await supabase.storage
+                  .from("verbas-indenizatorias")
+                  .upload(storagePath, uploadData, {
+                    contentType: "application/pdf",
+                    upsert: true,
                   });
+
+                if (uploadError) {
+                  console.error("[d4sign-webhook] Erro no upload Storage:", uploadError.message);
+                } else {
+                  extraFields.signed_file_path = storagePath;
+                  console.log("[d4sign-webhook] PDF assinado salvo em", storagePath, "size:", uploadData instanceof Blob ? (uploadData as Blob).size : (uploadData as Uint8Array).length);
                 }
               } else {
                 console.error("[d4sign-webhook] download do PDF falhou:", fileResp.status);
