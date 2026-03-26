@@ -435,6 +435,12 @@ serve(async (req: Request) => {
                 });
               }
 
+              // Aguardar D4Sign processar o documento antes de enviar para assinatura
+              // Sem esse delay, o sendtosign pode retornar ok mas não disparar efetivamente
+              if (signerAdded) {
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+              }
+
               // Enviar para assinatura (só se signatário foi adicionado)
               // NÃO usar addpins — assinatura livre (signatário escolhe onde assinar)
               let sentToSign = false;
