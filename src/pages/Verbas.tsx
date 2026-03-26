@@ -566,25 +566,6 @@ export default function VerbasPage() {
     return recentJobs?.find((j) => j.status === "done" && j.records_received > 0) ?? null;
   }, [recentJobs]);
 
-  // ── Cobertura de meses — calculada a partir dos dados já carregados ────────
-  const monthCoverage = useMemo(() => {
-    const rows = data?.rows;
-    if (!rows?.length) return {} as Record<number, boolean[]>;
-    const coverage: Record<number, boolean[]> = {};
-    for (const yearStr of selectedYears) {
-      const year = Number(yearStr);
-      const yearRows = rows.filter((r) => r.ano === year);
-      if (!yearRows.length) {
-        coverage[year] = Array(12).fill(false);
-        continue;
-      }
-      coverage[year] = MONTH_COLUMNS.map((m) =>
-        yearRows.some((r) => Math.abs(Number((r as Record<string, unknown>)[m]) || 0) > 0),
-      );
-    }
-    return coverage;
-  }, [data?.rows, selectedYears]);
-
   // Query direta ao banco — sem edge function — para máxima performance no carregamento.
   // A edge function verbas-secure-query é chamada APENAS para operações de sync/preview.
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -670,6 +651,25 @@ export default function VerbasPage() {
     staleTime: 2 * 60_000,
     refetchOnWindowFocus: false,
   });
+
+  // ── Cobertura de meses — calculada a partir dos dados já carregados ────────
+  const monthCoverage = useMemo(() => {
+    const rows = data?.rows;
+    if (!rows?.length) return {} as Record<number, boolean[]>;
+    const coverage: Record<number, boolean[]> = {};
+    for (const yearStr of selectedYears) {
+      const year = Number(yearStr);
+      const yearRows = rows.filter((r) => r.ano === year);
+      if (!yearRows.length) {
+        coverage[year] = Array(12).fill(false);
+        continue;
+      }
+      coverage[year] = MONTH_COLUMNS.map((m) =>
+        yearRows.some((r) => Math.abs(Number((r as Record<string, unknown>)[m]) || 0) > 0),
+      );
+    }
+    return coverage;
+  }, [data?.rows, selectedYears]);
 
   const runSync = async (
     months: number[],
