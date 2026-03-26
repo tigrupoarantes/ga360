@@ -149,12 +149,20 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
                     onClick={async () => {
                       const { data, error } = await supabase.storage
                         .from('verbas-indenizatorias')
-                        .createSignedUrl(doc.signed_file_path!, 60);
-                      if (error || !data?.signedUrl) {
-                        toast.error('Erro ao gerar link de download');
+                        .download(doc.signed_file_path!);
+                      if (error || !data) {
+                        toast.error('Erro ao baixar documento assinado');
                         return;
                       }
-                      window.open(data.signedUrl, '_blank');
+                      const url = URL.createObjectURL(data);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `verba_${doc.employee_name.replace(/\s+/g, '_')}_${doc.competencia}_assinado.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                      toast.success('Download iniciado');
                     }}
                   >
                     <Download className="h-4 w-4 mr-2" />

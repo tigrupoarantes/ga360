@@ -42,12 +42,20 @@ export function VIDocumentTable({
     if (!path) return;
     const { data, error } = await supabase.storage
       .from("verbas-indenizatorias")
-      .createSignedUrl(path, 60);
-    if (error || !data?.signedUrl) {
-      toast.error("Erro ao gerar URL de download");
+      .download(path);
+    if (error || !data) {
+      toast.error("Erro ao baixar documento");
       return;
     }
-    window.open(data.signedUrl, "_blank");
+    const url = URL.createObjectURL(data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `verba_${doc.employee_name.replace(/\s+/g, "_")}_${doc.competencia}_assinado.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Download iniciado");
   };
 
   const totalPages = Math.ceil(total / pageSize);
