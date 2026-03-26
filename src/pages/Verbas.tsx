@@ -547,6 +547,44 @@ export default function VerbasPage() {
     staleTime: 5 * 60_000,
   });
 
+  // ── Histórico de syncs recentes (verbas_sync_jobs) ─────────────────────────
+  const { data: recentJobs } = useQuery({
+    queryKey: ["verbas-sync-history"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("verbas_sync_jobs")
+        .select("id, ano, mes, status, records_received, records_upserted, records_failed, error_message, started_at, completed_at, metadata, created_at")
+        .order("created_at", { ascending: false })
+        .limit(10);
+      return (data || []) as VerbasSyncJob[];
+    },
+    refetchInterval: syncing ? 5000 : false,
+    staleTime: 30_000,
+  });
+
+  const lastSuccessfulSync = useMemo(() => {
+    return recentJobs?.find((j) => j.status === "done" && j.records_received > 0) ?? null;
+  }, [recentJobs]);
+
+  // ── Cobertura de meses — calculada a partir dos dados já carregados ────────
+  const monthCoverage = useMemo(() => {
+    const rows = data?.rows;
+    if (!rows?.length) return {} as Record<number, boolean[]>;
+    const coverage: Record<number, boolean[]> = {};
+    for (const yearStr of selectedYears) {
+      const year = Number(yearStr);
+      const yearRows = rows.filter((r) => r.ano === year);
+      if (!yearRows.length) {
+        coverage[year] = Array(12).fill(false);
+        continue;
+      }
+      coverage[year] = MONTH_COLUMNS.map((m) =>
+        yearRows.some((r) => Math.abs(Number((r as Record<string, unknown>)[m]) || 0) > 0),
+      );
+    }
+    return coverage;
+  }, [data?.rows, selectedYears]);
+
   // Query direta ao banco — sem edge function — para máxima performance no carregamento.
   // A edge function verbas-secure-query é chamada APENAS para operações de sync/preview.
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -1292,8 +1330,138 @@ export default function VerbasPage() {
         <Collapsible open={showSyncPanel} onOpenChange={setShowSyncPanel}>
           <CollapsibleContent>
             <Card className="border-dashed">
-              <CardContent className="p-4 space-y-3">
-                <p className="text-sm font-semibold text-muted-foreground">Operações de Sincronização</p>
+              <CardContent className="p-4 space-y-4">
+
+                {/* ── Saúde da Integração ───────────────────────────────── */}
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-muted-foreground">Saúde da Integração</p>
+
+                  {/* Último sync + métricas */}
+                  <div className="rounded-md border bg-muted/10 p-3 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className={cn(
+                          "h-2.5 w-2.5 rounded-full",
+                          lastSuccessfulSync ? "bg-emerald-500" : "bg-amber-500",
+                        )} />
+                        <span className="text-sm font-medium text-foreground">
+                          {lastSuccessfulSync
+                            ? `Última sincronização: ${new Date(lastSuccessfulSync.completed_at || lastSuccessfulSync.started_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+                            : "Nenhuma sincronização bem-sucedida encontrada"
+                          }
+                        </span>
+                        {lastSuccessfulSync && (
+                          <span className="text-xs text-muted-foreground">
+                            ({(() => {
+                              const diff = Date.now() - new Date(lastSuccessfulSync.completed_at || lastSuccessfulSync.started_at).getTime();
+                              const minutes = Math.floor(diff / 60_000);
+                              if (minutes < 1) return "agora";
+                              if (minutes < 60) return `há ${minutes}min`;
+                              const hours = Math.floor(minutes / 60);
+                              if (hours < 24) return `há ${hours}h`;
+                              const days = Math.floor(hours / 24);
+                              return `há ${days}d`;
+                            })()})
+                          </span>
+                        )}
+                      </div>
+                      {lastSuccessfulSync && (
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span>{lastSuccessfulSync.records_received.toLocaleString("pt-BR")} rec.</span>
+                          <span>{lastSuccessfulSync.records_upserted.toLocaleString("pt-BR")} grav.</span>
+                          {lastSuccessfulSync.records_failed > 0 && (
+                            <span className="text-destructive">{lastSuccessfulSync.records_failed} falhas</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Cobertura de meses */}
+                    {monthCoverage && Object.keys(monthCoverage).length > 0 && (
+                      <div className="space-y-1.5">
+                        {Object.entries(monthCoverage)
+                          .sort(([a], [b]) => Number(b) - Number(a))
+                          .map(([yearStr, months]) => (
+                            <div key={yearStr} className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-muted-foreground w-10 tabular-nums">{yearStr}</span>
+                              <div className="flex items-center gap-1">
+                                {(months as boolean[]).map((hasCoverage, i) => (
+                                  <div
+                                    key={i}
+                                    className={cn(
+                                      "w-5 h-5 rounded-sm flex items-center justify-center text-[9px] font-medium transition-colors",
+                                      hasCoverage
+                                        ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30"
+                                        : "bg-muted text-muted-foreground/50 border border-transparent",
+                                    )}
+                                    title={`${MONTH_NAMES_PT[i]} ${yearStr}: ${hasCoverage ? "com dados" : "sem dados"}`}
+                                  >
+                                    {MONTH_NAMES_PT[i][0]}
+                                  </div>
+                                ))}
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {(months as boolean[]).filter(Boolean).length}/12
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Histórico de syncs recentes */}
+                  {recentJobs && recentJobs.length > 0 && (
+                    <Accordion type="single" collapsible className="w-full">
+                      <AccordionItem value="sync-history" className="border rounded-md">
+                        <AccordionTrigger className="px-3 py-2 text-xs font-medium text-muted-foreground hover:no-underline">
+                          Histórico de sincronizações ({recentJobs.length})
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3">
+                          <div className="space-y-1">
+                            {recentJobs.map((job) => (
+                              <div
+                                key={job.id}
+                                className={cn(
+                                  "flex items-center gap-2 text-xs rounded px-2 py-1.5",
+                                  job.status === "error" ? "bg-destructive/5" : "bg-transparent",
+                                )}
+                              >
+                                <Badge
+                                  variant={
+                                    job.status === "done" ? "default"
+                                    : job.status === "error" ? "destructive"
+                                    : job.status === "running" ? "secondary"
+                                    : "outline"
+                                  }
+                                  className="text-[10px] px-1.5 py-0 h-5 shrink-0"
+                                >
+                                  {job.status === "done" && "OK"}
+                                  {job.status === "error" && "Erro"}
+                                  {job.status === "running" && "..."}
+                                  {job.status === "queued" && "Fila"}
+                                </Badge>
+                                <span className="text-muted-foreground tabular-nums shrink-0">
+                                  {new Date(job.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                                <span className="text-foreground shrink-0">
+                                  {job.ano}{job.mes ? ` · Mês ${job.mes}` : " · Todos"}
+                                </span>
+                                <span className="text-muted-foreground truncate">
+                                  {job.records_received > 0 && `${job.records_received.toLocaleString("pt-BR")} rec`}
+                                  {job.records_failed > 0 && ` · ${job.records_failed} falhas`}
+                                  {job.error_message && ` — ${job.error_message}`}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
+                  )}
+                </div>
+
+                {/* ── Operações de Sincronização ─────────────────────────── */}
+                <p className="text-sm font-semibold text-muted-foreground pt-1">Operações de Sincronização</p>
                 <div className="flex flex-wrap gap-3 items-end">
                   <AlertDialog>
                     <AlertDialogTrigger asChild>

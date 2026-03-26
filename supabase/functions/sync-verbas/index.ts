@@ -1643,14 +1643,25 @@ serve(async (req) => {
         }
       } else {
         // Sync mensal: preservar outros meses no staging, atualizar só o mês alvo
+        // Chunkar CPFs em lotes de 500 para evitar exceder limite de URL do PostgREST
         const cpfs = [...new Set(stagingRows.map((r) => String(r.cpf || "")).filter(Boolean))];
-        const { data: existingStaging } = await supabase
-          .from("payroll_verba_staging")
-          .select("cpf, tipo_verba, ano, " + MONTH_FIELDS.join(", "))
-          .in("cpf", cpfs)
-          .eq("ano", scopeYear);
+        const existingStaging: any[] = [];
+        for (const cpfChunk of chunkArray(cpfs, 500)) {
+          const { data, error: mergeQueryError } = await supabase
+            .from("payroll_verba_staging")
+            .select("cpf, tipo_verba, ano, " + MONTH_FIELDS.join(", "))
+            .in("cpf", cpfChunk)
+            .eq("ano", scopeYear);
 
-        if (existingStaging && existingStaging.length > 0) {
+          if (mergeQueryError) {
+            console.error("[sync-verbas] Erro ao buscar staging para merge mensal:", mergeQueryError.message);
+            throw new Error(`Falha ao buscar staging para merge mensal: ${mergeQueryError.message}`);
+          }
+
+          if (data) existingStaging.push(...data);
+        }
+
+        if (existingStaging.length > 0) {
           const existingMap = new Map<string, Record<string, any>>(
             existingStaging.map((r: any) => [
               `${normalizeDigits(r.cpf)}|${r.tipo_verba}|${r.ano}`,
