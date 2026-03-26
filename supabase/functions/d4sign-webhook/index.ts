@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { BlobReader, ZipReader, BlobWriter } from "https://esm.sh/@zip.js/zip.js@2.7.52";
 
 // Webhook público da D4Sign — sem auth Bearer
 // Valida por token secreto no header X-D4Sign-Token
@@ -142,14 +143,39 @@ serve(async (req: Request) => {
               console.log("[d4sign-webhook] file download status:", fileResp.status, "content-type:", contentType, "size:", fileResp.headers.get("content-length"));
 
               if (fileResp.ok) {
-                const fileBytes = new Uint8Array(await fileResp.arrayBuffer());
+                let fileBytes = new Uint8Array(await fileResp.arrayBuffer());
                 const storagePath = `${doc.company_id}/signed/${doc.competencia}/${doc.employee_cpf}_signed.pdf`;
 
-                // Verificar que é realmente um PDF (magic bytes: %PDF)
+                // Verificar magic bytes: %PDF (PDF) ou PK (ZIP)
                 const isPdf = fileBytes.length > 4 && fileBytes[0] === 0x25 && fileBytes[1] === 0x50 && fileBytes[2] === 0x44 && fileBytes[3] === 0x46;
-                console.log("[d4sign-webhook] isPdf:", isPdf, "size:", fileBytes.length, "first4:", String.fromCharCode(...fileBytes.slice(0, 4)));
+                const isZip = fileBytes.length > 4 && fileBytes[0] === 0x50 && fileBytes[1] === 0x4B;
+                console.log("[d4sign-webhook] format:", isPdf ? "PDF" : isZip ? "ZIP" : "unknown", "size:", fileBytes.length);
 
-                if (isPdf) {
+                // D4Sign retorna ZIP com o PDF dentro — extrair o primeiro .pdf
+                if (isZip) {
+                  try {
+                    const zipBlob = new Blob([fileBytes]);
+                    const zipReader = new ZipReader(new BlobReader(zipBlob));
+                    const entries = await zipReader.getEntries();
+                    const pdfEntry = entries.find((e) => e.filename.toLowerCase().endsWith(".pdf"));
+
+                    if (pdfEntry && pdfEntry.getData) {
+                      const pdfBlob = await pdfEntry.getData(new BlobWriter());
+                      fileBytes = new Uint8Array(await pdfBlob.arrayBuffer());
+                      console.log("[d4sign-webhook] PDF extraído do ZIP:", pdfEntry.filename, "size:", fileBytes.length);
+                    } else {
+                      console.error("[d4sign-webhook] ZIP não contém arquivo .pdf. Entries:", entries.map((e) => e.filename));
+                    }
+                    await zipReader.close();
+                  } catch (zipErr) {
+                    console.error("[d4sign-webhook] Erro ao descompactar ZIP:", sanitizeError(zipErr));
+                  }
+                }
+
+                // Verificar novamente se agora é PDF
+                const finalIsPdf = fileBytes.length > 4 && fileBytes[0] === 0x25 && fileBytes[1] === 0x50 && fileBytes[2] === 0x44 && fileBytes[3] === 0x46;
+
+                if (finalIsPdf) {
                   await supabase.storage
                     .from("verbas-indenizatorias")
                     .upload(storagePath, fileBytes, {
@@ -160,12 +186,11 @@ serve(async (req: Request) => {
                   extraFields.signed_file_path = storagePath;
                   console.log("[d4sign-webhook] PDF assinado salvo em", storagePath);
                 } else {
-                  console.error("[d4sign-webhook] Arquivo baixado NÃO é PDF. Primeiros bytes:", String.fromCharCode(...fileBytes.slice(0, 50)));
-                  // Salvar log do erro
+                  console.error("[d4sign-webhook] Arquivo final NÃO é PDF após extração.");
                   await supabase.from("verba_indenizatoria_logs").insert({
                     document_id: doc.id,
                     action: "error",
-                    details: { step: "download_signed", reason: "arquivo não é PDF", contentType, size: fileBytes.length, preview: String.fromCharCode(...fileBytes.slice(0, 100)) },
+                    details: { step: "download_signed", reason: "arquivo não é PDF após extração ZIP", size: fileBytes.length },
                   });
                 }
               } else {
