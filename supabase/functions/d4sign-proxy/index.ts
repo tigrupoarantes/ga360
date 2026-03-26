@@ -10,6 +10,7 @@ type D4SignAction =
   | "list_safes"
   | "upload_document"
   | "add_signer"
+  | "add_pins"
   | "send_to_sign"
   | "get_document"
   | "list_documents"
@@ -188,6 +189,16 @@ serve(async (req: Request) => {
 
         const url = buildD4SignUrl(base_url, `documents/${documentUuid}/createlist`, token_api, crypt_key);
         result = await callD4Sign(url, "POST", { signers: payload.signers || [] });
+        break;
+      }
+
+      case "add_pins": {
+        // payload: { documentUuid, pins: [{ document, email, page_height, page_width, page, position_x, position_y, type? }] }
+        const documentUuid = payload.documentUuid as string;
+        if (!documentUuid) throw new Error("documentUuid required for add_pins");
+
+        const url = buildD4SignUrl(base_url, `documents/${documentUuid}/addpins`, token_api, crypt_key);
+        result = await callD4Sign(url, "POST", { pins: payload.pins || [] });
         break;
       }
 
