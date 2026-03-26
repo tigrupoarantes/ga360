@@ -1622,25 +1622,14 @@ serve(async (req) => {
       );
     }
 
-    // ── Replace scope: limpar staging (e pivot) antes de regravar ────────────
+    // ── Replace scope: merge de dados antes de regravar ──────────────────────
     if (replaceScope && scopeYear && stagingRows.length > 0) {
       if (!scopeMonth) {
-        // Sync de ano completo: limpar staging e pivot para o ano antes de reescrever
-        const { error: stgDeleteError } = await supabase
-          .from("payroll_verba_staging")
-          .delete()
-          .eq("ano", scopeYear);
-        if (stgDeleteError) {
-          throw new Error(`Failed to clear staging rows: ${stgDeleteError.message}`);
-        }
-
-        const { error: pivotDeleteError } = await supabase
-          .from("payroll_verba_pivot")
-          .delete()
-          .eq("ano", scopeYear);
-        if (pivotDeleteError) {
-          throw new Error(`Failed to clear pivot rows: ${pivotDeleteError.message}`);
-        }
+        // Sync de ano completo: NÃO deletar antes de inserir.
+        // O upsert ON CONFLICT atualiza registros existentes.
+        // Dados que não vieram neste fetch permanecem intactos no staging/pivot.
+        // Isso evita perda de dados quando paginação do DAB é incompleta.
+        console.log(`[sync-verbas] Sync anual (upsert puro, sem delete): ${stagingRows.length} rows para ano ${scopeYear}`);
       } else {
         // Sync mensal: preservar outros meses no staging, atualizar só o mês alvo
         // Chunkar CPFs em lotes de 500 para evitar exceder limite de URL do PostgREST

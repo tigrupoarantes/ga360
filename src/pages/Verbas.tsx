@@ -815,7 +815,7 @@ export default function VerbasPage() {
   };
 
   const handleInitialBootstrap = () => runSync(
-    [1,2,3,4,5,6,7,8,9,10,11,12],
+    [0], // 1 chamada por ano (sem target_month) — evita race condition de 12 chamadas concorrentes
     "Carga inicial completa",
     { includeFilters: false, allPages: true, maxPages: 5000 },
   );
