@@ -98,52 +98,63 @@ serve(async (req: Request) => {
       extraFields = { d4sign_signed_at: now };
       logAction = "signed";
 
-      // Fazer download do documento assinado e salvar no Storage
+      // Fazer download do documento assinado direto da D4Sign e salvar no Storage
       try {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const authToken = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        // Buscar credenciais D4Sign
+        const { data: d4config } = await supabase
+          .from("d4sign_config")
+          .select("token_api, crypt_key, base_url")
+          .is("company_id", null)
+          .eq("is_active", true)
+          .maybeSingle();
 
-        // Chamar d4sign-proxy para download
-        const downloadResp = await fetch(`${supabaseUrl}/functions/v1/d4sign-proxy`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            action: "download_document",
-            companyId: doc.company_id,
-            payload: { documentUuid: d4signDocumentUuid, type: 0 },
-          }),
-        });
+        if (d4config?.token_api && d4config?.crypt_key) {
+          const baseUrl = d4config.base_url.replace(/\/+$/, "");
+          const downloadUrl = new URL(`${baseUrl}/documents/${d4signDocumentUuid}/download`);
+          downloadUrl.searchParams.set("tokenAPI", d4config.token_api);
+          downloadUrl.searchParams.set("cryptKey", d4config.crypt_key);
 
-        if (downloadResp.ok) {
-          const downloadResult = await downloadResp.json();
-          // A D4Sign retorna um link para download ou base64
-          const fileUrl: string | undefined =
-            downloadResult.data?.url || downloadResult.data?.link;
+          const downloadResp = await fetch(downloadUrl.toString(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ type: "0" }),
+          });
 
-          if (fileUrl) {
-            // Fazer download do arquivo e salvar no Storage
-            const fileResp = await fetch(fileUrl);
-            if (fileResp.ok) {
-              const fileBytes = await fileResp.arrayBuffer();
-              const storagePath = `${doc.company_id}/signed/${doc.competencia}/${doc.employee_cpf}_${d4signDocumentUuid}_signed.pdf`;
+          if (downloadResp.ok) {
+            const downloadResult = await downloadResp.json();
+            const fileUrl: string | undefined =
+              downloadResult?.url || downloadResult?.link ||
+              (Array.isArray(downloadResult) && downloadResult[0]?.url);
 
-              await supabase.storage
-                .from("verbas-indenizatorias")
-                .upload(storagePath, fileBytes, {
-                  contentType: "application/pdf",
-                  upsert: true,
-                });
+            if (fileUrl) {
+              const fileResp = await fetch(fileUrl);
+              if (fileResp.ok) {
+                const fileBytes = await fileResp.arrayBuffer();
+                const storagePath = `${doc.company_id}/signed/${doc.competencia}/${doc.employee_cpf}_signed.pdf`;
 
-              extraFields.signed_file_path = storagePath;
+                await supabase.storage
+                  .from("verbas-indenizatorias")
+                  .upload(storagePath, fileBytes, {
+                    contentType: "application/pdf",
+                    upsert: true,
+                  });
+
+                extraFields.signed_file_path = storagePath;
+                console.log("d4sign-webhook: PDF assinado salvo em", storagePath);
+              } else {
+                console.error("d4sign-webhook: download do PDF falhou:", fileResp.status);
+              }
+            } else {
+              console.warn("d4sign-webhook: D4Sign download não retornou URL:", JSON.stringify(downloadResult));
             }
+          } else {
+            console.error("d4sign-webhook: D4Sign download endpoint retornou:", downloadResp.status);
           }
+        } else {
+          console.warn("d4sign-webhook: d4sign_config não encontrada para download");
         }
       } catch (downloadErr) {
         console.error("d4sign-webhook: erro ao baixar doc assinado:", sanitizeError(downloadErr));
-        // Não falhar o webhook por causa de erro no download
       }
     } else if (type_post === "2") {
       // Documento cancelado
