@@ -475,7 +475,7 @@ serve(async (req: Request) => {
                     companyId,
                     payload: {
                       documentUuid: d4signDocUuid,
-                      signers: [{ email: signerEmailToUse, act: "1" }],
+                      signers: [{ email: signerEmailToUse, act: "1", foreign: "0", foreignLang: "" }],
                     },
                   }),
                 });
