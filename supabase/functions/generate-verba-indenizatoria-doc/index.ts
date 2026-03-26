@@ -480,7 +480,9 @@ serve(async (req: Request) => {
                   }),
                 });
                 addSignerBody = await addSignerRes.json().catch(() => ({})) as Record<string, unknown>;
-                signerAdded = addSignerRes.ok && (addSignerBody?.ok === true);
+                // Considerar sucesso se HTTP 200 e resposta não contém erro explícito
+                signerAdded = addSignerRes.ok && (addSignerBody?.ok !== false) && !addSignerBody?.error;
+                console.log("[generate-verba-doc] add_signer resultado:", addSignerRes.status, JSON.stringify(addSignerBody));
 
                 if (!signerAdded) {
                   console.error("[generate-verba-doc] add_signer FALHOU:", JSON.stringify(addSignerBody));
@@ -519,7 +521,8 @@ serve(async (req: Request) => {
                   }),
                 });
                 sendBody = await sendRes.json().catch(() => ({})) as Record<string, unknown>;
-                sentToSign = sendRes.ok && (sendBody?.ok === true);
+                sentToSign = sendRes.ok && (sendBody?.ok !== false) && !sendBody?.error;
+                console.log("[generate-verba-doc] send_to_sign resultado:", sendRes.status, JSON.stringify(sendBody));
 
                 if (!sentToSign) {
                   console.error("[generate-verba-doc] send_to_sign FALHOU:", JSON.stringify(sendBody));
