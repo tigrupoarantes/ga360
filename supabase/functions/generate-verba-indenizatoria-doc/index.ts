@@ -435,54 +435,8 @@ serve(async (req: Request) => {
                 });
               }
 
-              // Posicionar assinatura no rodapé (sobre o nome do colaborador)
-              // PDF: A4 = 595x842 pts. Linha de assinatura em y=80 pts, x=40 pts.
-              // D4Sign usa mm com origem no canto superior-esquerdo.
-              // A4 = 210x297 mm. Conversão: x_mm = 40/595*210 ≈ 14, y_mm = (842-80)/842*297 ≈ 269
-              let pinsAdded = false;
-              if (signerAdded && signerEmailToUse) {
-                try {
-                  const addPinsRes = await fetch(`${supabaseUrl}/functions/v1/d4sign-proxy`, {
-                    method: "POST",
-                    headers: { Authorization: authHeader, "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      action: "add_pins",
-                      companyId,
-                      payload: {
-                        documentUuid: d4signDocUuid,
-                        pins: [{
-                          document: d4signDocUuid,
-                          email: signerEmailToUse,
-                          page_height: "297",
-                          page_width: "210",
-                          page: "1",
-                          position_x: "55",
-                          position_y: "180",
-                          type: "0",
-                        }],
-                      },
-                    }),
-                  });
-                  const pinsBody = await addPinsRes.json().catch(() => ({})) as Record<string, unknown>;
-                  pinsAdded = addPinsRes.ok && (pinsBody?.ok !== false) && !pinsBody?.error;
-                  console.log("[generate-verba-doc] add_pins resultado:", addPinsRes.status, JSON.stringify(pinsBody));
-
-                  if (!pinsAdded) {
-                    console.error("[generate-verba-doc] add_pins FALHOU:", JSON.stringify(pinsBody));
-                    await supabase.from("verba_indenizatoria_logs").insert({
-                      document_id: docRecord.id,
-                      action: "error",
-                      details: { step: "add_pins", response: pinsBody },
-                      performed_by: user.id,
-                    });
-                  }
-                } catch (pinErr) {
-                  console.error("[generate-verba-doc] add_pins exception:", sanitizeError(pinErr));
-                  // Continuar mesmo se falhar — tentar enviar assim mesmo
-                }
-              }
-
               // Enviar para assinatura (só se signatário foi adicionado)
+              // NÃO usar addpins — assinatura livre (signatário escolhe onde assinar)
               let sentToSign = false;
               let sendBody: Record<string, unknown> = {};
 
