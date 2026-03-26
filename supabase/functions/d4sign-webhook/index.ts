@@ -163,8 +163,9 @@ serve(async (req: Request) => {
                     const pdfEntry = entries.find((e: any) => e.filename.toLowerCase().endsWith(".pdf"));
 
                     if (pdfEntry && pdfEntry.getData) {
-                      uploadData = await pdfEntry.getData(new BlobWriter("application/pdf"));
-                      console.log("[d4sign-webhook] PDF extraído do ZIP:", pdfEntry.filename, "blob size:", (uploadData as Blob).size);
+                      const pdfBlob = await pdfEntry.getData(new BlobWriter("application/pdf"));
+                      uploadData = new Uint8Array(await pdfBlob.arrayBuffer());
+                      console.log("[d4sign-webhook] PDF extraído do ZIP:", pdfEntry.filename, "size:", (uploadData as Uint8Array).length);
                     } else {
                       // Sem .pdf no ZIP — salvar o ZIP todo como fallback
                       console.warn("[d4sign-webhook] ZIP não contém .pdf. Entries:", entries.map((e: any) => e.filename));
@@ -175,11 +176,13 @@ serve(async (req: Request) => {
                   }
                 }
 
+                // Deletar arquivo antigo se existir (evitar corrupção por upsert)
+                await supabase.storage.from("verbas-indenizatorias").remove([storagePath]);
+
                 const { error: uploadError } = await supabase.storage
                   .from("verbas-indenizatorias")
                   .upload(storagePath, uploadData, {
                     contentType: "application/pdf",
-                    upsert: true,
                   });
 
                 if (uploadError) {
