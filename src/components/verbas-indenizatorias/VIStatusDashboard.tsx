@@ -58,21 +58,18 @@ export function VIStatusDashboard({ documents, total, companyId }: Props) {
       bgClass: 'bg-red-50 dark:bg-red-950/30',
     },
     ...(balance ? (() => {
-      // D4Sign pode retornar em diferentes formatos dependendo do endpoint
+      // D4Sign retorna: { credit: "5000", sent: 2, used_balance: "2/5000", ... }
       const raw = balance as Record<string, unknown>;
-      const balanceValue = Number(
-        raw.balance ?? raw.credits ?? raw.remaining ?? raw.saldo ??
-        (Array.isArray(raw) && (raw as unknown[])[0] ? ((raw as unknown[])[0] as Record<string, unknown>).balance : null) ??
-        0
-      );
-      const totalValue = Number(raw.total ?? raw.limit ?? raw.plan_limit ?? 0);
+      const credit = Number(raw.credit ?? 0);
+      const sent = Number(raw.sent ?? 0);
+      const remaining = credit - sent;
       return [{
         label: 'Saldo D4Sign',
-        value: balanceValue,
+        value: remaining,
         icon: PackageCheck,
-        iconClass: 'text-purple-500',
-        bgClass: 'bg-purple-50 dark:bg-purple-950/30',
-        extra: totalValue > 0 ? `de ${totalValue.toLocaleString("pt-BR")} contratados` : undefined,
+        iconClass: remaining > 50 ? 'text-purple-500' : 'text-amber-500',
+        bgClass: remaining > 50 ? 'bg-purple-50 dark:bg-purple-950/30' : 'bg-amber-50 dark:bg-amber-950/30',
+        extra: `${sent.toLocaleString("pt-BR")} usados de ${credit.toLocaleString("pt-BR")}`,
       }];
     })() : []),
   ];
