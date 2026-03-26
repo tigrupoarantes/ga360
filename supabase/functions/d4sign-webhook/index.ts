@@ -121,34 +121,61 @@ serve(async (req: Request) => {
           });
 
           if (downloadResp.ok) {
-            const downloadResult = await downloadResp.json();
+            const downloadText = await downloadResp.text();
+            console.log("[d4sign-webhook] download response preview:", downloadText.slice(0, 500));
+
+            let downloadResult: Record<string, unknown> = {};
+            try { downloadResult = JSON.parse(downloadText); } catch { downloadResult = { raw: downloadText.slice(0, 200) }; }
+
+            // D4Sign pode retornar em diferentes formatos
             const fileUrl: string | undefined =
-              downloadResult?.url || downloadResult?.link ||
-              (Array.isArray(downloadResult) && downloadResult[0]?.url);
+              (downloadResult?.url as string) ||
+              (downloadResult?.link as string) ||
+              (downloadResult?.data as Record<string, unknown>)?.url as string ||
+              (Array.isArray(downloadResult) ? (downloadResult[0] as Record<string, unknown>)?.url as string : undefined);
+
+            console.log("[d4sign-webhook] fileUrl extraída:", fileUrl);
 
             if (fileUrl) {
               const fileResp = await fetch(fileUrl);
+              const contentType = fileResp.headers.get("content-type") || "";
+              console.log("[d4sign-webhook] file download status:", fileResp.status, "content-type:", contentType, "size:", fileResp.headers.get("content-length"));
+
               if (fileResp.ok) {
-                const fileBytes = await fileResp.arrayBuffer();
+                const fileBytes = new Uint8Array(await fileResp.arrayBuffer());
                 const storagePath = `${doc.company_id}/signed/${doc.competencia}/${doc.employee_cpf}_signed.pdf`;
 
-                await supabase.storage
-                  .from("verbas-indenizatorias")
-                  .upload(storagePath, fileBytes, {
-                    contentType: "application/pdf",
-                    upsert: true,
-                  });
+                // Verificar que é realmente um PDF (magic bytes: %PDF)
+                const isPdf = fileBytes.length > 4 && fileBytes[0] === 0x25 && fileBytes[1] === 0x50 && fileBytes[2] === 0x44 && fileBytes[3] === 0x46;
+                console.log("[d4sign-webhook] isPdf:", isPdf, "size:", fileBytes.length, "first4:", String.fromCharCode(...fileBytes.slice(0, 4)));
 
-                extraFields.signed_file_path = storagePath;
-                console.log("d4sign-webhook: PDF assinado salvo em", storagePath);
+                if (isPdf) {
+                  await supabase.storage
+                    .from("verbas-indenizatorias")
+                    .upload(storagePath, fileBytes, {
+                      contentType: "application/pdf",
+                      upsert: true,
+                    });
+
+                  extraFields.signed_file_path = storagePath;
+                  console.log("[d4sign-webhook] PDF assinado salvo em", storagePath);
+                } else {
+                  console.error("[d4sign-webhook] Arquivo baixado NÃO é PDF. Primeiros bytes:", String.fromCharCode(...fileBytes.slice(0, 50)));
+                  // Salvar log do erro
+                  await supabase.from("verba_indenizatoria_logs").insert({
+                    document_id: doc.id,
+                    action: "error",
+                    details: { step: "download_signed", reason: "arquivo não é PDF", contentType, size: fileBytes.length, preview: String.fromCharCode(...fileBytes.slice(0, 100)) },
+                  });
+                }
               } else {
-                console.error("d4sign-webhook: download do PDF falhou:", fileResp.status);
+                console.error("[d4sign-webhook] download do PDF falhou:", fileResp.status);
               }
             } else {
-              console.warn("d4sign-webhook: D4Sign download não retornou URL:", JSON.stringify(downloadResult));
+              console.warn("[d4sign-webhook] D4Sign download não retornou URL:", JSON.stringify(downloadResult).slice(0, 300));
             }
           } else {
-            console.error("d4sign-webhook: D4Sign download endpoint retornou:", downloadResp.status);
+            console.error("[d4sign-webhook] D4Sign download endpoint retornou:", downloadResp.status);
           }
         } else {
           console.warn("d4sign-webhook: d4sign_config não encontrada para download");
