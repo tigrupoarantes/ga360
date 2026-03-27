@@ -52,6 +52,7 @@ interface Goal {
   status: "active" | "completed" | "paused" | "cancelled";
   indicator_type?: string | null;
   evaluation_points?: number | null;
+  gamification_weight?: number | null;
   effective_value?: number | null;
   created_at: string;
 }
@@ -118,6 +119,7 @@ type GoalFormData = {
   cadence: Goal["cadence"];
   status: Goal["status"];
   area_id: string;
+  gamification_weight: string;
 };
 
 const defaultGoalFormData: GoalFormData = {
@@ -133,6 +135,7 @@ const defaultGoalFormData: GoalFormData = {
   cadence: "monthly",
   status: "active",
   area_id: "none",
+  gamification_weight: "1",
 };
 
 const statusLabel: Record<Goal["status"], string> = {
@@ -158,6 +161,11 @@ const activityStatusLabel: Record<GoalActivity["status"], string> = {
 const formatDate = (value: string | null) => {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("pt-BR");
+};
+
+const formatWeight = (value: number | null | undefined) => {
+  if (value == null) return "—";
+  return Number.isInteger(value) ? String(value) : value.toLocaleString("pt-BR");
 };
 
 type ImportHeader =
@@ -375,7 +383,7 @@ export default function Metas() {
       let query = db
         .from<Goal[]>("goals")
         .select(
-          "id, company_id, area_id, title, description, type, pillar, unit, target_value, current_value, start_date, end_date, cadence, status, indicator_type, evaluation_points, effective_value, created_at"
+          "id, company_id, area_id, title, description, type, pillar, unit, target_value, current_value, start_date, end_date, cadence, status, indicator_type, evaluation_points, gamification_weight, effective_value, created_at"
         )
         .order("created_at", { ascending: false });
 
@@ -609,6 +617,7 @@ export default function Metas() {
       cadence: goal.cadence,
       status: goal.status,
       area_id: goal.area_id ?? "none",
+      gamification_weight: String(goal.gamification_weight ?? 1),
     });
     setGoalDialogOpen(true);
   };
@@ -621,6 +630,11 @@ export default function Metas() {
 
       if (!editingGoal && !selectedCompanyId) {
         throw new Error("Selecione uma empresa para criar a meta");
+      }
+
+      const gamificationWeight = Number(goalFormData.gamification_weight || 1);
+      if (Number.isNaN(gamificationWeight) || gamificationWeight <= 0) {
+        throw new Error("Informe um peso da gamificacao maior que zero");
       }
 
       const payload = {
@@ -636,6 +650,7 @@ export default function Metas() {
         cadence: goalFormData.cadence,
         status: goalFormData.status,
         area_id: goalFormData.area_id === "none" ? null : goalFormData.area_id,
+        gamification_weight: gamificationWeight,
       };
 
       if (editingGoal) {
@@ -708,6 +723,7 @@ export default function Metas() {
           status: "active" as Goal["status"],
           indicator_type: indicatorType,
           evaluation_points: row.evaluationPoints,
+          gamification_weight: 1,
           effective_value: row.effectiveValue,
         };
       });
@@ -985,6 +1001,7 @@ export default function Metas() {
                           <div className="flex flex-wrap items-center gap-2 text-xs">
                             <Badge variant="secondary">{statusLabel[goal.status]}</Badge>
                             <Badge variant="outline">{typeLabel[goal.type]}</Badge>
+                            <Badge variant="outline">Peso {formatWeight(goal.gamification_weight ?? 1)}</Badge>
                             {goal.area_id && areaNameMap.get(goal.area_id) && (
                               <Badge variant="outline">{areaNameMap.get(goal.area_id)}</Badge>
                             )}
@@ -1079,6 +1096,30 @@ export default function Metas() {
                     </div>
                   </div>
 
+                  <div className="rounded-md border p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-medium">GamificaÃ§Ã£o</h3>
+                      <Badge variant="outline">
+                        Peso {formatWeight(selectedGoal.gamification_weight ?? 1)}
+                      </Badge>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Peso da gamificaÃ§Ã£o</p>
+                        <p className="text-sm">{formatWeight(selectedGoal.gamification_weight ?? 1)}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Pontos por avaliaÃ§Ã£o</p>
+                        <p className="text-sm">{selectedGoal.evaluation_points ?? "â€”"}</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedGoal.current_value >= (selectedGoal.target_value ?? Number.POSITIVE_INFINITY)
+                        ? "PontuaÃ§Ã£o de conclusÃ£o jÃ¡ enviada para a gamificaÃ§Ã£o."
+                        : "Ao concluir esta meta, a pontuaÃ§Ã£o considera o peso configurado. Esse peso nÃ£o altera o progresso da meta."}
+                    </p>
+                  </div>
+
                   <div className="space-y-2">
                     <Label>Atualizar progresso</Label>
                     <div className="flex items-center gap-2">
@@ -1128,7 +1169,7 @@ export default function Metas() {
                           type="number"
                           min="0.01"
                           step="0.01"
-                          placeholder="Peso"
+                          placeholder="Peso da atividade"
                           value={activityWeight}
                           onChange={(event) => setActivityWeight(event.target.value)}
                         />
@@ -1184,7 +1225,7 @@ export default function Metas() {
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 text-xs">
-                            <Badge variant="outline">Peso {activity.weight}</Badge>
+                            <Badge variant="outline">Peso da atividade {activity.weight}</Badge>
                             <span className="text-muted-foreground inline-flex items-center gap-1">
                               <CalendarDays className="h-3 w-3" />
                               {formatDate(activity.due_date)}
@@ -1481,6 +1522,23 @@ export default function Metas() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Peso da gamificação</Label>
+              <Input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={goalFormData.gamification_weight}
+                onChange={(event) =>
+                  setGoalFormData((prev) => ({ ...prev, gamification_weight: event.target.value }))
+                }
+                placeholder="1"
+              />
+              <p className="text-xs text-muted-foreground">
+                Define quantos pontos esta meta gera ao ser concluída. Não altera o progresso da meta.
+              </p>
             </div>
 
             <div className="space-y-2">

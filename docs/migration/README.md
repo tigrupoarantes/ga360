@@ -11,6 +11,7 @@ Este diretório contém todos os arquivos necessários para migrar o backend do 
 | `storage-buckets.sql` | Criação dos buckets de storage e suas políticas |
 | `seed-data.sql` | Dados iniciais (badges, configurações, áreas EC) |
 | `reset-pj-data-by-company.sql` | Limpa dados do módulo Controle PJ por empresa (inclui holerites) |
+| `reset-verbas-and-employees-temporarily.sql` | Runbook SQL para limpeza temporária e controlada de funcionários e verbas durante alterações do DBA |
 | `sync-pj-contracts-from-company.sql` | Sincroniza funcionários (external_employees) para contratos no módulo Controle PJ |
 | `fix-governanca-permissions-by-email.sql` | Reaplica permissões de Governança EC e cards por email do usuário |
 

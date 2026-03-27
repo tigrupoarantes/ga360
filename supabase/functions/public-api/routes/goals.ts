@@ -72,7 +72,7 @@ async function listGoals(url: URL, ctx: ApiKeyContext, db: ReturnType<typeof sup
   let query = db
     .from("goals")
     .select(`
-      id, title, pillar, unit, target_value, current_value,
+      id, title, pillar, unit, target_value, current_value, gamification_weight,
       status, cadence, area_id, responsible_id, company_id,
       distributor_id, metric_type, auto_calculate,
       created_at, updated_at
@@ -107,7 +107,7 @@ async function getGoal(id: string, ctx: ApiKeyContext, db: ReturnType<typeof sup
   const { data, error } = await db
     .from("goals")
     .select(`
-      id, title, pillar, unit, target_value, current_value,
+      id, title, pillar, unit, target_value, current_value, gamification_weight,
       status, cadence, area_id, responsible_id, company_id, created_at, updated_at,
       goal_updates(id, value, notes, created_at, updated_by),
       goal_activities(id, title, status, weight, due_date, responsible_id)
@@ -125,15 +125,21 @@ async function createGoal(req: Request, ctx: ApiKeyContext, db: ReturnType<typeo
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return err("Invalid JSON", "INVALID_JSON"); }
 
-  const { title, pillar, unit, target_value, cadence, area_id, responsible_id } = body as any;
+  const { title, pillar, unit, target_value, cadence, area_id, responsible_id, gamification_weight } = body as any;
   if (!title || !pillar || !unit || target_value === undefined || !cadence) {
     return err("Campos obrigatórios: title, pillar, unit, target_value, cadence", "MISSING_FIELDS");
+  }
+
+  const parsedWeight = gamification_weight === undefined ? 1 : Number(gamification_weight);
+  if (!Number.isFinite(parsedWeight) || parsedWeight <= 0) {
+    return err("Campo inválido: gamification_weight deve ser maior que zero", "INVALID_WEIGHT");
   }
 
   const { data, error } = await db.from("goals").insert({
     title, pillar, unit, target_value, cadence,
     area_id: area_id ?? null,
     responsible_id: responsible_id ?? null,
+    gamification_weight: parsedWeight,
     company_id: ctx.companyId,
     status: "on_track",
     current_value: 0,
@@ -149,12 +155,20 @@ async function updateGoal(req: Request, id: string, ctx: ApiKeyContext, db: Retu
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return err("Invalid JSON", "INVALID_JSON"); }
 
-  const allowed = ["title", "pillar", "unit", "target_value", "cadence", "status", "area_id", "responsible_id"];
+  const allowed = ["title", "pillar", "unit", "target_value", "cadence", "status", "area_id", "responsible_id", "gamification_weight"];
   const patch: Record<string, unknown> = {};
   for (const key of allowed) {
     if (key in body) patch[key] = body[key];
   }
   if (!Object.keys(patch).length) return err("Nenhum campo para atualizar", "NO_FIELDS");
+
+  if ("gamification_weight" in patch) {
+    const parsedWeight = Number(patch.gamification_weight);
+    if (!Number.isFinite(parsedWeight) || parsedWeight <= 0) {
+      return err("Campo inválido: gamification_weight deve ser maior que zero", "INVALID_WEIGHT");
+    }
+    patch.gamification_weight = parsedWeight;
+  }
 
   const { data, error } = await db
     .from("goals")

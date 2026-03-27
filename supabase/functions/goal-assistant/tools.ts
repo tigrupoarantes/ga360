@@ -28,14 +28,19 @@ export async function executeTool(
         start_date: args.start_date ?? null,
         end_date: args.end_date ?? null,
         area_id: args.area_id ?? null,
+        gamification_weight: args.gamification_weight ?? 1,
       };
 
       if (!payload.title) throw new Error("Título da meta é obrigatório.");
 
+      if (Number(payload.gamification_weight) <= 0) {
+        throw new Error("Peso da gamificacao deve ser maior que zero.");
+      }
+
       const { data, error } = await supabaseAdmin
         .from("goals")
         .insert(payload)
-        .select("id, title, status, current_value, target_value")
+        .select("id, title, status, current_value, target_value, gamification_weight")
         .single();
       if (error) throw error;
       return data;
@@ -77,6 +82,7 @@ export async function executeTool(
         "area_id",
         "cadence",
         "pillar",
+        "gamification_weight",
       ];
 
       for (const field of fields) {
@@ -87,12 +93,16 @@ export async function executeTool(
         throw new Error("Nenhum campo informado para atualização.");
       }
 
+      if ("gamification_weight" in updatePayload && Number(updatePayload.gamification_weight) <= 0) {
+        throw new Error("Peso da gamificacao deve ser maior que zero.");
+      }
+
       const { data, error } = await supabaseAdmin
         .from("goals")
         .update(updatePayload)
         .eq("id", args.goal_id)
         .eq("company_id", companyId)
-        .select("id, title, status, current_value, target_value")
+        .select("id, title, status, current_value, target_value, gamification_weight")
         .single();
       if (error) throw error;
       return data;
@@ -151,7 +161,7 @@ export async function executeTool(
     case "query_goals": {
       let query = supabaseAdmin
         .from("goals")
-        .select("id, title, status, current_value, target_value, unit, end_date, created_at")
+        .select("id, title, status, current_value, target_value, gamification_weight, unit, end_date, created_at")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false });
 
