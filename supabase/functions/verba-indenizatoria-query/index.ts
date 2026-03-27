@@ -17,7 +17,10 @@ interface QueryRequest {
   companyId: string;
   fetchEmployeesWithVerba?: boolean;
   fetchAccountingGroups?: boolean;
+  fetchCnpjGroups?: boolean;
   accountingGroups?: string[];
+  cnpjFilter?: string[];
+  cnpj?: string;
   competencia?: string;
   cpf?: string;
   status?: string;
@@ -73,7 +76,10 @@ serve(async (req: Request) => {
       companyId,
       fetchEmployeesWithVerba,
       fetchAccountingGroups,
+      fetchCnpjGroups,
       accountingGroups,
+      cnpjFilter,
+      cnpj,
       competencia,
       cpf,
       status,
@@ -221,6 +227,61 @@ serve(async (req: Request) => {
       );
     }
 
+    // Modo: descobrir CNPJs (empresas contábeis) disponíveis para a competência
+    if (fetchCnpjGroups) {
+      if (!competencia) {
+        return new Response(
+          JSON.stringify({ error: "competencia é obrigatória para fetchCnpjGroups" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const [yearStr] = competencia.split("-");
+      const ano = parseInt(yearStr, 10);
+
+      if (isNaN(ano)) {
+        return new Response(
+          JSON.stringify({ error: "Formato de competencia inválido. Use YYYY-MM" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Buscar CNPJs distintos via employee_accounting_company_id → companies.external_id
+      const { data: cnpjRows, error: cnpjError } = await supabase
+        .from("payroll_verba_pivot")
+        .select("employee_accounting_company_id, companies:employee_accounting_company_id(external_id, name)")
+        .eq("company_id", companyId)
+        .eq("ano", ano)
+        .ilike("tipo_verba", "%INDENIZ%")
+        .not("employee_accounting_company_id", "is", null);
+
+      if (cnpjError) {
+        return new Response(
+          JSON.stringify({ error: "Falha ao consultar CNPJs", details: cnpjError.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Deduplicar por CNPJ
+      const cnpjMap = new Map<string, { cnpj: string; companyName: string }>();
+      for (const row of cnpjRows ?? []) {
+        const comp = row.companies as unknown as { external_id: string; name: string } | null;
+        if (comp?.external_id) {
+          cnpjMap.set(comp.external_id, {
+            cnpj: comp.external_id,
+            companyName: comp.name || "",
+          });
+        }
+      }
+
+      const cnpjGroups = [...cnpjMap.values()].sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+      return new Response(
+        JSON.stringify({ cnpjGroups }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // Modo: listar funcionários com VERBA_INDENIZATORIA lançada na competência
     // Lê diretamente de payroll_verba_pivot via RPC (agrega verba + adiantamento por CPF)
     if (fetchEmployeesWithVerba) {
@@ -266,12 +327,17 @@ serve(async (req: Request) => {
         position: r.employee_position ?? null,
         unit: r.employee_unidade ?? null,
         accounting_group: String(r.employee_accounting_group || "").trim() || null,
+        accounting_company_cnpj: r.accounting_company_cnpj ?? null,
+        accounting_company_name: r.accounting_company_name ?? null,
       }));
 
-      // Filtrar por grupos contábeis configurados (se informado)
-      const employees = accountingGroups?.length
-        ? allEmployees.filter((e) => accountingGroups.includes(e.accounting_group ?? ""))
-        : allEmployees;
+      // Filtrar por CNPJ (prioridade) ou por grupos contábeis (backward compat)
+      let employees = allEmployees;
+      if (cnpjFilter?.length) {
+        employees = allEmployees.filter((e) => cnpjFilter.includes(e.accounting_company_cnpj ?? ""));
+      } else if (accountingGroups?.length) {
+        employees = allEmployees.filter((e) => accountingGroups.includes(e.accounting_group ?? ""));
+      }
 
       return new Response(
         JSON.stringify({ employees }),
@@ -292,6 +358,7 @@ serve(async (req: Request) => {
     if (competencia) query = query.eq("competencia", competencia);
     if (cpf) query = query.eq("employee_cpf", cpf);
     if (status) query = query.eq("d4sign_status", status);
+    if (cnpj) query = query.eq("employee_accounting_cnpj", cnpj);
 
     const { data: rows, count, error: queryError } = await query;
 

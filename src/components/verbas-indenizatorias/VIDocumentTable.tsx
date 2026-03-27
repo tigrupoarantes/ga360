@@ -10,6 +10,7 @@ import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { Badge } from '@/components/ui/badge';
 import { Eye, Mail, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -69,6 +70,7 @@ export function VIDocumentTable({
               <TableHead>Funcionário</TableHead>
               <TableHead>CPF</TableHead>
               <TableHead>Competência</TableHead>
+              <TableHead>Tipo</TableHead>
               <TableHead className="text-right">Valor Total</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Gerado em</TableHead>
@@ -78,7 +80,7 @@ export function VIDocumentTable({
           <TableBody>
             {documents.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
                   Nenhum documento encontrado para os filtros selecionados.
                 </TableCell>
               </TableRow>
@@ -105,6 +107,11 @@ export function VIDocumentTable({
                     </TableCell>
                     <TableCell onClick={() => setSelectedDoc(doc)}>
                       {doc.competencia}
+                    </TableCell>
+                    <TableCell onClick={() => setSelectedDoc(doc)}>
+                      <Badge variant={doc.event_type === 'ADIANT_INDENIZATORIA' ? 'secondary' : 'default'}>
+                        {doc.event_type === 'ADIANT_INDENIZATORIA' ? 'Adiant.' : 'Verba'}
+                      </Badge>
                     </TableCell>
                     <TableCell
                       className="text-right font-mono text-sm"

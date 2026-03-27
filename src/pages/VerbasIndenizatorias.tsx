@@ -11,8 +11,7 @@ import { VIFilters } from '@/components/verbas-indenizatorias/VIFilters';
 import { VIDocumentTable } from '@/components/verbas-indenizatorias/VIDocumentTable';
 import { VIGenerateDialog } from '@/components/verbas-indenizatorias/VIGenerateDialog';
 import { VIBatchGenerateDialog } from '@/components/verbas-indenizatorias/VIBatchGenerateDialog';
-import { useVerbasIndenizatorias, useVIAccountingGroups, type VIQueryFilters } from '@/hooks/useVerbasIndenizatorias';
-import { resolveAccountingGroupLabel } from '@/lib/accountingGroups';
+import { useVerbasIndenizatorias, useVICnpjGroups, type VIQueryFilters } from '@/hooks/useVerbasIndenizatorias';
 import { useCardPermissions } from '@/hooks/useCardPermissions';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/contexts/CompanyContext';
@@ -49,7 +48,7 @@ export default function VerbasIndenizatorias() {
     filters,
   );
 
-  const { data: accountingGroups = [] } = useVIAccountingGroups(
+  const { data: cnpjGroups = [] } = useVICnpjGroups(
     selectedCompanyId ?? null,
     filters.competencia ?? '',
   );
@@ -65,10 +64,10 @@ export default function VerbasIndenizatorias() {
     setFilters((prev) => ({ ...prev, page }));
   }
 
-  function handleGroupCardClick(group: string) {
+  function handleCnpjCardClick(cnpj: string) {
     setFilters((prev) => ({
       ...prev,
-      accountingGroup: prev.accountingGroup === group ? undefined : group,
+      cnpj: prev.cnpj === cnpj ? undefined : cnpj,
       page: 1,
     }));
   }
@@ -144,15 +143,14 @@ export default function VerbasIndenizatorias() {
         {/* KPI cards */}
         <VIStatusDashboard documents={documents} total={total} companyId={selectedCompanyId} />
 
-        {/* Cards por grupo de contabilização */}
-        {filters.competencia && accountingGroups.length > 0 && (
+        {/* Cards por CNPJ (empresa contábil) */}
+        {filters.competencia && cnpjGroups.length > 0 && (
           <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">Grupos de Contabilização</p>
+            <p className="text-sm font-medium text-muted-foreground">Empresas (CNPJ)</p>
             <div className="flex flex-wrap gap-3">
-              {accountingGroups.map((group) => {
-                const label = resolveAccountingGroupLabel(group);
+              {cnpjGroups.map((g) => {
                 const docsInGroup = documents.filter(
-                  (d) => d.employee_accounting_group === group,
+                  (d) => d.employee_accounting_cnpj === g.cnpj,
                 );
                 const signedInGroup = docsInGroup.filter(
                   (d) => d.d4sign_status === 'signed',
@@ -160,11 +158,11 @@ export default function VerbasIndenizatorias() {
                 const pct = docsInGroup.length > 0
                   ? Math.round((signedInGroup / docsInGroup.length) * 100)
                   : 0;
-                const isSelected = filters.accountingGroup === group;
+                const isSelected = filters.cnpj === g.cnpj;
 
                 return (
                   <Card
-                    key={group}
+                    key={g.cnpj}
                     role="button"
                     tabIndex={0}
                     className={`p-3 cursor-pointer flex items-center gap-3 transition-all select-none
@@ -172,25 +170,27 @@ export default function VerbasIndenizatorias() {
                         ? 'border-primary ring-1 ring-primary'
                         : 'hover:border-primary/50'
                       }`}
-                    onClick={() => handleGroupCardClick(group)}
+                    onClick={() => handleCnpjCardClick(g.cnpj)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        handleGroupCardClick(group);
+                        handleCnpjCardClick(g.cnpj);
                       }
                     }}
                   >
                     <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">{label}</p>
-                      <p className="text-xs text-muted-foreground">{docsInGroup.length} doc(s) na página</p>
+                      <p className="text-sm font-semibold truncate">{g.companyName}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{g.cnpj}</p>
                     </div>
-                    <Badge
-                      variant={pct === 100 && docsInGroup.length > 0 ? 'default' : 'secondary'}
-                      className="ml-auto text-xs shrink-0"
-                    >
-                      {pct}% ass.
-                    </Badge>
+                    {docsInGroup.length > 0 && (
+                      <Badge
+                        variant={pct === 100 ? 'default' : 'secondary'}
+                        className="ml-auto text-xs shrink-0"
+                      >
+                        {pct}% ass.
+                      </Badge>
+                    )}
                   </Card>
                 );
               })}

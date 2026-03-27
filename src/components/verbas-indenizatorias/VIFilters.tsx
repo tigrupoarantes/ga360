@@ -5,8 +5,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Search, X } from 'lucide-react';
 import type { VIQueryFilters } from '@/hooks/useVerbasIndenizatorias';
-import { useVIAccountingGroups } from '@/hooks/useVerbasIndenizatorias';
-import { resolveAccountingGroupLabel } from '@/lib/accountingGroups';
+import { useVICnpjGroups } from '@/hooks/useVerbasIndenizatorias';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos os status' },
@@ -25,13 +24,13 @@ interface Props {
 }
 
 export function VIFilters({ filters, onChange, companyId }: Props) {
-  const { data: groups = [] } = useVIAccountingGroups(companyId, filters.competencia ?? '');
+  const { data: cnpjGroups = [] } = useVICnpjGroups(companyId, filters.competencia ?? '');
 
   function handleReset() {
     onChange({ page: 1 });
   }
 
-  const hasFilters = !!(filters.competencia || filters.cpf || filters.status || filters.accountingGroup);
+  const hasFilters = !!(filters.competencia || filters.cpf || filters.status || filters.cnpj);
 
   return (
     <div className="flex flex-wrap gap-3 items-center">
@@ -39,7 +38,7 @@ export function VIFilters({ filters, onChange, companyId }: Props) {
         <Input
           placeholder="Competência (2026-03)"
           value={filters.competencia ?? ''}
-          onChange={(e) => onChange({ ...filters, competencia: e.target.value || undefined, accountingGroup: undefined, page: 1 })}
+          onChange={(e) => onChange({ ...filters, competencia: e.target.value || undefined, cnpj: undefined, page: 1 })}
           className="text-sm"
         />
       </div>
@@ -71,18 +70,18 @@ export function VIFilters({ filters, onChange, companyId }: Props) {
       </Select>
 
       <Select
-        value={filters.accountingGroup ?? 'all'}
-        onValueChange={(v) => onChange({ ...filters, accountingGroup: v === 'all' ? undefined : v, page: 1 })}
-        disabled={!filters.competencia || groups.length === 0}
+        value={filters.cnpj ?? 'all'}
+        onValueChange={(v) => onChange({ ...filters, cnpj: v === 'all' ? undefined : v, page: 1 })}
+        disabled={!filters.competencia || cnpjGroups.length === 0}
       >
-        <SelectTrigger className="w-[220px] text-sm">
-          <SelectValue placeholder="Grupo de contabilização" />
+        <SelectTrigger className="w-[260px] text-sm">
+          <SelectValue placeholder="Empresa (CNPJ)" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">Todos os grupos</SelectItem>
-          {groups.map((g) => (
-            <SelectItem key={g} value={g}>
-              {resolveAccountingGroupLabel(g)}
+          <SelectItem value="all">Todas as empresas</SelectItem>
+          {cnpjGroups.map((g) => (
+            <SelectItem key={g.cnpj} value={g.cnpj}>
+              {g.companyName} ({g.cnpj})
             </SelectItem>
           ))}
         </SelectContent>

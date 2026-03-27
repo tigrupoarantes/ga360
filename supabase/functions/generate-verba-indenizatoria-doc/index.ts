@@ -54,6 +54,7 @@ interface GenerateRequest {
   templateId: string;
   sendToSign?: boolean;
   signerEmail?: string;  // se diferente do employee_email no Datalake
+  eventType?: "VERBA_INDENIZATORIA" | "ADIANT_INDENIZATORIA";
 }
 
 serve(async (req: Request) => {
@@ -85,7 +86,7 @@ serve(async (req: Request) => {
     }
 
     const body = (await req.json()) as GenerateRequest;
-    const { companyId, employeeCpf, competencia, templateId, sendToSign, signerEmail } = body;
+    const { companyId, employeeCpf, competencia, templateId, sendToSign, signerEmail, eventType = "VERBA_INDENIZATORIA" } = body;
 
     if (!companyId || !employeeCpf || !competencia || !templateId) {
       return new Response(
@@ -141,6 +142,7 @@ serve(async (req: Request) => {
       .select(
         `cpf, nome_funcionario, tipo_verba, razao_social,
          employee_department, employee_position, employee_unidade, employee_accounting_group,
+         employee_accounting_company_id,
          ${mesNome}`
       )
       .eq("company_id", companyId)
@@ -172,21 +174,44 @@ serve(async (req: Request) => {
     }
 
     const baseRow = verbaRow ?? adiantRow!;
-    const valorVerba = Number((verbaRow as Record<string, unknown>)?.[mesNome] ?? 0);
-    const valorAdiantamento = Number((adiantRow as Record<string, unknown>)?.[mesNome] ?? 0);
-    const valorTotal = valorVerba + valorAdiantamento;
+    const valorVerbaRaw = Number((verbaRow as Record<string, unknown>)?.[mesNome] ?? 0);
+    const valorAdiantamentoRaw = Number((adiantRow as Record<string, unknown>)?.[mesNome] ?? 0);
 
-    // Buscar email do funcionário em external_employees
+    // Selecionar valores conforme tipo de evento
+    const isAdiant = eventType === "ADIANT_INDENIZATORIA";
+    const valorVerba = isAdiant ? 0 : valorVerbaRaw;
+    const valorAdiantamento = isAdiant ? valorAdiantamentoRaw : 0;
+    const valorTotal = isAdiant ? valorAdiantamentoRaw : valorVerbaRaw;
+
+    // Buscar email do funcionário em external_employees (com fallback para auth.users)
     const { data: empData } = await supabase
       .from("external_employees")
-      .select("email")
+      .select("email, linked_profile_id")
       .ilike("cpf", `%${cpfNorm}%`)
       .eq("company_id", companyId)
       .eq("is_active", true)
       .maybeSingle();
 
+    let resolvedEmail = signerEmail || empData?.email || "";
+    if (!resolvedEmail && empData?.linked_profile_id) {
+      const { data: authUser } = await supabase.auth.admin.getUserById(empData.linked_profile_id);
+      resolvedEmail = authUser?.user?.email || "";
+    }
+
+    // Buscar CNPJ da empresa contábil
+    let accountingCnpj: string | null = null;
+    const accCompanyId = baseRow.employee_accounting_company_id as string | null;
+    if (accCompanyId) {
+      const { data: accCompany } = await supabase
+        .from("companies")
+        .select("external_id")
+        .eq("id", accCompanyId)
+        .maybeSingle();
+      accountingCnpj = (accCompany?.external_id as string) || null;
+    }
+
     const employeeName = String(baseRow.nome_funcionario ?? "");
-    const employeeEmail = signerEmail || empData?.email || "";
+    const employeeEmail = resolvedEmail;
     const empresa = String(baseRow.razao_social ?? "");
     const departamento = String(baseRow.employee_department ?? "");
     const cargo = String(baseRow.employee_position ?? "");
@@ -265,7 +290,8 @@ serve(async (req: Request) => {
     y -= lineHeight * 2.5;
 
     // ── Corpo do texto (texto corrido como o modelo de referência) ──
-    const corpoTexto = `Eu, ${employeeName}, ${cargo || "COLABORADOR"} inscrito (a) no CPF sob o n. ${cpfNorm} venho informar que o valor de ${formatBRL(valorTotal)} depositado em minha conta bancaria e lancados em minha folha de pagamento como VERBA INDENIZATORIA no dia ${dataGeracao}, refere se ao adiantamento da verba indenizatoria para visitar 100% dos clientes do roteiro estabelecido entre os dias ${primeiroDia} A ${ultimoDiaStr}. Declaro que o valor recebido se refere aos gastos com combustivel, manutencao, depreciacao, pedagio, contratacao de seguro pessoal, ajuda no custeio com o pagamento de taxas, impostos, licenciamentos etc. e e suficiente, nao tendo desta forma nada o que reclamar.`;
+    const tipoVerbaLabel = isAdiant ? "ADIANTAMENTO DE VERBA INDENIZATORIA" : "VERBA INDENIZATORIA";
+    const corpoTexto = `Eu, ${employeeName}, ${cargo || "COLABORADOR"} inscrito (a) no CPF sob o n. ${cpfNorm} venho informar que o valor de ${formatBRL(valorTotal)} depositado em minha conta bancaria e lancados em minha folha de pagamento como ${tipoVerbaLabel} no dia ${dataGeracao}, refere se ao adiantamento da verba indenizatoria para visitar 100% dos clientes do roteiro estabelecido entre os dias ${primeiroDia} A ${ultimoDiaStr}. Declaro que o valor recebido se refere aos gastos com combustivel, manutencao, depreciacao, pedagio, contratacao de seguro pessoal, ajuda no custeio com o pagamento de taxas, impostos, licenciamentos etc. e e suficiente, nao tendo desta forma nada o que reclamar.`;
 
     y = drawWrappedText(sanitize(corpoTexto), y, fontReg, fontSize);
 
@@ -316,6 +342,8 @@ serve(async (req: Request) => {
         employee_position: cargo || null,
         employee_unit: unidade || null,
         employee_accounting_group: grupoContabilizacao || null,
+        employee_accounting_cnpj: accountingCnpj,
+        event_type: eventType,
         competencia,
         ano: parseInt(ano, 10),
         mes,

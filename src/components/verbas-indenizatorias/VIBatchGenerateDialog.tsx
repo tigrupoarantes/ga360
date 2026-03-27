@@ -37,6 +37,8 @@ interface Props {
   defaultCompetencia?: string;
 }
 
+type EventType = 'VERBA_INDENIZATORIA' | 'ADIANT_INDENIZATORIA';
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
@@ -53,6 +55,10 @@ function formatCompetencia(competencia: string) {
   return `${months[parseInt(month, 10) - 1]}/${year}`;
 }
 
+function getEventValue(emp: EmployeeWithVerba, eventType: EventType): number {
+  return eventType === 'ADIANT_INDENIZATORIA' ? emp.valor_adiantamento : emp.valor_verba;
+}
+
 type Step = 'setup' | 'running' | 'done';
 
 export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompetencia }: Props) {
@@ -60,13 +66,20 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
 
   const [competencia, setCompetencia] = useState(defaultCompetencia || currentMonth());
   const [templateId, setTemplateId] = useState('');
+  const [eventType, setEventType] = useState<EventType>('VERBA_INDENIZATORIA');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [step, setStep] = useState<Step>('setup');
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<BatchResult[]>([]);
 
-  const { data: employees = [], isLoading: loadingEmployees } = useVIEmployeesWithVerba(
+  const { data: allEmployees = [], isLoading: loadingEmployees } = useVIEmployeesWithVerba(
     companyId, competencia,
+  );
+
+  // Filtrar por evento selecionado (mostrar só quem tem valor > 0 para o evento)
+  const employees = useMemo(
+    () => allEmployees.filter((e) => getEventValue(e, eventType) > 0),
+    [allEmployees, eventType],
   );
 
   const { data: templates = [] } = useQuery<Template[]>({
@@ -94,7 +107,6 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
     enabled: !!companyId && open,
   });
 
-  // Inicializa seleção quando employees carregam
   const allCpfs = useMemo(() => employees.map((e) => e.cpf), [employees]);
   const allSelected = allCpfs.length > 0 && allCpfs.every((cpf) => selected.has(cpf));
   const someSelected = allCpfs.some((cpf) => selected.has(cpf));
@@ -121,7 +133,7 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
   }
 
   const selectedEmployees = employees.filter((e) => selected.has(e.cpf));
-  const totalVerba = selectedEmployees.reduce((s, e) => s + e.valor_verba + e.valor_adiantamento, 0);
+  const totalVerba = selectedEmployees.reduce((s, e) => s + getEventValue(e, eventType), 0);
 
   async function handleRun() {
     if (!templateId || selected.size === 0) return;
@@ -153,6 +165,7 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
             templateId,
             sendToSign: true,
             signerEmail: emp.email ?? undefined,
+            eventType,
           }),
         });
         const data = await resp.json();
@@ -184,9 +197,13 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
   const okCount = results.filter((r) => r.ok).length;
   const failCount = results.filter((r) => !r.ok).length;
 
+  const eventTypeLabel = eventType === 'ADIANT_INDENIZATORIA'
+    ? 'Adiantamento de Verba Indenizatória'
+    : 'Verba Indenizatória';
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
@@ -198,7 +215,7 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
         {step === 'setup' && (
           <div className="flex flex-col gap-4 overflow-hidden">
             {/* Linha de configuração */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>Competência</Label>
                 <input
@@ -210,6 +227,18 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
                   }}
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tipo de evento</Label>
+                <Select value={eventType} onValueChange={(v) => { setEventType(v as EventType); setSelected(new Set()); }}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="VERBA_INDENIZATORIA">Verba Indenizatória</SelectItem>
+                    <SelectItem value="ADIANT_INDENIZATORIA">Adiantamento de Verba Indenizatória</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label>Template de documento</Label>
@@ -234,7 +263,10 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
             {/* Tabela de funcionários */}
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium">
-                {loadingEmployees ? 'Buscando funcionários...' : `${employees.length} funcionário(s) com verba em ${formatCompetencia(competencia)}`}
+                {loadingEmployees
+                  ? 'Buscando funcionários...'
+                  : `${employees.length} funcionário(s) com ${eventTypeLabel.toLowerCase()} em ${formatCompetencia(competencia)}`
+                }
               </p>
               {employees.length > 0 && (
                 <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={selectAll}>
@@ -252,7 +284,7 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
               ) : employees.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-24 gap-1 text-muted-foreground text-sm">
                   <AlertCircle className="h-5 w-5" />
-                  <span>Nenhum funcionário com verba lançada nesta competência.</span>
+                  <span>Nenhum funcionário com {eventTypeLabel.toLowerCase()} nesta competência.</span>
                 </div>
               ) : (
                 <Table>
@@ -267,9 +299,10 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
                       </TableHead>
                       <TableHead>Funcionário</TableHead>
                       <TableHead>CPF</TableHead>
-                      <TableHead className="text-right">Verba</TableHead>
-                      <TableHead className="text-right">Adiant.</TableHead>
                       <TableHead>E-mail</TableHead>
+                      <TableHead>Cargo/Função</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -287,14 +320,19 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
                         </TableCell>
                         <TableCell className="font-medium">{emp.nome}</TableCell>
                         <TableCell className="text-muted-foreground text-xs font-mono">{emp.cpf}</TableCell>
-                        <TableCell className="text-right text-sm">{formatCurrency(emp.valor_verba)}</TableCell>
-                        <TableCell className="text-right text-sm text-muted-foreground">
-                          {emp.valor_adiantamento > 0 ? formatCurrency(emp.valor_adiantamento) : '—'}
-                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate">
                           {emp.email || (
                             <span className="text-destructive">sem e-mail</span>
                           )}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">
+                          {emp.position || '—'}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[140px]">
+                          {emp.accounting_company_name || '—'}
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-medium">
+                          {formatCurrency(getEventValue(emp, eventType))}
                         </TableCell>
                       </TableRow>
                     ))}

@@ -14,6 +14,8 @@ export interface VIDocument {
   employee_position: string | null;
   employee_unit: string | null;
   employee_accounting_group: string | null;
+  employee_accounting_cnpj: string | null;
+  event_type: string | null;
   competencia: string;
   ano: number;
   mes: number;
@@ -49,6 +51,8 @@ export interface EmployeeWithVerba {
   position: string | null;
   unit: string | null;
   accounting_group: string | null;
+  accounting_company_cnpj: string | null;
+  accounting_company_name: string | null;
 }
 
 export interface VIQueryFilters {
@@ -56,6 +60,7 @@ export interface VIQueryFilters {
   cpf?: string;
   status?: string;
   accountingGroup?: string;
+  cnpj?: string;
   page?: number;
   pageSize?: number;
 }
@@ -106,6 +111,7 @@ export function useVerbasIndenizatorias(
         ...(filters.competencia ? { competencia: filters.competencia } : {}),
         ...(filters.cpf ? { cpf: filters.cpf } : {}),
         ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.cnpj ? { cnpj: filters.cnpj } : {}),
         ...(filters.accountingGroup ? { accountingGroups: [filters.accountingGroup] } : {}),
         page: filters.page,
         pageSize: filters.pageSize,
@@ -272,9 +278,10 @@ export function useVIEmployeesWithVerba(
   companyId: string | null,
   competencia: string,
   accountingGroups?: string[],
+  cnpjFilter?: string[],
 ) {
   return useQuery({
-    queryKey: ['vi-employees-with-verba', companyId, competencia, accountingGroups],
+    queryKey: ['vi-employees-with-verba', companyId, competencia, accountingGroups, cnpjFilter],
     queryFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -287,6 +294,7 @@ export function useVIEmployeesWithVerba(
           companyId,
           fetchEmployeesWithVerba: true,
           competencia,
+          ...(cnpjFilter?.length ? { cnpjFilter } : {}),
           ...(accountingGroups?.length ? { accountingGroups } : {}),
         },
       ).then((r) => r.employees ?? []);
@@ -309,6 +317,30 @@ export function useVIAccountingGroups(companyId: string | null, competencia: str
         'verba-indenizatoria-query',
         { companyId, fetchAccountingGroups: true, competencia },
       ).then((r) => r.groups ?? []);
+    },
+    enabled: !!companyId && !!competencia,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export interface VICnpjGroup {
+  cnpj: string;
+  companyName: string;
+}
+
+export function useVICnpjGroups(companyId: string | null, competencia: string) {
+  return useQuery<VICnpjGroup[]>({
+    queryKey: ['vi-cnpj-groups', companyId, competencia],
+    queryFn: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token || !companyId || !competencia) return [];
+
+      return callEdgeFunction<{ cnpjGroups: VICnpjGroup[] }>(
+        token,
+        'verba-indenizatoria-query',
+        { companyId, fetchCnpjGroups: true, competencia },
+      ).then((r) => r.cnpjGroups ?? []);
     },
     enabled: !!companyId && !!competencia,
     staleTime: 5 * 60_000,

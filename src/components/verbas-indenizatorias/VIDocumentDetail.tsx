@@ -82,6 +82,8 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
               <InfoRow label="Departamento" value={doc.employee_department} />
               <InfoRow label="Cargo" value={doc.employee_position} />
               <InfoRow label="Unidade" value={doc.employee_unit} />
+              <InfoRow label="CNPJ" value={doc.employee_accounting_cnpj} />
+              <InfoRow label="Tipo" value={doc.event_type === 'ADIANT_INDENIZATORIA' ? 'Adiantamento' : 'Verba Indenizatória'} />
             </div>
           </div>
 
