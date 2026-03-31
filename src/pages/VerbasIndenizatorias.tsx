@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ArrowLeft, Plus, RefreshCw, AlertTriangle, Building2, Users, CloudDownload } from 'lucide-react';
+import { ArrowLeft, Plus, RefreshCw, AlertTriangle, Building2, Users, CloudDownload, Send } from 'lucide-react';
 import { VIStatusDashboard } from '@/components/verbas-indenizatorias/VIStatusDashboard';
 import { VIFilters } from '@/components/verbas-indenizatorias/VIFilters';
 import { VIDocumentTable } from '@/components/verbas-indenizatorias/VIDocumentTable';
@@ -27,6 +27,7 @@ export default function VerbasIndenizatorias() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [sendingDrafts, setSendingDrafts] = useState(false);
 
   // Buscar UUID do card "Verbas Indenizatórias" para verificar permissão granular
   const { data: viCardId } = useQuery<string | null>({
@@ -57,6 +58,24 @@ export default function VerbasIndenizatorias() {
 
   const documents = data?.rows ?? [];
   const total = data?.total ?? 0;
+
+  async function handleSendDrafts() {
+    if (!selectedCompanyId || sendingDrafts) return;
+    setSendingDrafts(true);
+    try {
+      const resp = await supabase.functions.invoke('send-drafts-to-d4sign', {
+        body: { companyId: selectedCompanyId, delayMs: 2000 },
+      });
+      if (resp.error) throw resp.error;
+      const result = resp.data;
+      toast.success(`${result?.sent ?? 0} enviado(s), ${result?.errors ?? 0} erro(s) de ${result?.total ?? 0} documentos`);
+      refetch();
+    } catch (err: any) {
+      toast.error('Erro ao enviar rascunhos: ' + (err?.message || 'falha na chamada'));
+    } finally {
+      setSendingDrafts(false);
+    }
+  }
 
   async function handleSyncD4Sign() {
     if (!selectedCompanyId || syncing) return;
@@ -119,6 +138,15 @@ export default function VerbasIndenizatorias() {
           </div>
 
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSendDrafts}
+              disabled={sendingDrafts}
+            >
+              <Send className={`h-4 w-4 mr-2 ${sendingDrafts ? 'animate-pulse' : ''}`} />
+              {sendingDrafts ? 'Enviando...' : 'Enviar rascunhos'}
+            </Button>
             <Button
               variant="outline"
               size="sm"
