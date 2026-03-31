@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ArrowLeft, Plus, RefreshCw, AlertTriangle, Building2, Users } from 'lucide-react';
+import { ArrowLeft, Plus, RefreshCw, AlertTriangle, Building2, Users, CloudDownload } from 'lucide-react';
 import { VIStatusDashboard } from '@/components/verbas-indenizatorias/VIStatusDashboard';
 import { VIFilters } from '@/components/verbas-indenizatorias/VIFilters';
 import { VIDocumentTable } from '@/components/verbas-indenizatorias/VIDocumentTable';
@@ -16,6 +16,7 @@ import { useCardPermissions } from '@/hooks/useCardPermissions';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 export default function VerbasIndenizatorias() {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ export default function VerbasIndenizatorias() {
   const [filters, setFilters] = useState<VIQueryFilters>({ page: 1, pageSize: 50 });
   const [generateOpen, setGenerateOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   // Buscar UUID do card "Verbas Indenizatórias" para verificar permissão granular
   const { data: viCardId } = useQuery<string | null>({
@@ -55,6 +57,29 @@ export default function VerbasIndenizatorias() {
 
   const documents = data?.rows ?? [];
   const total = data?.total ?? 0;
+
+  async function handleSyncD4Sign() {
+    if (!selectedCompanyId || syncing) return;
+    setSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await supabase.functions.invoke('sync-d4sign-status', {
+        body: { companyId: selectedCompanyId },
+      });
+      if (resp.error) throw resp.error;
+      const result = resp.data;
+      if (result?.synced > 0) {
+        toast.success(`${result.synced} documento(s) atualizado(s)`);
+        refetch();
+      } else {
+        toast.info('Nenhum documento atualizado — status ainda pendente na D4Sign');
+      }
+    } catch (err: any) {
+      toast.error('Erro ao sincronizar: ' + (err?.message || 'falha na chamada'));
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   function handleFiltersChange(newFilters: VIQueryFilters) {
     setFilters(newFilters);
@@ -94,6 +119,15 @@ export default function VerbasIndenizatorias() {
           </div>
 
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSyncD4Sign}
+              disabled={syncing}
+            >
+              <CloudDownload className={`h-4 w-4 mr-2 ${syncing ? 'animate-pulse' : ''}`} />
+              {syncing ? 'Sincronizando...' : 'Sincronizar D4Sign'}
+            </Button>
             <Button
               variant="outline"
               size="sm"

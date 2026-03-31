@@ -257,7 +257,13 @@ serve(async (req: Request) => {
         if (!documentUuid || !webhookUrl) throw new Error("documentUuid and webhookUrl required for register_webhook");
 
         const url = buildD4SignUrl(base_url, `documents/${documentUuid}/webhooks`, token_api, crypt_key);
-        result = await callD4Sign(url, "POST", { url: webhookUrl });
+        // Incluir token secreto para que a D4Sign o envie de volta no callback
+        const webhookSecret = Deno.env.get("D4SIGN_WEBHOOK_SECRET");
+        const webhookBody: Record<string, string> = { url: webhookUrl };
+        if (webhookSecret) {
+          webhookBody.token = webhookSecret;
+        }
+        result = await callD4Sign(url, "POST", webhookBody);
         break;
       }
 

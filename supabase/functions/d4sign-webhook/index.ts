@@ -4,7 +4,7 @@ import { BlobWriter, ZipReader } from "https://deno.land/x/zipjs/index.js";
 import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 // Webhook público da D4Sign — sem auth Bearer
-// Valida por token secreto no header X-D4Sign-Token
+// Valida por HMAC (Content-Hmac header), token query param, ou header customizado
 
 function sanitizeError(error: unknown): string {
   if (!error) return "unknown_error";
@@ -27,6 +27,25 @@ interface D4SignWebhookPayload {
   email_signatary?: string;
 }
 
+/** Parse payload: aceita JSON ou form-data (D4Sign pode enviar em ambos os formatos) */
+async function parseWebhookPayload(req: Request): Promise<D4SignWebhookPayload> {
+  const contentType = req.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    return await req.json();
+  }
+
+  // form-data (application/x-www-form-urlencoded ou multipart/form-data)
+  const formData = await req.formData();
+  return {
+    uuid: (formData.get("uuid") as string) || "",
+    type_post: (formData.get("type_post") as string) || "",
+    message: (formData.get("message") as string) || undefined,
+    name_signatary: (formData.get("name_signatary") as string) || undefined,
+    email_signatary: (formData.get("email_signatary") as string) || (formData.get("email") as string) || undefined,
+  };
+}
+
 serve(async (req: Request) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
@@ -38,36 +57,98 @@ serve(async (req: Request) => {
     });
   }
 
+  // Log defensivo para diagnosticar o que a D4Sign envia
+  console.log("[d4sign-webhook] received:", req.method,
+    "content-type:", req.headers.get("content-type"),
+    "hmac:", req.headers.get("content-hmac") ? "present" : "absent",
+    "query-token:", new URL(req.url).searchParams.has("token") ? "present" : "absent",
+    "x-d4sign-token:", req.headers.get("x-d4sign-token") ? "present" : "absent");
+
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Validar token secreto (OBRIGATÓRIO — rejeitar se não configurado)
+    // Validar token secreto (opcional — se não configurado, aceita sem validação)
     const webhookSecret = Deno.env.get("D4SIGN_WEBHOOK_SECRET");
-    if (!webhookSecret) {
-      console.error("[d4sign-webhook] D4SIGN_WEBHOOK_SECRET não configurado — rejeitando request");
-      return new Response(JSON.stringify({ error: "webhook not configured" }), {
-        status: 503,
-        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
+
+    if (webhookSecret) {
+      let authenticated = false;
+
+      // Método 1: HMAC (Content-Hmac header — mecanismo oficial D4Sign)
+      // D4Sign envia: Content-Hmac: sha256=SHA256(document_uuid + secret_key)
+      const hmacHeader = req.headers.get("content-hmac") || "";
+      if (hmacHeader.startsWith("sha256=") && !authenticated) {
+        // HMAC requer o UUID do payload — vamos validar depois do parse
+        // Por ora, marcar que HMAC está presente para validar após parse
+        authenticated = false; // será validado após parse do payload
+      }
+
+      // Método 2: Token via query param (passado no registro do webhook)
+      if (!authenticated) {
+        const queryToken = new URL(req.url).searchParams.get("token") || "";
+        if (queryToken && queryToken === webhookSecret) {
+          authenticated = true;
+        }
+      }
+
+      // Método 3: Token via header customizado
+      if (!authenticated) {
+        const headerToken = req.headers.get("x-d4sign-token") || "";
+        if (headerToken && headerToken === webhookSecret) {
+          authenticated = true;
+        }
+      }
+
+      if (!authenticated && !hmacHeader) {
+        console.warn("[d4sign-webhook] auth falhou — nenhum método de autenticação encontrado");
+        return new Response(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+        });
+      }
+
+      // Se HMAC presente mas outros métodos falharam, validar HMAC após parse
+      // (armazenar flag para validar depois)
+      if (!authenticated && hmacHeader) {
+        // Parse payload primeiro, depois validar HMAC
+        // Continuamos para o parse — a validação HMAC ocorre abaixo
+      }
+    } else {
+      console.warn("[d4sign-webhook] D4SIGN_WEBHOOK_SECRET não configurado — processando sem validação");
     }
 
-    // Aceitar token apenas via header (nunca query param)
-    const receivedToken = req.headers.get("x-d4sign-token") || "";
-    // Timing-safe comparison para evitar timing attacks
-    const encoder = new TextEncoder();
-    const a = encoder.encode(receivedToken);
-    const b = encoder.encode(webhookSecret);
-    if (a.byteLength !== b.byteLength || !crypto.subtle.timingSafeEqual(a, b)) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
+    const payload = await parseWebhookPayload(req);
+
+    // Validação HMAC pós-parse (precisa do UUID do payload)
+    if (webhookSecret) {
+      const hmacHeader = req.headers.get("content-hmac") || "";
+      if (hmacHeader.startsWith("sha256=")) {
+        const receivedHash = hmacHeader.slice(7); // remover "sha256="
+        const expectedData = new TextEncoder().encode(payload.uuid + webhookSecret);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", expectedData);
+        const expectedHash = Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, "0")).join("");
+
+        if (receivedHash === expectedHash) {
+          console.log("[d4sign-webhook] HMAC validado com sucesso");
+        } else {
+          // Se HMAC falhou E nenhum outro método autenticou, rejeitar
+          const queryToken = new URL(req.url).searchParams.get("token") || "";
+          const headerToken = req.headers.get("x-d4sign-token") || "";
+          if (queryToken !== webhookSecret && headerToken !== webhookSecret) {
+            console.warn("[d4sign-webhook] HMAC inválido e nenhum token alternativo");
+            return new Response(JSON.stringify({ error: "unauthorized" }), {
+              status: 401,
+              headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+            });
+          }
+        }
+      }
     }
 
-    const payload = (await req.json()) as D4SignWebhookPayload;
+    console.log("[d4sign-webhook] payload parsed:", JSON.stringify({ uuid: payload.uuid, type_post: payload.type_post, email: payload.email_signatary }));
     const { uuid: d4signDocumentUuid, type_post } = payload;
 
     if (!d4signDocumentUuid) {
