@@ -7,12 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useCompany } from "@/contexts/CompanyContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/external-client";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, MapPin, UserCircle, UserPlus, Pencil, Trash2, CheckCircle2, X } from "lucide-react";
+import { Users, Search, Download, RefreshCw, Building2, Briefcase, Link2, Link2Off, Loader2, MapPin, UserCircle, UserPlus, Pencil, Trash2, CheckCircle2, X, Columns } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   AlertDialog,
@@ -81,6 +83,83 @@ interface ExternalEmployee {
   termination_date: string | null;
 }
 
+// ─── Seletor de Colunas ───────────────────────────────────────────────────────
+
+type ColumnKey =
+  | 'empresa' | 'cpf' | 'nome' | 'email' | 'sexo'
+  | 'nascimento' | 'primeiro_emprego' | 'departamento'
+  | 'cargo' | 'unidade' | 'lider' | 'data_demissao'
+  | 'vinculo' | 'acoes';
+
+interface ColumnDef {
+  key: ColumnKey;
+  label: string;
+  defaultVisible: boolean;
+  alwaysVisible?: boolean;
+  adminOnly?: boolean;
+}
+
+const COLUMN_DEFS: ColumnDef[] = [
+  { key: 'empresa',          label: 'Empresa',      defaultVisible: true,  adminOnly: true },
+  { key: 'cpf',              label: 'CPF',          defaultVisible: false },
+  { key: 'nome',             label: 'Nome',         defaultVisible: true,  alwaysVisible: true },
+  { key: 'email',            label: 'Email',        defaultVisible: false },
+  { key: 'sexo',             label: 'Sexo',         defaultVisible: false },
+  { key: 'nascimento',       label: 'Nascimento',   defaultVisible: false },
+  { key: 'primeiro_emprego', label: '1º Emprego',   defaultVisible: false },
+  { key: 'departamento',     label: 'Departamento', defaultVisible: true },
+  { key: 'cargo',            label: 'Cargo',        defaultVisible: true },
+  { key: 'unidade',          label: 'Unidade',      defaultVisible: true },
+  { key: 'lider',            label: 'Líder',        defaultVisible: true },
+  { key: 'data_demissao',    label: 'Data Demissão',defaultVisible: false },
+  { key: 'vinculo',          label: 'Vínculo',      defaultVisible: false },
+  { key: 'acoes',            label: 'Ações',        defaultVisible: true,  alwaysVisible: true },
+];
+
+const COLUMNS_STORAGE_KEY = 'employees_visible_columns_v1';
+
+function useColumnVisibility(canViewAllCompanies: boolean) {
+  const getDefaults = (): Record<ColumnKey, boolean> => {
+    const result = {} as Record<ColumnKey, boolean>;
+    for (const col of COLUMN_DEFS) {
+      if (col.adminOnly && !canViewAllCompanies) continue;
+      result[col.key] = col.defaultVisible;
+    }
+    return result;
+  };
+
+  const [visible, setVisible] = useState<Record<ColumnKey, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem(COLUMNS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<ColumnKey, boolean>;
+        return { ...getDefaults(), ...parsed };
+      }
+    } catch { /* ignore */ }
+    return getDefaults();
+  });
+
+  const toggle = (key: ColumnKey) => {
+    const col = COLUMN_DEFS.find(c => c.key === key);
+    if (col?.alwaysVisible) return;
+    setVisible(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  const isVisible = (key: ColumnKey, statusFilter?: string): boolean => {
+    if (key === 'empresa' && !canViewAllCompanies) return false;
+    if (key === 'data_demissao') return visible[key] || statusFilter !== 'active';
+    return visible[key] ?? false;
+  };
+
+  return { visible, isVisible, toggle };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function ExternalEmployeesList() {
   const enableManualEmployeeImport = import.meta.env.VITE_ENABLE_MANUAL_EMPLOYEE_IMPORT === "true";
   const useEmployeesApiAsPrimary = import.meta.env.VITE_EMPLOYEES_API_PRIMARY !== "false";
@@ -118,6 +197,7 @@ export function ExternalEmployeesList() {
   const [syncPanelDismissed, setSyncPanelDismissed] = useState(false);
   // Verificar se o usuário pode ver todas as empresas
   const canViewAllCompanies = role === 'super_admin' || hasAllCompaniesAccess;
+  const { isVisible, toggle } = useColumnVisibility(canViewAllCompanies);
 
   useEffect(() => {
     fetchEmployees();
@@ -673,6 +753,35 @@ export function ExternalEmployeesList() {
               <Download className="h-4 w-4 mr-2" />
               Exportar CSV
             </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <Columns className="h-4 w-4" />
+                  Colunas
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-52 p-3" align="end">
+                <p className="text-xs font-medium text-muted-foreground mb-2">Colunas visíveis</p>
+                <div className="space-y-2">
+                  {COLUMN_DEFS.filter(c => !c.adminOnly || canViewAllCompanies).map(col => (
+                    <label
+                      key={col.key}
+                      className={cn(
+                        "flex items-center gap-2 text-sm cursor-pointer select-none",
+                        col.alwaysVisible && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      <Checkbox
+                        checked={isVisible(col.key, statusFilter)}
+                        onCheckedChange={() => toggle(col.key)}
+                        disabled={col.alwaysVisible}
+                      />
+                      {col.label}
+                    </label>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </CardHeader>
@@ -905,37 +1014,37 @@ export function ExternalEmployeesList() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {canViewAllCompanies && <TableHead>Empresa</TableHead>}
-                  <TableHead>CPF</TableHead>
+                  {isVisible('empresa', statusFilter) && <TableHead>Empresa</TableHead>}
+                  {isVisible('cpf', statusFilter) && <TableHead>CPF</TableHead>}
                   <TableHead>Nome</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="hidden lg:table-cell">Sexo</TableHead>
-                  <TableHead className="hidden xl:table-cell">Nascimento</TableHead>
-                  <TableHead className="hidden xl:table-cell">1º Emprego</TableHead>
-                  <TableHead>Departamento</TableHead>
-                  <TableHead>Cargo</TableHead>
-                  <TableHead>Unidade</TableHead>
-                  <TableHead>Líder</TableHead>
-                  {statusFilter !== 'active' && (
-                    <TableHead>Data Demissão</TableHead>
-                  )}
-                  <TableHead className="text-center">Vínculo</TableHead>
+                  {isVisible('email', statusFilter) && <TableHead>Email</TableHead>}
+                  {isVisible('sexo', statusFilter) && <TableHead>Sexo</TableHead>}
+                  {isVisible('nascimento', statusFilter) && <TableHead>Nascimento</TableHead>}
+                  {isVisible('primeiro_emprego', statusFilter) && <TableHead>1º Emprego</TableHead>}
+                  {isVisible('departamento', statusFilter) && <TableHead>Departamento</TableHead>}
+                  {isVisible('cargo', statusFilter) && <TableHead>Cargo</TableHead>}
+                  {isVisible('unidade', statusFilter) && <TableHead>Unidade</TableHead>}
+                  {isVisible('lider', statusFilter) && <TableHead>Líder</TableHead>}
+                  {isVisible('data_demissao', statusFilter) && <TableHead>Data Demissão</TableHead>}
+                  {isVisible('vinculo', statusFilter) && <TableHead className="text-center">Vínculo</TableHead>}
                   <TableHead className="text-center">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedEmployees.map((employee) => (
                   <TableRow key={employee.id}>
-                    {canViewAllCompanies && (
+                    {isVisible('empresa', statusFilter) && (
                       <TableCell>
                         <Badge variant="outline" className="text-xs">
                           {employee.companies?.name || '-'}
                         </Badge>
                       </TableCell>
                     )}
-                    <TableCell className="font-mono text-sm">
-                      {maskCpf(employee.cpf || employee.registration_number)}
-                    </TableCell>
+                    {isVisible('cpf', statusFilter) && (
+                      <TableCell className="font-mono text-sm">
+                        {maskCpf(employee.cpf || employee.registration_number)}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex flex-col">
                         <span className="font-medium">{employee.full_name}</span>
@@ -944,88 +1053,104 @@ export function ExternalEmployeesList() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {employee.email || '-'}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      {employee.gender || '-'}
-                    </TableCell>
-                    <TableCell className="hidden xl:table-cell">
-                      {employee.birth_date ? format(new Date(employee.birth_date), 'dd/MM/yyyy') : '-'}
-                    </TableCell>
-                    <TableCell className="hidden xl:table-cell">
-                      {employee.first_job === null ? '-' : employee.first_job ? 'Sim' : 'Não'}
-                    </TableCell>
-                    <TableCell>
-                      {employee.department ? (
-                        <Badge variant="outline" className="gap-1">
-                          <Building2 className="h-3 w-3" />
-                          {employee.department}
-                        </Badge>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {employee.position ? (
-                        <Badge variant="secondary" className="gap-1">
-                          <Briefcase className="h-3 w-3" />
-                          {employee.position}
-                        </Badge>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {employee.unidade ? (
-                        <Badge variant="outline" className="gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {employee.unidade}
-                        </Badge>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {employee.lider_direto ? (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <Badge variant="outline" className="gap-1">
-                                <UserCircle className="h-3 w-3" />
-                                {employee.lider_direto.full_name.split(' ')[0]}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Líder: {employee.lider_direto.full_name}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ) : '-'}
-                    </TableCell>
-                    {statusFilter !== 'active' && (
+                    {isVisible('email', statusFilter) && (
+                      <TableCell className="text-muted-foreground">
+                        {employee.email || '-'}
+                      </TableCell>
+                    )}
+                    {isVisible('sexo', statusFilter) && (
+                      <TableCell>{employee.gender || '-'}</TableCell>
+                    )}
+                    {isVisible('nascimento', statusFilter) && (
+                      <TableCell>
+                        {employee.birth_date ? format(new Date(employee.birth_date), 'dd/MM/yyyy') : '-'}
+                      </TableCell>
+                    )}
+                    {isVisible('primeiro_emprego', statusFilter) && (
+                      <TableCell>
+                        {employee.first_job === null ? '-' : employee.first_job ? 'Sim' : 'Não'}
+                      </TableCell>
+                    )}
+                    {isVisible('departamento', statusFilter) && (
+                      <TableCell>
+                        {employee.department ? (
+                          <Badge variant="outline" className="gap-1">
+                            <Building2 className="h-3 w-3" />
+                            {employee.department}
+                          </Badge>
+                        ) : '-'}
+                      </TableCell>
+                    )}
+                    {isVisible('cargo', statusFilter) && (
+                      <TableCell>
+                        {employee.position ? (
+                          <Badge variant="secondary" className="gap-1">
+                            <Briefcase className="h-3 w-3" />
+                            {employee.position}
+                          </Badge>
+                        ) : '-'}
+                      </TableCell>
+                    )}
+                    {isVisible('unidade', statusFilter) && (
+                      <TableCell>
+                        {employee.unidade ? (
+                          <Badge variant="outline" className="gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {employee.unidade}
+                          </Badge>
+                        ) : '-'}
+                      </TableCell>
+                    )}
+                    {isVisible('lider', statusFilter) && (
+                      <TableCell>
+                        {employee.lider_direto ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <Badge variant="outline" className="gap-1">
+                                  <UserCircle className="h-3 w-3" />
+                                  {employee.lider_direto.full_name.split(' ')[0]}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Líder: {employee.lider_direto.full_name}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : '-'}
+                      </TableCell>
+                    )}
+                    {isVisible('data_demissao', statusFilter) && (
                       <TableCell className="text-sm text-muted-foreground">
                         {employee.termination_date ? format(new Date(employee.termination_date), 'dd/MM/yyyy', { locale: ptBR }) : '—'}
                       </TableCell>
                     )}
-                    <TableCell className="text-center">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger>
-                            {employee.linked_profile_id ? (
-                              <Badge variant="outline" className="gap-1 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">
-                                <Link2 className="h-3 w-3" />
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="gap-1 text-muted-foreground">
-                                <Link2Off className="h-3 w-3" />
-                              </Badge>
-                            )}
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {employee.linked_profile_id && employee.profiles ? (
-                              <p>Vinculado a: {employee.profiles.first_name} {employee.profiles.last_name}</p>
-                            ) : (
-                              <p>Não vinculado ao sistema</p>
-                            )}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </TableCell>
+                    {isVisible('vinculo', statusFilter) && (
+                      <TableCell className="text-center">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              {employee.linked_profile_id ? (
+                                <Badge variant="outline" className="gap-1 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800">
+                                  <Link2 className="h-3 w-3" />
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="gap-1 text-muted-foreground">
+                                  <Link2Off className="h-3 w-3" />
+                                </Badge>
+                              )}
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {employee.linked_profile_id && employee.profiles ? (
+                                <p>Vinculado a: {employee.profiles.first_name} {employee.profiles.last_name}</p>
+                              ) : (
+                                <p>Não vinculado ao sistema</p>
+                              )}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </TableCell>
+                    )}
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-1">
                         <TooltipProvider>

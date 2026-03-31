@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom';
 import { useCompany } from '@/contexts/CompanyContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings, FileText } from 'lucide-react';
@@ -6,6 +7,8 @@ import { D4SignTemplateManager } from '@/components/admin/D4SignTemplateManager'
 
 export default function AdminD4Sign() {
   const { selectedCompanyId } = useCompany();
+  const [searchParams] = useSearchParams();
+  const defaultTab = searchParams.get('tab') ?? 'config';
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -16,7 +19,7 @@ export default function AdminD4Sign() {
         </p>
       </div>
 
-      <Tabs defaultValue="config">
+      <Tabs defaultValue={defaultTab}>
         <TabsList>
           <TabsTrigger value="config" className="gap-2">
             <Settings className="h-4 w-4" />

@@ -59,6 +59,9 @@ export interface DabEmployee {
   nome_fantasia?: string | null;
   data_demissao?: string | null;
   situacao_raw?: number | string | null;
+  // Campos de líder direto via CPF (API DAB)
+  CPF_Lider?: string | null;
+  Nome_Lider?: string | null;
 }
 
 interface DabEmployeeRaw {
@@ -99,6 +102,10 @@ interface DabEmployeeRaw {
   Cod_Empresa?: number | string | null;
   Cod_Contabilizacao?: number | string | null;
   Nome_Fantasia?: string | null;
+  CPF_Lider?: string | null;
+  Nome_Lider?: string | null;
+  cpf_lider?: string | null;
+  nome_lider?: string | null;
 }
 
 interface NormalizedEmployeeResult {
@@ -1371,6 +1378,7 @@ export async function syncEmployeesFromDab(
       accounting_company_id: accountingCompanyId,
       company_id: contractCompanyId,
       is_active: isActive,
+      cpf_lider: normalizeDocument((employee as DabEmployee & { CPF_Lider?: string | null }).CPF_Lider ?? (employee as DabEmployee & { cpf_lider?: string | null }).cpf_lider ?? null) || null,
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1441,6 +1449,15 @@ export async function syncEmployeesFromDab(
         existingByUniqueKey.set(uniqueKey, insertedRow.id);
       }
     }
+  }
+
+  // Resolver lider_direto_id via cpf_lider em um único UPDATE batch (função SQL)
+  const { data: liderBatchCount, error: liderBatchError } = await supabase
+    .rpc("resolve_lider_direto_batch", { p_source_system: SOURCE_SYSTEM });
+  if (liderBatchError) {
+    console.error("[employeesApiSource] Erro no batch de líderes:", liderBatchError);
+  } else {
+    console.log(`[employeesApiSource] Líderes resolvidos em batch: ${liderBatchCount} registros`);
   }
 
   let deactivated = 0;

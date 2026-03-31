@@ -38,6 +38,12 @@ interface EmployeeRecord {
   hire_date?: string;
   metadata?: Record<string, any>;
 
+  // Campos de líder direto via CPF (API DAB)
+  CPF_Lider?: string | null;
+  Nome_Lider?: string | null;
+  cpf_lider?: string | null;
+  nome_lider?: string | null;
+
   // Formato bruto da API DAB
   Situacao?: number | string | null;
   CPF?: string | null;
@@ -380,8 +386,8 @@ serve(async (req) => {
     // Estatísticas globais e por empresa
     let totalCreated = 0, totalUpdated = 0, totalFailed = 0;
     const byCompany: Record<string, CompanyStats> = {};
-    const errors: any[] = [];
-    const processedEmployees: Array<{ externalId: string; id: string }> = [];
+    const errors: Array<{external_id: string | undefined; cnpj_empresa: string | undefined; error: string}> = [];
+    const processedEmployees: Array<{ externalId: string; id: string; cpf: string | null }> = [];
 
     // Inicializar estatísticas por empresa
     for (const cnpj of uniqueCnpjs) {
@@ -479,7 +485,8 @@ serve(async (req) => {
           // Campos CNH
           cnh_numero: cnhNumero || null,
           cnh_categoria: cnhCategoria || null,
-          cnh_validade: cnhValidade || null
+          cnh_validade: cnhValidade || null,
+          cpf_lider: normalizeCpf(emp.CPF_Lider ?? emp.cpf_lider) || null,
         };
 
         // Se tem data de demissão, forçar inativo
@@ -518,7 +525,7 @@ serve(async (req) => {
           employeeId = newEmp.id;
         }
 
-        processedEmployees.push({ externalId, id: employeeId });
+        processedEmployees.push({ externalId, id: employeeId, cpf: cpf || null });
       } catch (error) {
         totalFailed++;
         const empCnpj = normalizeCnpj(emp.cnpj_empresa);
@@ -530,21 +537,13 @@ serve(async (req) => {
       }
     }
 
-    // Segunda passada: mapear lider_direto_id
-    for (const emp of normalizedEmployees) {
-      const liderExternalId = emp.lider_direto_id;
-      if (!liderExternalId) continue;
-
-      const externalId = emp.id || emp.external_id;
-      const employee = processedEmployees.find(e => e.externalId === externalId);
-      const leader = processedEmployees.find(e => e.externalId === liderExternalId);
-
-      if (employee && leader) {
-        await supabase
-          .from('external_employees')
-          .update({ lider_direto_id: leader.id })
-          .eq('id', employee.id);
-      }
+    // Segunda passada: resolver lider_direto_id via cpf_lider em um único UPDATE batch
+    const { data: liderBatchCount, error: liderBatchError } = await supabase
+      .rpc('resolve_lider_direto_batch', { p_source_system: sourceSystem });
+    if (liderBatchError) {
+      console.error('[sync-employees] Erro no batch de líderes:', liderBatchError);
+    } else {
+      console.log(`[sync-employees] Líderes resolvidos em batch: ${liderBatchCount} registros`);
     }
 
     // === Etapa 3: Inativar funcionários ausentes ===
