@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +16,6 @@ import { toast } from 'sonner';
 import { Plus, Pencil, Trash2, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { D4SignTemplateEditor } from './D4SignTemplateEditor';
 
 interface Template {
   id: string;
@@ -34,8 +34,7 @@ interface Props {
 export function D4SignTemplateManager({ companyId }: Props) {
 
   const queryClient = useQueryClient();
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  const navigate = useNavigate();
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
 
   const { data: templates = [], isLoading } = useQuery<Template[]>({
@@ -95,13 +94,11 @@ export function D4SignTemplateManager({ companyId }: Props) {
   });
 
   function openNew() {
-    setEditingTemplate(null);
-    setEditorOpen(true);
+    navigate('/admin/d4sign/template/new');
   }
 
   function openEdit(tpl: Template) {
-    setEditingTemplate(tpl);
-    setEditorOpen(true);
+    navigate(`/admin/d4sign/template/${tpl.id}`);
   }
 
   return (
@@ -172,13 +169,6 @@ export function D4SignTemplateManager({ companyId }: Props) {
           )}
         </CardContent>
       </Card>
-
-      <D4SignTemplateEditor
-        companyId={companyId}
-        template={editingTemplate}
-        open={editorOpen}
-        onClose={() => setEditorOpen(false)}
-      />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
         <AlertDialogContent>

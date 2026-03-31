@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
+import { renderHtmlToPdf } from "./html-to-pdf.ts";
 
 function sanitizeError(error: unknown): string {
   if (!error) return "unknown_error";
@@ -235,74 +236,92 @@ serve(async (req: Request) => {
 
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
 
     const black = rgb(0, 0, 0);
 
-    // Margens e config
-    const margin = 60;
-    const textWidth = width - margin * 2;
-    const fontSize = 11;
-    const lineHeight = 16;
-    const titleSize = 13;
+    // Mapa de dados para substituição de placeholders no template
+    const templateData: Record<string, string> = {
+      nome_funcionario: sanitize(employeeName),
+      cpf: cpfNorm.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"),
+      empresa: sanitize(empresa),
+      departamento: sanitize(departamento),
+      cargo: sanitize(cargo),
+      unidade: sanitize(unidade),
+      competencia: formatCompetencia(competencia),
+      valor_verba: formatBRL(valorVerba),
+      valor_adiantamento: formatBRL(valorAdiantamento),
+      valor_total: formatBRL(valorTotal),
+      data_geracao: dataExtenso,
+      grupo_contabilizacao: sanitize(grupoContabilizacao),
+    };
 
-    // Helper: desenha texto com word-wrap, retorna novo Y
-    function drawWrappedText(text: string, startY: number, font: typeof fontReg, size: number): number {
-      let y = startY;
-      const words = text.split(" ");
-      let line = "";
-      const charW = size * 0.52; // estimativa largura média por caractere
+    // ── Renderizar usando template HTML se disponível ──
+    if (template.template_html) {
+      renderHtmlToPdf(
+        template.template_html,
+        templateData,
+        page,
+        { regular: fontReg, bold: fontBold, italic: fontItalic },
+      );
+    } else {
+      // ── Fallback: layout hardcoded (compatibilidade com templates sem HTML) ──
+      const margin = 60;
+      const textWidth = width - margin * 2;
+      const fontSize = 11;
+      const lineHeight = 16;
+      const titleSize = 13;
 
-      for (const word of words) {
-        const test = line ? `${line} ${word}` : word;
-        if (test.length * charW > textWidth) {
-          if (y < 100) break;
+      function drawWrappedText(text: string, startY: number, font: typeof fontReg, size: number): number {
+        let y = startY;
+        const words = text.split(" ");
+        let line = "";
+        const charW = size * 0.52;
+        for (const word of words) {
+          const test = line ? `${line} ${word}` : word;
+          if (test.length * charW > textWidth) {
+            if (y < 100) break;
+            page.drawText(line, { x: margin, y, size, font, color: black });
+            y -= lineHeight;
+            line = word;
+          } else {
+            line = test;
+          }
+        }
+        if (line && y >= 100) {
           page.drawText(line, { x: margin, y, size, font, color: black });
           y -= lineHeight;
-          line = word;
-        } else {
-          line = test;
         }
+        return y;
       }
-      if (line && y >= 100) {
-        page.drawText(line, { x: margin, y, size, font, color: black });
-        y -= lineHeight;
+
+      function drawCentered(text: string, y: number, font: typeof fontReg, size: number) {
+        const tw = font.widthOfTextAtSize(sanitize(text), size);
+        page.drawText(sanitize(text), { x: (width - tw) / 2, y, size, font, color: black });
       }
-      return y;
+
+      let y = height - 80;
+
+      drawCentered("RECIBO DE QUITACAO DE DESPESAS RELATIVAS AO VEICULO DE", y, fontBold, titleSize);
+      y -= lineHeight + 2;
+      drawCentered("MINHA PROPRIEDADE", y, fontBold, titleSize);
+      y -= lineHeight * 2.5;
+
+      const tipoVerbaLabel = isAdiant ? "ADIANTAMENTO DE VERBA INDENIZATORIA" : "VERBA INDENIZATORIA";
+      const corpoTexto = `Eu, ${employeeName}, ${cargo || "COLABORADOR"} inscrito (a) no CPF sob o n. ${cpfNorm} venho informar que o valor de ${formatBRL(valorTotal)} depositado em minha conta bancaria e lancados em minha folha de pagamento como ${tipoVerbaLabel} no dia ${dataGeracao}, refere se ao adiantamento da verba indenizatoria para visitar 100% dos clientes do roteiro estabelecido entre os dias ${primeiroDia} A ${ultimoDiaStr}. Declaro que o valor recebido se refere aos gastos com combustivel, manutencao, depreciacao, pedagio, contratacao de seguro pessoal, ajuda no custeio com o pagamento de taxas, impostos, licenciamentos etc. e e suficiente, nao tendo desta forma nada o que reclamar.`;
+
+      y = drawWrappedText(sanitize(corpoTexto), y, fontReg, fontSize);
+      y -= lineHeight * 3;
+      drawCentered(dataExtenso, y, fontBold, fontSize);
+      y -= lineHeight * 4;
+      const lineW = 300;
+      const lineX = (width - lineW) / 2;
+      page.drawLine({ start: { x: lineX, y }, end: { x: lineX + lineW, y }, thickness: 0.8, color: black });
+      y -= lineHeight;
+      drawCentered("Assinatura:", y, fontReg, fontSize - 1);
+      y -= lineHeight;
+      drawCentered(employeeName || "Funcionario", y, fontBold, fontSize);
     }
-
-    // Helper: centralizar texto
-    function drawCentered(text: string, y: number, font: typeof fontReg, size: number) {
-      const tw = font.widthOfTextAtSize(sanitize(text), size);
-      page.drawText(sanitize(text), { x: (width - tw) / 2, y, size, font, color: black });
-    }
-
-    let y = height - 80;
-
-    // ── Título (centralizado, bold) ──
-    drawCentered("RECIBO DE QUITACAO DE DESPESAS RELATIVAS AO VEICULO DE", y, fontBold, titleSize);
-    y -= lineHeight + 2;
-    drawCentered("MINHA PROPRIEDADE", y, fontBold, titleSize);
-    y -= lineHeight * 2.5;
-
-    // ── Corpo do texto (texto corrido como o modelo de referência) ──
-    const tipoVerbaLabel = isAdiant ? "ADIANTAMENTO DE VERBA INDENIZATORIA" : "VERBA INDENIZATORIA";
-    const corpoTexto = `Eu, ${employeeName}, ${cargo || "COLABORADOR"} inscrito (a) no CPF sob o n. ${cpfNorm} venho informar que o valor de ${formatBRL(valorTotal)} depositado em minha conta bancaria e lancados em minha folha de pagamento como ${tipoVerbaLabel} no dia ${dataGeracao}, refere se ao adiantamento da verba indenizatoria para visitar 100% dos clientes do roteiro estabelecido entre os dias ${primeiroDia} A ${ultimoDiaStr}. Declaro que o valor recebido se refere aos gastos com combustivel, manutencao, depreciacao, pedagio, contratacao de seguro pessoal, ajuda no custeio com o pagamento de taxas, impostos, licenciamentos etc. e e suficiente, nao tendo desta forma nada o que reclamar.`;
-
-    y = drawWrappedText(sanitize(corpoTexto), y, fontReg, fontSize);
-
-    // ── Data por extenso (centralizada) ──
-    y -= lineHeight * 3;
-    drawCentered(dataExtenso, y, fontBold, fontSize);
-
-    // ── Linha de assinatura (centralizada) ──
-    y -= lineHeight * 4;
-    const lineW = 300;
-    const lineX = (width - lineW) / 2;
-    page.drawLine({ start: { x: lineX, y }, end: { x: lineX + lineW, y }, thickness: 0.8, color: black });
-    y -= lineHeight;
-    drawCentered("Assinatura:", y, fontReg, fontSize - 1);
-    y -= lineHeight;
-    drawCentered(employeeName || "Funcionario", y, fontBold, fontSize);
 
     const pdfBytes = await pdfDoc.save();
 

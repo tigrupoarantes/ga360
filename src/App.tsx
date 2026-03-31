@@ -38,6 +38,7 @@ import AdminDatalake from "./pages/AdminDatalake";
 import AdminBugReports from "./pages/AdminBugReports";
 import AdminApiKeys from "./pages/AdminApiKeys";
 import AdminD4Sign from "./pages/AdminD4Sign";
+import TemplateEditorPage from "./pages/TemplateEditorPage";
 import GovernancaEC from "./pages/GovernancaEC";
 import GovernancaECArea from "./pages/GovernancaECArea";
 import GovernancaECCardDetail from "./pages/GovernancaECCardDetail";
@@ -204,6 +205,7 @@ const App = () => (
                   <Route path="bugs" element={<AdminBugReports />} />
                   <Route path="api-keys" element={<AdminApiKeys />} />
                   <Route path="d4sign" element={<AdminD4Sign />} />
+                  <Route path="d4sign/template/:templateId" element={<TemplateEditorPage />} />
                   <Route path="cockpit-vendas" element={<AdminCockpitVendas />} />
                 </Route>
                 <Route
