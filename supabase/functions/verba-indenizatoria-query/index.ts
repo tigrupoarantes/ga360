@@ -222,7 +222,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Modo: descobrir CNPJs (empresas contábeis) disponíveis para a competência
+    // Modo: descobrir CNPJs (empresas de registro CLT) disponíveis para a competência
     if (fetchCnpjGroups) {
       if (!competencia) {
         return new Response(
@@ -241,14 +241,15 @@ serve(async (req: Request) => {
         );
       }
 
-      // Buscar CNPJs distintos via employee_accounting_company_id → companies.external_id
+      // Buscar CNPJs distintos via employee_contract_company_id → companies.external_id
+      // Usa empresa de REGISTRO CLT (não contábil) — exigência legal para verbas indenizatórias
       const { data: cnpjRows, error: cnpjError } = await supabase
         .from("payroll_verba_pivot")
-        .select("employee_accounting_company_id, companies:employee_accounting_company_id(external_id, name)")
+        .select("employee_contract_company_id, companies:employee_contract_company_id(external_id, name)")
         .eq("company_id", companyId)
         .eq("ano", ano)
         .ilike("tipo_verba", "%INDENIZ%")
-        .not("employee_accounting_company_id", "is", null);
+        .not("employee_contract_company_id", "is", null);
 
       if (cnpjError) {
         return new Response(

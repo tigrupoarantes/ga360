@@ -137,7 +137,7 @@ serve(async (req: Request) => {
       .select(
         `cpf, nome_funcionario, tipo_verba, razao_social,
          employee_department, employee_position, employee_unidade, employee_accounting_group,
-         employee_accounting_company_id,
+         employee_contract_company_id,
          ${mesNome}`
       )
       .eq("company_id", companyId)
@@ -193,16 +193,16 @@ serve(async (req: Request) => {
       resolvedEmail = authUser?.user?.email || "";
     }
 
-    // Buscar CNPJ da empresa contábil
-    let accountingCnpj: string | null = null;
-    const accCompanyId = baseRow.employee_accounting_company_id as string | null;
-    if (accCompanyId) {
-      const { data: accCompany } = await supabase
+    // Buscar CNPJ da empresa de REGISTRO CLT (não contábil) — exigência legal
+    let contractCnpj: string | null = null;
+    const contractCompanyId = baseRow.employee_contract_company_id as string | null;
+    if (contractCompanyId) {
+      const { data: contractCompany } = await supabase
         .from("companies")
         .select("external_id")
-        .eq("id", accCompanyId)
+        .eq("id", contractCompanyId)
         .maybeSingle();
-      accountingCnpj = (accCompany?.external_id as string) || null;
+      contractCnpj = (contractCompany?.external_id as string) || null;
     }
 
     const employeeName = String(baseRow.nome_funcionario ?? "");
@@ -337,7 +337,7 @@ serve(async (req: Request) => {
         employee_position: cargo || null,
         employee_unit: unidade || null,
         employee_accounting_group: grupoContabilizacao || null,
-        employee_accounting_cnpj: accountingCnpj,
+        employee_accounting_cnpj: contractCnpj,
         event_type: eventType,
         competencia,
         ano: parseInt(ano, 10),

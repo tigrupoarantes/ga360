@@ -157,6 +157,7 @@ Funções SQL de verificação:
 | `ga360-bi` | Analista de dados | Insights, dashboards, análises, rankings, tendências |
 | `ga360-mcp` | Integrador | Registrar tools MCP, buscar dados reais via servidor MCP |
 | `ga360-security` | Auditor CISSP | Pentest, secrets, CORS, RLS, brute force, OWASP Top 10, secure-by-design |
+| `ga360-legal` | Advogado/Paralegal | Compliance trabalhista, tributário, LGPD, assinatura eletrônica, empresa de registro |
 | `ga360-skill-builder` | Meta-skill | Criar novas skills a partir do código real |
 
 ### Fluxos Orquestrados (seguir na ordem)
@@ -235,9 +236,9 @@ Funções SQL de verificação:
   - ✅ Admin: `src/pages/AdminD4Sign.tsx` + componentes admin
   - ✅ Componentes: VIStatusDashboard, VIDocumentTable, VIDocumentDetail, VIFilters, VIGenerateDialog, VIStatusBadge
   - ✅ Hook: `useVerbasIndenizatorias.ts`
-  - ⏳ Pendente: `generate-verba-indenizatoria-doc`, `verba-indenizatoria-query`, `send-verba-indenizatoria-notification`
-  - ⏳ Pendente: VIBatchGenerateDialog, VIDocumentPreview, VITimelineLog
-  - ⏳ Pendente: migrations (tabelas d4sign_config, d4sign_document_templates, verba_indenizatoria_documents, verba_indenizatoria_logs)
+  - ✅ Edge Functions: `generate-verba-indenizatoria-doc`, `verba-indenizatoria-query`, `send-verba-indenizatoria-notification`
+  - ✅ Componentes: VIBatchGenerateDialog, VIDocumentPreview, VITimelineLog
+  - ✅ Migrations: d4sign_config, d4sign_document_templates, verba_indenizatoria_documents, verba_indenizatoria_logs
 
 ### Cockpit GA
 - **Rotas**: `/cockpit/*`
