@@ -47,7 +47,7 @@ serve(async (req: Request) => {
     // Retorna templates globais (company_id IS NULL) + templates da empresa se fornecida
     let query = supabase
       .from("d4sign_document_templates")
-      .select("id, company_id, name, description, is_active, created_at")
+      .select("id, company_id, name, description, template_html, is_active, created_at")
       .order("created_at", { ascending: false });
 
     if (companyId) {

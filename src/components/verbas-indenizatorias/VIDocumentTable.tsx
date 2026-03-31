@@ -126,7 +126,7 @@ export function VIDocumentTable({
                       className="text-sm text-muted-foreground"
                       onClick={() => setSelectedDoc(doc)}
                     >
-                      {format(new Date(doc.created_at), "dd/MM/yy", { locale: ptBR })}
+                      {format(new Date(doc.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">

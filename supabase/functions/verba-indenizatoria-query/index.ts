@@ -241,15 +241,16 @@ serve(async (req: Request) => {
         );
       }
 
-      // Buscar CNPJs distintos via employee_contract_company_id → companies.external_id
-      // Usa empresa de REGISTRO CLT (não contábil) — exigência legal para verbas indenizatórias
+      // Buscar CNPJs distintos — prioridade: contract_company (registro CLT), fallback: accounting_company
+      // Supabase JS não suporta COALESCE em select, então buscamos ambos e fazemos merge no código
       const { data: cnpjRows, error: cnpjError } = await supabase
         .from("payroll_verba_pivot")
-        .select("employee_contract_company_id, companies:employee_contract_company_id(external_id, name)")
+        .select(`employee_contract_company_id, employee_accounting_company_id,
+          contract_co:employee_contract_company_id(external_id, name),
+          accounting_co:employee_accounting_company_id(external_id, name)`)
         .eq("company_id", companyId)
         .eq("ano", ano)
-        .ilike("tipo_verba", "%INDENIZ%")
-        .not("employee_contract_company_id", "is", null);
+        .ilike("tipo_verba", "%INDENIZ%");
 
       if (cnpjError) {
         return new Response(
@@ -258,11 +259,13 @@ serve(async (req: Request) => {
         );
       }
 
-      // Deduplicar por CNPJ
+      // Deduplicar por CNPJ — prioridade: contract, fallback: accounting
       const cnpjMap = new Map<string, { cnpj: string; companyName: string }>();
       for (const row of cnpjRows ?? []) {
-        const comp = row.companies as unknown as { external_id: string; name: string } | null;
-        if (comp?.external_id) {
+        const contract = row.contract_co as unknown as { external_id: string; name: string } | null;
+        const accounting = row.accounting_co as unknown as { external_id: string; name: string } | null;
+        const comp = contract?.external_id ? contract : accounting;
+        if (comp?.external_id && comp.external_id.length > 5) { // filtrar external_id inválidos (ex: "2")
           cnpjMap.set(comp.external_id, {
             cnpj: comp.external_id,
             companyName: comp.name || "",

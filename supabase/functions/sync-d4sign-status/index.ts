@@ -140,7 +140,9 @@ serve(async (req: Request) => {
         const now = new Date().toISOString();
         const extraFields: Record<string, unknown> = {};
 
-        if (d4status === "3" || d4status === "5" || d4statusName.includes("finalizado") || d4statusName.includes("assinado") || d4statusName.includes("completed") || d4statusName.includes("signed")) {
+        // Usar APENAS statusId numérico — string matching no statusName é ambíguo
+        // D4Sign: "3" = Assinado/Completed, "5" = Finalizado
+        if (d4status === "3" || d4status === "5") {
           newStatus = "signed";
           extraFields.d4sign_signed_at = now;
 
@@ -221,7 +223,7 @@ serve(async (req: Request) => {
           } catch (dlErr) {
             console.error(`[sync-d4sign] erro download PDF:`, sanitizeError(dlErr));
           }
-        } else if (d4status === "4" || d4statusName.includes("cancelado") || d4statusName.includes("cancelled")) {
+        } else if (d4status === "4") {
           newStatus = "cancelled";
           extraFields.d4sign_cancelled_at = now;
         }
