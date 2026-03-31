@@ -179,13 +179,16 @@ serve(async (req: Request) => {
     const valorAdiantamento = isAdiant ? valorAdiantamentoRaw : 0;
     const valorTotal = isAdiant ? valorAdiantamentoRaw : valorVerbaRaw;
 
-    // Buscar email do funcionário em external_employees (com fallback para auth.users)
+    // Buscar dados do funcionário em external_employees
+    // IMPORTANTE: remover filtro is_active=true — funcionário demitido tem is_active=false
+    // e é exatamente nesse caso que a verba indenizatória é gerada.
     const { data: empData } = await supabase
       .from("external_employees")
-      .select("email, linked_profile_id")
+      .select("email, linked_profile_id, hire_date, registration_number, termination_date")
       .ilike("cpf", `%${cpfNorm}%`)
       .eq("company_id", companyId)
-      .eq("is_active", true)
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     let resolvedEmail = signerEmail || empData?.email || "";
@@ -194,25 +197,40 @@ serve(async (req: Request) => {
       resolvedEmail = authUser?.user?.email || "";
     }
 
-    // Buscar CNPJ da empresa de REGISTRO CLT — fallback para empresa contábil
+    // Buscar CNPJ e NOME da empresa de REGISTRO CLT — fallback para empresa contábil
     let contractCnpj: string | null = null;
+    let contractCompanyName: string | null = null;
     const regCompanyId = (baseRow.employee_contract_company_id || baseRow.employee_accounting_company_id) as string | null;
     if (regCompanyId) {
       const { data: regCompany } = await supabase
         .from("companies")
-        .select("external_id")
+        .select("external_id, name")
         .eq("id", regCompanyId)
         .maybeSingle();
       contractCnpj = (regCompany?.external_id as string) || null;
+      contractCompanyName = (regCompany?.name as string) || null;
     }
 
     const employeeName = String(baseRow.nome_funcionario ?? "");
     const employeeEmail = resolvedEmail;
-    const empresa = String(baseRow.razao_social ?? "");
+    // Usar nome da empresa CLT (cadastro base) — fallback para razao_social do Datalake
+    const empresa = contractCompanyName || String(baseRow.razao_social ?? "");
     const departamento = String(baseRow.employee_department ?? "");
     const cargo = String(baseRow.employee_position ?? "");
     const unidade = String(baseRow.employee_unidade ?? "");
     const grupoContabilizacao = String(baseRow.employee_accounting_group ?? "");
+
+    // Dados do cadastro base (external_employees)
+    const dataAdmissao = empData?.hire_date
+      ? (() => { const [y, m, d] = String(empData.hire_date).split("-"); return `${d}/${m}/${y}`; })()
+      : "";
+    const matricula = String(empData?.registration_number ?? "");
+    const dataDemissao = empData?.termination_date
+      ? (() => { const [y, m, d] = String(empData.termination_date).split("-"); return `${d}/${m}/${y}`; })()
+      : "";
+    const cnpjFormatado = contractCnpj
+      ? contractCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")
+      : "";
 
     const hoje = new Date();
     const dataGeracao = `${String(hoje.getDate()).padStart(2, "0")}/${String(hoje.getMonth() + 1).padStart(2, "0")}/${hoje.getFullYear()}`;
@@ -242,18 +260,29 @@ serve(async (req: Request) => {
 
     // Mapa de dados para substituição de placeholders no template
     const templateData: Record<string, string> = {
+      // Dados de identificação
       nome_funcionario: sanitize(employeeName),
       cpf: cpfNorm.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4"),
+      // Empresa CLT (cadastro base) — não a entidade contábil
       empresa: sanitize(empresa),
+      empresa_clt: sanitize(contractCompanyName || empresa),
+      cnpj_empresa: sanitize(cnpjFormatado),
+      // Dados funcionais
       departamento: sanitize(departamento),
       cargo: sanitize(cargo),
       unidade: sanitize(unidade),
+      grupo_contabilizacao: sanitize(grupoContabilizacao),
+      // Datas do cadastro base (external_employees)
+      data_admissao: dataAdmissao,
+      data_demissao: dataDemissao,
+      matricula: sanitize(matricula),
+      // Valores financeiros
       competencia: formatCompetencia(competencia),
       valor_verba: formatBRL(valorVerba),
       valor_adiantamento: formatBRL(valorAdiantamento),
       valor_total: formatBRL(valorTotal),
+      // Datas de geração
       data_geracao: dataExtenso,
-      grupo_contabilizacao: sanitize(grupoContabilizacao),
     };
 
     // ── Renderizar usando template HTML se disponível ──
