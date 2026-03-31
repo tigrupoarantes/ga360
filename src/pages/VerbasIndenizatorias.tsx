@@ -66,33 +66,19 @@ export default function VerbasIndenizatorias() {
     if (!selectedCompanyId || sendingDrafts) return;
     setSendingDrafts(true);
 
-    // Buscar total real de rascunhos (nao so da pagina visivel)
-    const { count: totalDrafts } = await supabase
-      .from('verba_indenizatoria_documents')
-      .select('id', { count: 'exact', head: true })
-      .eq('company_id', selectedCompanyId)
-      .in('d4sign_status', ['draft', 'error'])
-      .not('generated_file_path', 'is', null);
-
-    if (!totalDrafts || totalDrafts === 0) {
-      toast.info('Nenhum rascunho pendente para enviar');
-      setSendingDrafts(false);
-      return;
-    }
-
     let totalSent = 0;
     let totalErrors = 0;
-    let remaining = totalDrafts;
+    let remaining = -1; // -1 = ainda nao sabemos, sera atualizado pela Edge Function
     let consecutiveFailures = 0;
     const batchSize = 2;
 
     const toastId = toast.loading(
-      `Iniciando envio de ${totalDrafts} documento(s) para D4Sign...`,
+      `Iniciando envio de rascunhos para D4Sign...`,
       { duration: Infinity },
     );
 
     // Loop automatico: envia lotes de 2 ate acabar
-    while (remaining > 0 && consecutiveFailures < 3) {
+    while (remaining !== 0 && consecutiveFailures < 3) {
       try {
         const resp = await supabase.functions.invoke('send-drafts-to-d4sign', {
           body: { companyId: selectedCompanyId, delayMs: 3000, limit: batchSize },
@@ -103,6 +89,15 @@ export default function VerbasIndenizatorias() {
         const sent = result?.sent ?? 0;
         const errors = result?.errors ?? 0;
         remaining = result?.remaining ?? 0;
+
+        // Primeira chamada sem envios = nenhum rascunho pendente
+        if (totalSent === 0 && sent === 0 && errors === 0) {
+          toast.dismiss(toastId);
+          toast.info('Nenhum rascunho pendente para enviar');
+          refetch();
+          setSendingDrafts(false);
+          return;
+        }
 
         totalSent += sent;
         totalErrors += errors;
