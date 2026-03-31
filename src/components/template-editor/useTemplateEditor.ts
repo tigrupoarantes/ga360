@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/contexts/CompanyContext';
@@ -27,6 +28,7 @@ const INITIAL_FORM: TemplateForm = {
 export function useTemplateEditor(templateId: string | undefined) {
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const companyId = selectedCompany?.id ?? '';
 
   const [form, setForm] = useState<TemplateForm>(INITIAL_FORM);
@@ -141,9 +143,11 @@ export function useTemplateEditor(templateId: string | undefined) {
       savedHtmlRef.current = form.template_html;
       setIsDirty(false);
       queryClient.invalidateQueries({ queryKey: ['d4sign-templates'] });
-      queryClient.invalidateQueries({
-        queryKey: ['d4sign-template-detail', templateId],
-      });
+      queryClient.invalidateQueries({ queryKey: ['d4sign-template-detail', templateId] });
+      // Após criar novo template, redirecionar para a lista na aba correta
+      if (isNew) {
+        navigate('/admin/d4sign?tab=templates');
+      }
     },
     onError: (err: Error) => {
       toast.error(`Erro ao salvar: ${err.message}`);
