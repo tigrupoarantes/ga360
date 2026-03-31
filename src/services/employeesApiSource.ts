@@ -59,6 +59,9 @@ export interface DabEmployee {
   nome_fantasia?: string | null;
   data_demissao?: string | null;
   situacao_raw?: number | string | null;
+  // Campos de líder direto via CPF (API DAB)
+  CPF_Lider?: string | null;
+  Nome_Lider?: string | null;
 }
 
 interface DabEmployeeRaw {
@@ -99,6 +102,10 @@ interface DabEmployeeRaw {
   Cod_Empresa?: number | string | null;
   Cod_Contabilizacao?: number | string | null;
   Nome_Fantasia?: string | null;
+  CPF_Lider?: string | null;
+  Nome_Lider?: string | null;
+  cpf_lider?: string | null;
+  nome_lider?: string | null;
 }
 
 interface NormalizedEmployeeResult {
@@ -1440,6 +1447,49 @@ export async function syncEmployeesFromDab(
       if (insertedRow?.id) {
         existingByUniqueKey.set(uniqueKey, insertedRow.id);
       }
+    }
+  }
+
+  // Passada de líder: mapear lider_direto_id via CPF_Lider
+  // Coleta CPFs dos líderes referenciados no lote atual
+  const cpfLiderSet = new Set<string>();
+  for (const employee of normalizedEmployees) {
+    const raw = employee as DabEmployee & { CPF_Lider?: string | null };
+    const cpfLider = normalizeDocument(raw.CPF_Lider ?? raw.cpf_lider ?? null);
+    if (cpfLider) cpfLiderSet.add(cpfLider);
+  }
+
+  if (cpfLiderSet.size > 0) {
+    // Busca os UUIDs de todos os líderes por CPF de uma vez
+    const { data: liderRows } = await supabase
+      .from("external_employees")
+      .select("id, cpf")
+      .eq("source_system", SOURCE_SYSTEM)
+      .in("cpf", Array.from(cpfLiderSet));
+
+    const cpfToLiderUuid = new Map<string, string>();
+    for (const row of liderRows || []) {
+      if (row.cpf) cpfToLiderUuid.set(row.cpf, row.id);
+    }
+
+    for (const employee of normalizedEmployees) {
+      const raw = employee as DabEmployee & { CPF_Lider?: string | null };
+      const cpfLider = normalizeDocument(raw.CPF_Lider ?? raw.cpf_lider ?? null);
+      if (!cpfLider) continue;
+
+      const liderUuid = cpfToLiderUuid.get(cpfLider);
+      if (!liderUuid) continue;
+
+      // Encontrar o UUID do próprio funcionário
+      const contractCompanyId = resolveContractCompanyId(employee, companyLookup) || null;
+      const uniqueKey = buildEmployeeUniqueKey(contractCompanyId, employee.id_funcionario);
+      const employeeUuid = existingByUniqueKey.get(uniqueKey);
+      if (!employeeUuid) continue;
+
+      await supabase
+        .from("external_employees")
+        .update({ lider_direto_id: liderUuid })
+        .eq("id", employeeUuid);
     }
   }
 

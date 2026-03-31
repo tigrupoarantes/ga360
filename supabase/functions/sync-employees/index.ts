@@ -38,6 +38,12 @@ interface EmployeeRecord {
   hire_date?: string;
   metadata?: Record<string, any>;
 
+  // Campos de líder direto via CPF (API DAB)
+  CPF_Lider?: string | null;
+  Nome_Lider?: string | null;
+  cpf_lider?: string | null;
+  nome_lider?: string | null;
+
   // Formato bruto da API DAB
   Situacao?: number | string | null;
   CPF?: string | null;
@@ -380,8 +386,8 @@ serve(async (req) => {
     // Estatísticas globais e por empresa
     let totalCreated = 0, totalUpdated = 0, totalFailed = 0;
     const byCompany: Record<string, CompanyStats> = {};
-    const errors: any[] = [];
-    const processedEmployees: Array<{ externalId: string; id: string }> = [];
+    const errors: Array<{external_id: string | undefined; cnpj_empresa: string | undefined; error: string}> = [];
+    const processedEmployees: Array<{ externalId: string; id: string; cpf: string | null }> = [];
 
     // Inicializar estatísticas por empresa
     for (const cnpj of uniqueCnpjs) {
@@ -518,7 +524,7 @@ serve(async (req) => {
           employeeId = newEmp.id;
         }
 
-        processedEmployees.push({ externalId, id: employeeId });
+        processedEmployees.push({ externalId, id: employeeId, cpf: cpf || null });
       } catch (error) {
         totalFailed++;
         const empCnpj = normalizeCnpj(emp.cnpj_empresa);
@@ -530,19 +536,39 @@ serve(async (req) => {
       }
     }
 
-    // Segunda passada: mapear lider_direto_id
+    // Segunda passada: mapear lider_direto_id via CPF_Lider
+    // Constrói mapa CPF normalizado → UUID (do lote atual, evita queries extras)
+    const cpfToUuidMap = new Map<string, string>();
+    for (const { cpf, id } of processedEmployees) {
+      if (cpf) cpfToUuidMap.set(cpf.replace(/\D/g, ''), id);
+    }
+
     for (const emp of normalizedEmployees) {
-      const liderExternalId = emp.lider_direto_id;
-      if (!liderExternalId) continue;
+      const cpfLider = normalizeCpf(emp.CPF_Lider ?? emp.cpf_lider);
+      if (!cpfLider) continue;
 
       const externalId = emp.id || emp.external_id;
       const employee = processedEmployees.find(e => e.externalId === externalId);
-      const leader = processedEmployees.find(e => e.externalId === liderExternalId);
+      if (!employee) continue;
 
-      if (employee && leader) {
+      // 1. Buscar UUID do líder no lote atual (sem query extra)
+      let liderUuid: string | null = cpfToUuidMap.get(cpfLider) || null;
+
+      // 2. Fallback: buscar no banco por cpf (líder pode estar em sync anterior)
+      if (!liderUuid) {
+        const { data: liderData } = await supabase
+          .from('external_employees')
+          .select('id')
+          .eq('cpf', cpfLider)
+          .eq('source_system', sourceSystem)
+          .maybeSingle();
+        liderUuid = liderData?.id || null;
+      }
+
+      if (liderUuid) {
         await supabase
           .from('external_employees')
-          .update({ lider_direto_id: leader.id })
+          .update({ lider_direto_id: liderUuid })
           .eq('id', employee.id);
       }
     }
