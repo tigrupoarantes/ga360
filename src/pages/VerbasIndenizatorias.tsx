@@ -72,24 +72,29 @@ export default function VerbasIndenizatorias() {
     }
 
     setSendingDrafts(true);
-    const toastId = toast.loading(`Enviando ${pendingCount} documento(s) para D4Sign... (~${Math.ceil(pendingCount * 7 / 60)} min)`, { duration: Infinity });
+    const batchSize = 10;
+    const toastId = toast.loading(
+      `Enviando lote de ${Math.min(pendingCount, batchSize)} documento(s) para D4Sign... (~${Math.ceil(Math.min(pendingCount, batchSize) * 10 / 60)} min)`,
+      { duration: Infinity },
+    );
 
     try {
       const resp = await supabase.functions.invoke('send-drafts-to-d4sign', {
-        body: { companyId: selectedCompanyId, delayMs: 5000 },
+        body: { companyId: selectedCompanyId, delayMs: 8000, limit: batchSize },
       });
       if (resp.error) throw resp.error;
       const result = resp.data;
       const sent = result?.sent ?? 0;
       const errors = result?.errors ?? 0;
+      const remaining = pendingCount - sent;
 
       toast.dismiss(toastId);
       if (sent > 0 && errors === 0) {
-        toast.success(`${sent} documento(s) enviado(s) com sucesso!`);
-      } else if (sent > 0 && errors > 0) {
-        toast.warning(`${sent} enviado(s), ${errors} com erro de ${result?.total} total`);
+        toast.success(`${sent} enviado(s) com sucesso!${remaining > 0 ? ` Restam ${remaining} — clique novamente.` : ''}`);
+      } else if (sent > 0) {
+        toast.warning(`${sent} enviado(s), ${errors} erro(s).${remaining > 0 ? ` Restam ${remaining}.` : ''}`);
       } else {
-        toast.error(`Nenhum documento enviado. ${errors} erro(s). Verifique rate limit da D4Sign.`);
+        toast.error(`Nenhum enviado. ${errors} erro(s). Rate limit da D4Sign — aguarde 1 min e tente novamente.`);
       }
       refetch();
     } catch (err: any) {

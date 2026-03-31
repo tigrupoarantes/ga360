@@ -60,7 +60,7 @@ serve(async (req: Request) => {
     }
 
     const body = (await req.json()) as SendRequest;
-    const { companyId, delayMs = 5000, limit } = body;
+    const { companyId, delayMs = 8000, limit = 10 } = body; // lotes de 10, 8s entre cada
 
     if (!companyId) {
       return new Response(JSON.stringify({ error: "companyId required" }), {
@@ -97,20 +97,38 @@ serve(async (req: Request) => {
       return url.toString();
     }
 
-    async function callD4Sign(url: string, method: string, body?: unknown): Promise<{ ok: boolean; status: number; data: unknown }> {
-      const headers: Record<string, string> = { Accept: "application/json" };
-      let fetchBody: BodyInit | undefined;
-      if (body instanceof FormData) {
-        fetchBody = body;
-      } else if (body !== undefined) {
-        headers["Content-Type"] = "application/json";
-        fetchBody = JSON.stringify(body);
+    async function callD4Sign(url: string, method: string, body?: unknown, maxRetries = 3): Promise<{ ok: boolean; status: number; data: unknown }> {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const headers: Record<string, string> = { Accept: "application/json" };
+        let fetchBody: BodyInit | undefined;
+        if (body instanceof FormData) {
+          // FormData não pode ser reutilizado após consume — reclonar se retry
+          fetchBody = body;
+        } else if (body !== undefined) {
+          headers["Content-Type"] = "application/json";
+          fetchBody = JSON.stringify(body);
+        }
+        const resp = await fetch(url, { method, headers, body: fetchBody });
+        const text = await resp.text();
+        let data: unknown;
+        try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+
+        // Rate limit: retry com backoff exponencial
+        const isRateLimit = !resp.ok && (
+          resp.status === 429 || resp.status === 401 ||
+          (typeof data === "object" && data !== null && JSON.stringify(data).includes("tempo limite"))
+        );
+
+        if (isRateLimit && attempt < maxRetries) {
+          const backoff = Math.pow(2, attempt + 1) * 5000; // 10s, 20s, 40s
+          console.log(`[send-drafts] rate limit hit, retry ${attempt + 1}/${maxRetries} in ${backoff}ms`);
+          await new Promise(r => setTimeout(r, backoff));
+          continue;
+        }
+
+        return { ok: resp.ok, status: resp.status, data };
       }
-      const resp = await fetch(url, { method, headers, body: fetchBody });
-      const text = await resp.text();
-      let data: unknown;
-      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
-      return { ok: resp.ok, status: resp.status, data };
+      return { ok: false, status: 429, data: { error: "max retries exceeded" } };
     }
 
     // Buscar documentos draft + error
