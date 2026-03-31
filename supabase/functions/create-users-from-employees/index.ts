@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
 
 interface EmployeeToConvert {
   id: string;
@@ -24,9 +20,8 @@ interface ConversionResult {
 const handler = async (req: Request): Promise<Response> => {
   console.log("create-users-from-employees function called");
 
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -41,7 +36,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("No authorization header");
       return new Response(
         JSON.stringify({ error: "Não autorizado" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 401, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -52,7 +47,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("Error getting user:", userError);
       return new Response(
         JSON.stringify({ error: "Usuário não autenticado" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 401, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -69,7 +64,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("Error fetching roles:", rolesError);
       return new Response(
         JSON.stringify({ error: "Erro ao verificar permissões" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -80,7 +75,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("User does not have permission:", userRoles);
       return new Response(
         JSON.stringify({ error: "Sem permissão para esta operação" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 403, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -90,7 +85,7 @@ const handler = async (req: Request): Promise<Response> => {
     if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
       return new Response(
         JSON.stringify({ error: "Lista de funcionários vazia" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -108,7 +103,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("Error fetching employees:", employeesError);
       return new Response(
         JSON.stringify({ error: "Erro ao buscar funcionários" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -276,14 +271,14 @@ const handler = async (req: Request): Promise<Response> => {
 
     return new Response(
       JSON.stringify(result),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
 
   } catch (error) {
     console.error("Error in create-users-from-employees:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Erro interno" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 };

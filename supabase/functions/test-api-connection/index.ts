@@ -2,10 +2,7 @@
 // Proxies API connection test to avoid browser CORS restrictions
 // Tries multiple URL paths and classifies responses intelligently
 
-const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts'
 
 /**
  * Classifica uma resposta HTTP e retorna mensagem amigável.
@@ -41,9 +38,8 @@ function classifyResponse(status: number, url: string): { success: boolean; mess
 
 Deno.serve(async (req) => {
     // Handle CORS preflight
-    if (req.method === 'OPTIONS') {
-        return new Response('ok', { headers: corsHeaders });
-    }
+    const corsResponse = handleCors(req);
+    if (corsResponse) return corsResponse;
 
     try {
         // 1. Validate auth
@@ -51,7 +47,7 @@ Deno.serve(async (req) => {
         if (!authHeader?.startsWith('Bearer ')) {
             return new Response(
                 JSON.stringify({ success: false, message: 'Não autorizado' }),
-                { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                { status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
             );
         }
 
@@ -62,7 +58,7 @@ Deno.serve(async (req) => {
         if (!apiBaseUrl) {
             return new Response(
                 JSON.stringify({ success: false, message: 'URL da API não informada' }),
-                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                { status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
             );
         }
 
@@ -137,7 +133,7 @@ Deno.serve(async (req) => {
                         const result = classifyResponse(response.status, testUrl);
                         return new Response(
                             JSON.stringify(result),
-                            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                            { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
                         );
                     }
 
@@ -147,7 +143,7 @@ Deno.serve(async (req) => {
                         const result = classifyResponse(response.status, testUrl);
                         return new Response(
                             JSON.stringify(result),
-                            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                            { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
                         );
                     }
 
@@ -162,7 +158,7 @@ Deno.serve(async (req) => {
                     const result = classifyResponse(response.status, testUrl);
                     return new Response(
                         JSON.stringify(result),
-                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                        { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
                     );
 
                 } catch (urlErr) {
@@ -179,7 +175,7 @@ Deno.serve(async (req) => {
                     success: false,
                     message: `❌ Nenhum endpoint respondeu. URLs testadas: ${urlsToTry.join(', ')}. Verifique a URL base.`,
                 }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
             );
 
         } catch (fetchErr) {
@@ -189,13 +185,13 @@ Deno.serve(async (req) => {
             if (msg.includes('abort')) {
                 return new Response(
                     JSON.stringify({ success: false, message: '❌ Timeout — a API não respondeu em 15 segundos' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
                 );
             }
 
             return new Response(
                 JSON.stringify({ success: false, message: `❌ Não foi possível conectar: ${msg}` }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
             );
         }
 
@@ -204,7 +200,7 @@ Deno.serve(async (req) => {
         const message = err instanceof Error ? err.message : 'Erro desconhecido';
         return new Response(
             JSON.stringify({ success: false, message: `❌ Erro interno: ${message}` }),
-            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
         );
     }
 });

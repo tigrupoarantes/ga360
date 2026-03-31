@@ -141,14 +141,86 @@ Funções SQL de verificação:
 
 ---
 
-## Skills Disponíveis (usar SEMPRE que aplicável)
+## Orquestração de Skills — SEGUIR SEMPRE
 
-- `ga360-dev` — criar/editar/refatorar qualquer arquivo do GA 360
-- `ga360-features` — planejar/especificar nova funcionalidade
-- `ga360-domain` — dúvidas de negócio/processo do Grupo Arantes
-- `ga360-review` — code review de componentes/hooks/edge functions
-- `ga360-ux` — melhorias de interface e usabilidade
-- `ga360-tests` — testes unitários/integração
+### Inventário de Skills
+
+| Skill | Papel | Quando acionar |
+|-------|-------|----------------|
+| `ga360-features` | Arquiteto | Planejar feature nova (spec, escopo, fases) |
+| `ga360-dba` | DBA | Migration, RLS, índice, função SQL, otimização |
+| `ga360-dev` | Desenvolvedor | Criar/editar componente, hook, página, Edge Function |
+| `ga360-tests` | QA | Escrever/revisar testes, cobertura |
+| `ga360-review` | Revisor | Code review, checklist de segurança, qualidade |
+| `ga360-ux` | Designer | Melhorar interface, usabilidade, layout |
+| `ga360-domain` | Analista de negócio | Regras de negócio, processos, KPIs, fluxos do Grupo Arantes |
+| `ga360-bi` | Analista de dados | Insights, dashboards, análises, rankings, tendências |
+| `ga360-mcp` | Integrador | Registrar tools MCP, buscar dados reais via servidor MCP |
+| `ga360-security` | Auditor CISSP | Pentest, secrets, CORS, RLS, brute force, OWASP Top 10, secure-by-design |
+| `ga360-skill-builder` | Meta-skill | Criar novas skills a partir do código real |
+
+### Fluxos Orquestrados (seguir na ordem)
+
+**FEATURE NOVA** (usuário pede funcionalidade, módulo, tela):
+```
+1. ga360-features  → spec completa (negócio + técnico + DB + componentes)
+2. ga360-dba       → migration SQL + RLS + índices
+3. ga360-dev       → implementar páginas, componentes, hooks, Edge Functions
+4. ga360-mcp       → registrar tools MCP se a feature expõe dados consultáveis
+5. ga360-tests     → testes unitários + integração
+6. ga360-review    → checklist de segurança + qualidade antes de entregar
+```
+
+**CRIAR COMPONENTE/HOOK/PÁGINA** (implementação direta sem migration):
+```
+1. ga360-dev       → implementar seguindo padrões
+2. ga360-tests     → teste do componente/hook
+```
+
+**MIGRATION/SQL** (criar tabela, alterar schema, RLS):
+```
+1. ga360-dba       → migration + RLS + índices + trigger updated_at
+```
+
+**MELHORAR INTERFACE** (UX, layout, usabilidade):
+```
+1. ga360-ux        → análise e proposta de melhoria
+2. ga360-dev       → implementar as mudanças
+```
+
+**ANÁLISE DE DADOS** (insights, KPIs, dashboards):
+```
+1. ga360-mcp       → buscar dados reais via MCP tools
+2. ga360-bi        → analisar, correlacionar, recomendar ações
+```
+
+**CODE REVIEW** (revisar código existente ou recém-criado):
+```
+1. ga360-review    → checklist completo (segurança, performance, padrões)
+```
+
+**AUDITORIA DE SEGURANÇA** (pentest, vulnerabilidades, hardening):
+```
+1. ga360-security  → varredura completa (secrets, CORS, auth, RLS, OWASP)
+2. ga360-dba       → corrigir RLS, policies, constraints
+3. ga360-dev       → corrigir código (CORS, rate limiting, validation)
+4. ga360-security  → re-auditar após correções
+```
+
+**DÚVIDA DE NEGÓCIO** (como funciona X, qual a regra de Y):
+```
+1. ga360-domain    → responder com contexto do Grupo Arantes
+```
+
+### Regras de Orquestração
+
+1. **Nunca pular etapas** — seguir o fluxo completo na ordem definida
+2. **Cada skill lê o código real** — nunca inventar; sempre ler arquivos antes de agir
+3. **Handoff explícito** — ao terminar uma etapa, informar o usuário e iniciar a próxima
+4. **Parar se bloqueado** — se uma etapa precisa de decisão do usuário, perguntar antes de continuar
+5. **Uma skill por vez** — não misturar responsabilidades (DBA não implementa componentes, Dev não cria migrations)
+6. **Review obrigatório** — toda feature nova passa por `ga360-review` antes de ser apresentada como pronta
+7. **MCP obrigatório em features com dados** — se a feature cria entidades consultáveis, registrar tool no MCP server
 
 ---
 

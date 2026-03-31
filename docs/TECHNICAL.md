@@ -1,4 +1,4 @@
-  # GA 360 — Documentação Técnica
+# GA 360 — Documentação Técnica
 
   > **Versão:** 1.2  
   > **Última atualização:** 2026-03-13  

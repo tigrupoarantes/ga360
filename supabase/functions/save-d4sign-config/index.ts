@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 function sanitizeError(error: unknown): string {
   if (!error) return "unknown_error";
@@ -14,16 +10,15 @@ function sanitizeError(error: unknown): string {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -37,7 +32,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "invalid_token" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -56,7 +51,7 @@ serve(async (req: Request) => {
     if (userRole?.role !== "super_admin") {
       return new Response(JSON.stringify({ error: "forbidden" }), {
         status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -72,7 +67,7 @@ serve(async (req: Request) => {
       if (!existing) {
         return new Response(JSON.stringify({ config: null }), {
           status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
 
@@ -92,7 +87,7 @@ serve(async (req: Request) => {
         },
       }), {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -112,7 +107,7 @@ serve(async (req: Request) => {
     if (!token_api || !crypt_key) {
       return new Response(
         JSON.stringify({ error: "token_api e crypt_key são obrigatórios" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -145,18 +140,18 @@ serve(async (req: Request) => {
     if (upsertError) {
       return new Response(
         JSON.stringify({ error: "Falha ao salvar configuração", details: upsertError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   } catch (error) {
     return new Response(
       JSON.stringify({ error: "internal_error", details: sanitizeError(error) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   }
 });

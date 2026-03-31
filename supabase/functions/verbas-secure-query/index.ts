@@ -1,11 +1,7 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 interface VerbasSecureQueryRequest {
   companyId?: string;
@@ -421,16 +417,15 @@ async function getCardPermissions(supabaseAdmin: any, userId: string) {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "unauthorized", code: "AUTH_INVALID" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -444,7 +439,7 @@ serve(async (req: Request) => {
     if (authError || !userData?.user) {
       return new Response(JSON.stringify({ error: "invalid_token", code: "AUTH_INVALID" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -460,7 +455,7 @@ serve(async (req: Request) => {
         .single();
       return new Response(JSON.stringify({ job: jobData }), {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -472,7 +467,7 @@ serve(async (req: Request) => {
         .limit(20);
       return new Response(JSON.stringify({ jobs: jobsData || [] }), {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -491,7 +486,7 @@ serve(async (req: Request) => {
       if (applyError) {
         return new Response(JSON.stringify({ error: applyError.message }), {
           status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
 
@@ -502,7 +497,7 @@ serve(async (req: Request) => {
         cpfs_sem_empresa: result.cpfs_sem_empresa ?? 0,
       }), {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -510,7 +505,7 @@ serve(async (req: Request) => {
     if (!allowedCompanyIds.length) {
       return new Response(JSON.stringify({ error: "Acesso a empresas não encontrado.", code: "TENANT_ACCESS_DENIED" }), {
         status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -520,7 +515,7 @@ serve(async (req: Request) => {
     if (!canViewCard && !adminPermission.can_view && !adminPermission.is_super_admin) {
       return new Response(JSON.stringify({ error: "Sem permissão para visualizar VERBAS.", code: "PERMISSION_DENIED" }), {
         status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -553,7 +548,7 @@ serve(async (req: Request) => {
       if (!hasFullAccess) {
         return new Response(JSON.stringify({ error: "Sem permissão para sincronizar VERBAS.", code: "PERMISSION_DENIED" }), {
           status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
 
@@ -605,7 +600,7 @@ serve(async (req: Request) => {
         if (previewOnly && syncResult) {
           return new Response(JSON.stringify({ success: true, preview: syncResult }), {
             status: 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
           });
         }
         // Garante que job_id está na resposta para polling do frontend
@@ -846,7 +841,7 @@ serve(async (req: Request) => {
         }),
         {
           status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         },
       );
     }
@@ -895,7 +890,7 @@ serve(async (req: Request) => {
       }),
       {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   } catch (error: any) {
@@ -913,7 +908,7 @@ serve(async (req: Request) => {
       }),
       {
         status: isTenantError ? 403 : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   }

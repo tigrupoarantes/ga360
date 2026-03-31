@@ -1,10 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
-
-// CORS headers inline (standalone - não depende de arquivo externo)
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts'
 
 interface KPISummaryResponse {
   salesDTD: number;
@@ -27,9 +22,8 @@ interface KPISummaryResponse {
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     // 1. Get auth header
@@ -38,7 +32,7 @@ Deno.serve(async (req) => {
       console.log('Missing or invalid Authorization header');
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
     }
 
@@ -68,7 +62,7 @@ Deno.serve(async (req) => {
     if (!companyId || !startDate || !endDate) {
       return new Response(
         JSON.stringify({ error: 'Missing required parameters: company_id, start_date, end_date' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
     }
 
@@ -248,7 +242,7 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify(response),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
 
   } catch (err: unknown) {
@@ -256,7 +250,7 @@ Deno.serve(async (req) => {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return new Response(
       JSON.stringify({ error: 'Internal server error', details: message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
   }
 });

@@ -1,11 +1,7 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 interface VerbaRecord {
   company_id?: string;
@@ -1065,9 +1061,8 @@ async function loadRowsFromDatalake(
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   const startedAt = Date.now();
   let jobId: string | null = null;
@@ -1087,7 +1082,7 @@ serve(async (req) => {
     if (!hasValidApiKey && !hasValidServiceRoleBearer) {
       return new Response(
         JSON.stringify({ error: "Invalid or missing API key" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 401, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -1153,7 +1148,7 @@ serve(async (req) => {
           no_data: true,
           message: "Nenhum dado encontrado para os filtros informados (mês/ano).",
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -1618,7 +1613,7 @@ serve(async (req) => {
             .sort((a, b) => b.count - a.count)
             .slice(0, 10),
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -1774,7 +1769,7 @@ serve(async (req) => {
         failure_reasons: failureReasons,
         errors: errors.length ? errors.slice(0, 100) : undefined,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   } catch (error) {
     try {
@@ -1816,7 +1811,7 @@ serve(async (req) => {
         error: "Internal server error",
         details: String(error),
       }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   }
 });

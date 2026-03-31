@@ -75,13 +75,13 @@ export function ProtectedRoute({ children, allowedRoles, requiredPermission }: P
     return null;
   }
 
-  // Render logic mirroring the effect check to prevent flash
+  // Render logic must mirror effect check exactly (AND) to prevent privilege escalation flash
   const hasRoleAccess = allowedRoles ? (role && allowedRoles.includes(role)) : null;
   const hasPermissionAccess = requiredPermission ? checkPermission(requiredPermission.module, requiredPermission.action) : null;
 
   let accessGranted = true;
   if (allowedRoles && requiredPermission) {
-    accessGranted = !!(hasRoleAccess || hasPermissionAccess);
+    accessGranted = !!(hasRoleAccess && hasPermissionAccess);
   } else if (allowedRoles) {
     accessGranted = !!hasRoleAccess;
   } else if (requiredPermission) {

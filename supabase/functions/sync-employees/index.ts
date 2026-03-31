@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts'
 
 // Interface para o registro de funcionário - suporta formato novo (Gestão de Ativos) e antigo
 interface EmployeeRecord {
@@ -275,9 +271,8 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   const startTime = new Date();
   console.log(`[sync-employees] Starting sync at ${startTime.toISOString()}`);
@@ -290,7 +285,7 @@ serve(async (req) => {
       console.error('[sync-employees] Invalid or missing API key');
       return new Response(
         JSON.stringify({ error: 'Invalid or missing API key' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
     }
 
@@ -314,7 +309,7 @@ serve(async (req) => {
     if (!employeesPayload) {
       return new Response(
         JSON.stringify({ error: 'Invalid request body. Required: employees[] or value[]' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
     }
 
@@ -329,7 +324,7 @@ serve(async (req) => {
       console.error('[sync-employees] Error loading companies:', companiesError);
       return new Response(
         JSON.stringify({ error: 'Failed to load companies' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
     }
 
@@ -651,14 +646,14 @@ serve(async (req) => {
         by_company: byCompanyWithDeactivated,
         errors: errors.length > 0 ? errors : undefined 
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
     console.error('[sync-employees] Unexpected error:', error);
     return new Response(
       JSON.stringify({ error: 'Internal server error', details: String(error) }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
   }
 });

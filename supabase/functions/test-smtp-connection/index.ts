@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts'
 
 interface TestRequest {
   host: string;
@@ -15,15 +11,14 @@ interface TestRequest {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     // Validate JWT manually
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: getCorsHeaders(req) });
     }
     const token = authHeader.replace('Bearer ', '');
     const supabaseAuth = createClient(
@@ -33,7 +28,7 @@ serve(async (req) => {
     );
     const { data: { user: authUser }, error: authError } = await supabaseAuth.auth.getUser(token);
     if (authError || !authUser) {
-      return new Response(JSON.stringify({ error: 'Invalid authentication token' }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Invalid authentication token' }), { status: 401, headers: getCorsHeaders(req) });
     }
     const { host, port, user, password, encryption } = await req.json() as TestRequest;
 
@@ -166,7 +161,7 @@ serve(async (req) => {
                       success: true, 
                       message: 'Conexão SMTP estabelecida com sucesso' 
                     }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+                    { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
                   );
                 } else if (passResponse.startsWith('535') || passResponse.includes('authentication failed')) {
                   throw new Error('Credenciais inválidas');
@@ -188,7 +183,7 @@ serve(async (req) => {
               success: true, 
               message: 'Conexão estabelecida (servidor requer STARTTLS para autenticação)' 
             }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
           );
         }
       }
@@ -203,7 +198,7 @@ serve(async (req) => {
           success: true, 
           message: 'Conexão SMTP estabelecida' 
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
       
     } catch (connError: any) {
@@ -235,7 +230,7 @@ serve(async (req) => {
         message,
         error: error.message 
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
   }
 });

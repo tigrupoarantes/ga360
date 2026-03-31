@@ -1,16 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
 
 interface CreateUserRequest {
   email: string;
@@ -25,9 +20,8 @@ interface CreateUserRequest {
 const handler = async (req: Request): Promise<Response> => {
   console.log("=== CREATE-USER FUNCTION START ===");
   
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     // Cliente admin com service role
@@ -41,7 +35,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("No authorization header");
       return new Response(
         JSON.stringify({ error: "Não autorizado - header ausente" }),
-        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 401, headers: { "Content-Type": "application/json", ...getCorsHeaders(req) } }
       );
     }
 
@@ -60,7 +54,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("Auth error:", authError?.message);
       return new Response(
         JSON.stringify({ error: "Não autorizado - token inválido" }),
-        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 401, headers: { "Content-Type": "application/json", ...getCorsHeaders(req) } }
       );
     }
 
@@ -80,7 +74,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("Role check failed");
       return new Response(
         JSON.stringify({ error: "Apenas CEOs e Super Admins podem criar usuários" }),
-        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 403, headers: { "Content-Type": "application/json", ...getCorsHeaders(req) } }
       );
     }
 
@@ -103,7 +97,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("Error creating user:", createError.message);
       return new Response(
         JSON.stringify({ error: `Erro ao criar usuário: ${createError.message}` }),
-        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 400, headers: { "Content-Type": "application/json", ...getCorsHeaders(req) } }
       );
     }
 
@@ -111,7 +105,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("User not created");
       return new Response(
         JSON.stringify({ error: "Falha ao criar usuário" }),
-        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(req) } }
       );
     }
 
@@ -155,7 +149,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.error("Error inserting role:", insertRoleError.message);
       return new Response(
         JSON.stringify({ error: `Erro ao atribuir role: ${insertRoleError.message}` }),
-        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(req) } }
       );
     }
 
@@ -241,7 +235,7 @@ const handler = async (req: Request): Promise<Response> => {
       }),
       {
         status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
+        headers: { "Content-Type": "application/json", ...getCorsHeaders(req) },
       }
     );
   } catch (error: any) {
@@ -250,7 +244,7 @@ const handler = async (req: Request): Promise<Response> => {
       JSON.stringify({ error: error.message }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
+        headers: { "Content-Type": "application/json", ...getCorsHeaders(req) },
       }
     );
   }

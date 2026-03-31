@@ -1,7 +1,7 @@
 // routes/webhooks.ts — CRUD Webhook Subscriptions + test
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { ApiKeyContext } from "../_auth.ts";
-import { ok, created, noContent, notFound, forbidden, serverError, err } from "../_response.ts";
+import { ok, created, noContent, notFound, forbidden, serverError, err, getCorsHeaders } from "../_response.ts";
 
 function supabase() {
   return createClient(
@@ -110,7 +110,7 @@ async function createWebhook(req: Request, ctx: ApiKeyContext, db: ReturnType<ty
       data: { ...data, secret },
       warning: "Guarde o secret em local seguro. Ele não será exibido novamente.",
     }),
-    { status: 201, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } },
+    { status: 201, headers: { "Content-Type": "application/json", ...getCorsHeaders(req) } },
   );
 }
 

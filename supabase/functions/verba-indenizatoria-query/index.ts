@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 function sanitizeError(error: unknown): string {
   if (!error) return "unknown_error";
@@ -31,16 +27,15 @@ interface QueryRequest {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -60,13 +55,13 @@ serve(async (req: Request) => {
     } catch (authEx) {
       return new Response(JSON.stringify({ error: "auth_exception", debug: String(authEx) }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
     if (userError || !userData?.user) {
       return new Response(JSON.stringify({ error: "invalid_token", debug: userError?.message ?? "user_null" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
     const user = userData.user;
@@ -92,7 +87,7 @@ serve(async (req: Request) => {
     if (!companyId) {
       return new Response(JSON.stringify({ error: "companyId é obrigatório" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -125,7 +120,7 @@ serve(async (req: Request) => {
         if (!cardPermission) {
           return new Response(JSON.stringify({ error: "forbidden" }), {
             status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
           });
         }
       }
@@ -145,7 +140,7 @@ serve(async (req: Request) => {
       if (!hasCompanyAccess) {
         return new Response(JSON.stringify({ error: "forbidden" }), {
           status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
     }
@@ -161,13 +156,13 @@ serve(async (req: Request) => {
       if (logsError) {
         return new Response(
           JSON.stringify({ error: "Falha ao consultar logs", details: logsError.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
       return new Response(
         JSON.stringify({ logs: logs ?? [] }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -184,7 +179,7 @@ serve(async (req: Request) => {
       if (!competencia) {
         return new Response(
           JSON.stringify({ error: "competencia é obrigatória para fetchAccountingGroups" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -194,7 +189,7 @@ serve(async (req: Request) => {
       if (isNaN(ano) || !mesStr) {
         return new Response(
           JSON.stringify({ error: "Formato de competencia inválido. Use YYYY-MM" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -209,7 +204,7 @@ serve(async (req: Request) => {
       if (groupsError) {
         return new Response(
           JSON.stringify({ error: "Falha ao consultar grupos", details: groupsError.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -223,7 +218,7 @@ serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify({ groups }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -232,7 +227,7 @@ serve(async (req: Request) => {
       if (!competencia) {
         return new Response(
           JSON.stringify({ error: "competencia é obrigatória para fetchCnpjGroups" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -242,7 +237,7 @@ serve(async (req: Request) => {
       if (isNaN(ano)) {
         return new Response(
           JSON.stringify({ error: "Formato de competencia inválido. Use YYYY-MM" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -258,7 +253,7 @@ serve(async (req: Request) => {
       if (cnpjError) {
         return new Response(
           JSON.stringify({ error: "Falha ao consultar CNPJs", details: cnpjError.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -278,7 +273,7 @@ serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify({ cnpjGroups }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -288,7 +283,7 @@ serve(async (req: Request) => {
       if (!competencia) {
         return new Response(
           JSON.stringify({ error: "competencia é obrigatória para fetchEmployeesWithVerba" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -299,7 +294,7 @@ serve(async (req: Request) => {
       if (isNaN(ano) || !mesNome) {
         return new Response(
           JSON.stringify({ error: "Formato de competencia inválido. Use YYYY-MM" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -313,7 +308,7 @@ serve(async (req: Request) => {
       if (rpcError) {
         return new Response(
           JSON.stringify({ error: "Falha ao consultar funcionários", details: rpcError.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
 
@@ -341,7 +336,7 @@ serve(async (req: Request) => {
 
       return new Response(
         JSON.stringify({ employees }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -365,7 +360,7 @@ serve(async (req: Request) => {
     if (queryError) {
       return new Response(
         JSON.stringify({ error: "Falha ao consultar documentos", details: queryError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -377,14 +372,14 @@ serve(async (req: Request) => {
         total: count ?? 0,
         rows: rows ?? [],
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   } catch (error) {
     return new Response(
       JSON.stringify({ error: "internal_error", details: sanitizeError(error) }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   }

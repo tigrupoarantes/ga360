@@ -20,16 +20,22 @@ const fivecomLogoModules = import.meta.glob('../assets/logo-fivecom.{jpg,jpeg,pn
 
 const fivecomLogo = Object.values(fivecomLogoModules)[0] || logoBadgeFallback;
 
+const strongPasswordSchema = z.string()
+  .min(8, { message: 'A senha deve ter no mínimo 8 caracteres' })
+  .regex(/[A-Z]/, { message: 'A senha deve conter pelo menos uma letra maiúscula' })
+  .regex(/[a-z]/, { message: 'A senha deve conter pelo menos uma letra minúscula' })
+  .regex(/[0-9]/, { message: 'A senha deve conter pelo menos um número' });
+
 const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Email inválido' }),
-  password: z.string().min(6, { message: 'A senha deve ter no mínimo 6 caracteres' }),
+  password: z.string().min(1, { message: 'Senha é obrigatória' }),
 });
 
 const signupSchema = z.object({
   firstName: z.string().trim().min(2, { message: 'Nome deve ter no mínimo 2 caracteres' }),
   lastName: z.string().trim().min(2, { message: 'Sobrenome deve ter no mínimo 2 caracteres' }),
   email: z.string().trim().email({ message: 'Email inválido' }),
-  password: z.string().min(6, { message: 'A senha deve ter no mínimo 6 caracteres' }),
+  password: strongPasswordSchema,
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'As senhas não coincidem',

@@ -12,11 +12,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.85.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 type Endpoint = "kpis" | "pedidos" | "nao-vendas" | "ranking";
 type NivelAcesso = "vendedor" | "supervisor" | "gerente" | "diretoria";
@@ -301,12 +297,13 @@ async function setCache(supabaseAdmin: any, key: string, payload: any, ttlMinute
 // Handler principal
 // ──────────────────────────────────────────────────────────
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   const respond = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
 
   try {

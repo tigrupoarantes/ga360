@@ -4,12 +4,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateApiKey } from "../public-api/_auth.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, content-type, x-api-key",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 function supabase() {
   return createClient(
@@ -533,22 +528,21 @@ async function executeTool(
 // ── MCP JSON-RPC 2.0 handler ───────────────────────────────────────────────────
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   const ctx = await validateApiKey(req);
   if (!ctx) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   }
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   }
 
@@ -558,7 +552,7 @@ serve(async (req: Request) => {
   } catch {
     return new Response(
       JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   }
 
@@ -591,7 +585,7 @@ serve(async (req: Request) => {
 
     case "notifications/initialized":
       // Notificação do cliente — não requer resposta
-      return new Response(null, { status: 204, headers: corsHeaders });
+      return new Response(null, { status: 204, headers: getCorsHeaders(req) });
 
     case "tools/list":
       result = { tools: TOOLS };
@@ -607,12 +601,12 @@ serve(async (req: Request) => {
     default:
       return new Response(
         JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
   }
 
   return new Response(
     JSON.stringify({ jsonrpc: "2.0", id, result }),
-    { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
   );
 });

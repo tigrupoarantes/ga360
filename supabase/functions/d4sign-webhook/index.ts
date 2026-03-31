@@ -1,14 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { BlobWriter, ZipReader } from "https://deno.land/x/zipjs/index.js";
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 // Webhook público da D4Sign — sem auth Bearer
 // Valida por token secreto no header X-D4Sign-Token
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-d4sign-token",
-};
 
 function sanitizeError(error: unknown): string {
   if (!error) return "unknown_error";
@@ -32,14 +28,13 @@ interface D4SignWebhookPayload {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "method_not_allowed" }), {
       status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   }
 
@@ -49,17 +44,27 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Validar token secreto (configurado como env var D4SIGN_WEBHOOK_SECRET)
+    // Validar token secreto (OBRIGATÓRIO — rejeitar se não configurado)
     const webhookSecret = Deno.env.get("D4SIGN_WEBHOOK_SECRET");
-    if (webhookSecret) {
-      const receivedToken = req.headers.get("x-d4sign-token") ||
-        new URL(req.url).searchParams.get("token");
-      if (receivedToken !== webhookSecret) {
-        return new Response(JSON.stringify({ error: "unauthorized" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    if (!webhookSecret) {
+      console.error("[d4sign-webhook] D4SIGN_WEBHOOK_SECRET não configurado — rejeitando request");
+      return new Response(JSON.stringify({ error: "webhook not configured" }), {
+        status: 503,
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
+
+    // Aceitar token apenas via header (nunca query param)
+    const receivedToken = req.headers.get("x-d4sign-token") || "";
+    // Timing-safe comparison para evitar timing attacks
+    const encoder = new TextEncoder();
+    const a = encoder.encode(receivedToken);
+    const b = encoder.encode(webhookSecret);
+    if (a.byteLength !== b.byteLength || !crypto.subtle.timingSafeEqual(a, b)) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      });
     }
 
     const payload = (await req.json()) as D4SignWebhookPayload;
@@ -68,7 +73,7 @@ serve(async (req: Request) => {
     if (!d4signDocumentUuid) {
       return new Response(JSON.stringify({ error: "uuid required" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -84,7 +89,7 @@ serve(async (req: Request) => {
       console.warn("d4sign-webhook: documento não encontrado para uuid", d4signDocumentUuid);
       return new Response(JSON.stringify({ ok: true, warn: "document_not_found" }), {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -285,14 +290,14 @@ serve(async (req: Request) => {
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   } catch (error) {
     return new Response(
       JSON.stringify({ error: "internal_error", details: sanitizeError(error) }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   }

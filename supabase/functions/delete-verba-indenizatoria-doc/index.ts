@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 const DELETABLE_STATUSES = new Set(["draft", "error", "cancelled"]);
 
@@ -21,16 +17,15 @@ function sanitizeError(error: unknown): string {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -44,7 +39,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "invalid_token" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -54,7 +49,7 @@ serve(async (req: Request) => {
     if (!documentId || !companyId) {
       return new Response(JSON.stringify({ error: "documentId and companyId are required" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -89,7 +84,7 @@ serve(async (req: Request) => {
         if (!cardPermission) {
           return new Response(JSON.stringify({ error: "forbidden" }), {
             status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
           });
         }
       }
@@ -108,7 +103,7 @@ serve(async (req: Request) => {
       if (!hasCompanyAccess) {
         return new Response(JSON.stringify({ error: "forbidden" }), {
           status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
     }
@@ -123,28 +118,28 @@ serve(async (req: Request) => {
     if (docError) {
       return new Response(
         JSON.stringify({ error: "failed_to_fetch_document", details: docError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
     if (!document) {
       return new Response(JSON.stringify({ error: "document_not_found" }), {
         status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
     if (!isSuperAdmin && document.created_by !== user.id) {
       return new Response(JSON.stringify({ error: "forbidden" }), {
         status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
     if (!DELETABLE_STATUSES.has(document.d4sign_status)) {
       return new Response(
         JSON.stringify({ error: "document_status_not_deletable", status: document.d4sign_status }),
-        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 409, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -161,7 +156,7 @@ serve(async (req: Request) => {
       if (storageError) {
         return new Response(
           JSON.stringify({ error: "failed_to_remove_files", details: storageError.message }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
         );
       }
     }
@@ -174,20 +169,20 @@ serve(async (req: Request) => {
     if (deleteError) {
       return new Response(
         JSON.stringify({ error: "failed_to_delete_document", details: deleteError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   } catch (error) {
     return new Response(
       JSON.stringify({ error: "internal_error", details: sanitizeError(error) }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   }

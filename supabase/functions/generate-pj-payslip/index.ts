@@ -5,12 +5,7 @@ import {
   rgb,
   StandardFonts,
 } from "https://esm.sh/pdf-lib@1.17.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
 
 interface OtherItem {
   description: string;
@@ -374,9 +369,8 @@ async function generatePayslipPDF(
 // ---------------------------------------------------------------------------
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const { closingId } = await req.json();
@@ -460,14 +454,14 @@ serve(async (req) => {
         success: true,
         payslipUrl: filePath,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   } catch (error: unknown) {
     console.error("[generate-pj-payslip] Error:", error);
     const msg = error instanceof Error ? error.message : "Erro desconhecido";
     return new Response(
       JSON.stringify({ success: false, error: msg }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   }
 });

@@ -1,12 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.85.0";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
 
 interface EmailConfig {
   enabled: boolean;
@@ -76,9 +71,8 @@ function buildEmailHTML(
 // Main handler
 // ---------------------------------------------------------------------------
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const { closingId } = await req.json();
@@ -267,7 +261,7 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, emailSent: true, sentTo: recipientEmail }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     } catch (smtpError: unknown) {
       console.error("[send-pj-payslip-email] ❌ SMTP error:", smtpError);
@@ -285,7 +279,7 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: false, emailSent: false, error: errorMsg }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
   } catch (error: unknown) {
@@ -293,7 +287,7 @@ serve(async (req) => {
     const msg = error instanceof Error ? error.message : "Erro desconhecido";
     return new Response(
       JSON.stringify({ success: false, error: msg }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   }
 });

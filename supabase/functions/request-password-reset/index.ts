@@ -1,11 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
+import { checkRateLimit, getClientIP, tooManyRequests } from "../_shared/rate-limit.ts";
 
 interface PasswordResetRequest {
   email?: string;
@@ -81,9 +78,8 @@ function buildEmailHtml(params: { resetUrl: string; firstName?: string | null; f
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   const successPayload = {
     success: true,
@@ -91,29 +87,45 @@ serve(async (req) => {
   };
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Rate limit: máximo 5 resets por IP por hora
+    const ip = getClientIP(req);
+    const rateCheck = await checkRateLimit(supabaseAdmin, {
+      key: ip,
+      endpoint: "password-reset",
+      maxRequests: 5,
+      windowSeconds: 3600,
+    });
+    if (!rateCheck.allowed) {
+      // Return success payload to avoid leaking rate limit info
+      await new Promise((r) => setTimeout(r, 500));
+      return new Response(JSON.stringify(successPayload), {
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
+
     const { email, appUrl }: PasswordResetRequest = await req.json();
     const normalizedEmail = String(email || "").trim().toLowerCase();
 
     if (!normalizedEmail || !normalizedEmail.includes("@")) {
       return new Response(JSON.stringify({ error: "Email inválido" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const publicSiteUrl = (Deno.env.get("PUBLIC_SITE_URL") || Deno.env.get("APP_URL") || appUrl || "").replace(/\/$/, "");
 
     if (!publicSiteUrl) {
       console.error("[request-password-reset] PUBLIC_SITE_URL/APP_URL não configurado.");
       return new Response(JSON.stringify({ error: "URL pública do aplicativo não configurada" }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
-
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: resetData, error: resetError } = await supabaseAdmin.auth.admin.generateLink({
       type: "recovery",
@@ -122,16 +134,19 @@ serve(async (req) => {
 
     if (resetError || !resetData?.properties) {
       console.warn("[request-password-reset] Falha ao gerar link de recovery:", resetError?.message || "usuário não encontrado");
+      // Constant-time delay to prevent account enumeration via timing
+      await new Promise((r) => setTimeout(r, 500));
       return new Response(JSON.stringify(successPayload), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
     const tokenHash = resetData.properties.hashed_token;
     if (!tokenHash) {
       console.warn("[request-password-reset] hashed_token ausente para:", normalizedEmail);
+      await new Promise((r) => setTimeout(r, 500));
       return new Response(JSON.stringify(successPayload), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -161,7 +176,7 @@ serve(async (req) => {
       console.error("[request-password-reset] SMTP não configurado. host:", smtpHost, "user:", smtpUser, "password set:", !!smtpPassword);
       return new Response(JSON.stringify({ error: "SMTP não configurado. Configure em Configurações do Sistema → Email." }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -205,13 +220,13 @@ serve(async (req) => {
     await client.close();
 
     return new Response(JSON.stringify(successPayload), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("[request-password-reset] Erro inesperado:", error);
     return new Response(JSON.stringify({ error: "Falha ao solicitar recuperação de senha" }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   }
 });

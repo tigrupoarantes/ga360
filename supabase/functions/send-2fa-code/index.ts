@@ -1,11 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
+import { checkRateLimit, getClientIP, tooManyRequests } from '../_shared/rate-limit.ts';
 
 interface Send2FARequest {
   userId: string;
@@ -28,21 +25,32 @@ interface EmailConfig {
 
 serve(async (req) => {
   // Handle CORS preflight requests
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Rate limit: máximo 5 códigos por IP por hora
+    const ip = getClientIP(req);
+    const rateCheck = await checkRateLimit(supabase, {
+      key: ip,
+      endpoint: "send-2fa",
+      maxRequests: 5,
+      windowSeconds: 3600,
+    });
+    if (!rateCheck.allowed) {
+      return tooManyRequests(rateCheck.retryAfterSeconds, getCorsHeaders(req));
+    }
+
     const { userId, method }: Send2FARequest = await req.json();
 
     if (!userId || !method) {
       return new Response(
         JSON.stringify({ error: "userId e method são obrigatórios" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -52,7 +60,7 @@ serve(async (req) => {
       console.error("Erro ao buscar usuário:", userError);
       return new Response(
         JSON.stringify({ error: "Usuário não encontrado" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 404, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -72,7 +80,7 @@ serve(async (req) => {
     if (method === "whatsapp" && !userPhone) {
       return new Response(
         JSON.stringify({ error: "Telefone não cadastrado para envio via WhatsApp" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -101,7 +109,7 @@ serve(async (req) => {
       console.error("Erro ao salvar código:", insertError);
       return new Response(
         JSON.stringify({ error: "Erro ao gerar código de verificação" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -118,7 +126,7 @@ serve(async (req) => {
         console.error("Erro ao buscar configuração de email:", configError);
         return new Response(
           JSON.stringify({ error: "Configuração de email não encontrada. Configure o SMTP em Configurações." }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
         );
       }
 
@@ -127,7 +135,7 @@ serve(async (req) => {
       if (!emailConfig.enabled) {
         return new Response(
           JSON.stringify({ error: "Envio de emails está desabilitado nas configurações." }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
         );
       }
 
@@ -141,7 +149,7 @@ serve(async (req) => {
         });
         return new Response(
           JSON.stringify({ error: "Configuração SMTP incompleta. Verifique host, usuário e senha." }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
         );
       }
 
@@ -236,7 +244,7 @@ serve(async (req) => {
         console.error("❌ Erro ao enviar email via SMTP:", smtpError);
         return new Response(
           JSON.stringify({ error: `Erro ao enviar email: ${smtpError.message}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
         );
       }
     } else if (method === "whatsapp") {
@@ -250,7 +258,7 @@ serve(async (req) => {
       if (!whatsappConfig?.value) {
         return new Response(
           JSON.stringify({ error: "WhatsApp não configurado" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
         );
       }
 
@@ -314,13 +322,13 @@ serve(async (req) => {
         destination: maskedDestination,
         expiresAt: expiresAt.toISOString(),
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   } catch (error: any) {
     console.error("Erro em send-2fa-code:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 });

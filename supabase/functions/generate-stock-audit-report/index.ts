@@ -1,11 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.85.0";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
 
 interface AuditItem {
   sku_code: string;
@@ -84,9 +80,8 @@ async function getOpenAIConfig(supabase: any): Promise<{ apiKey: string; model: 
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const { auditId } = await req.json();
@@ -155,7 +150,7 @@ serve(async (req) => {
       console.warn("No governance email configured, skipping email");
       return new Response(
         JSON.stringify({ success: true, emailSent: false, reason: "no_email_configured" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -170,7 +165,7 @@ serve(async (req) => {
       console.error("Error fetching email config:", emailConfigError);
       return new Response(
         JSON.stringify({ success: true, emailSent: false, reason: "email_config_not_found" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -180,7 +175,7 @@ serve(async (req) => {
       console.warn("Email is disabled in system settings");
       return new Response(
         JSON.stringify({ success: true, emailSent: false, reason: "email_disabled" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -192,7 +187,7 @@ serve(async (req) => {
       });
       return new Response(
         JSON.stringify({ success: true, emailSent: false, reason: "smtp_config_incomplete" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -308,7 +303,7 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, emailSent: true, sentTo: emailTo }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
 
     } catch (smtpError: unknown) {
@@ -325,7 +320,7 @@ serve(async (req) => {
       const errorMessage = smtpError instanceof Error ? smtpError.message : "Unknown SMTP error";
       return new Response(
         JSON.stringify({ success: true, emailSent: false, reason: "smtp_failed", error: errorMessage, reportSaved: true }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -334,7 +329,7 @@ serve(async (req) => {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return new Response(
       JSON.stringify({ success: false, error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 });

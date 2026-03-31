@@ -2,7 +2,8 @@
 // Roteador principal para todos os endpoints REST públicos
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { validateApiKey } from "./_auth.ts";
-import { corsHeaders, err, unauthorized } from "./_response.ts";
+import { getCorsHeaders, err, unauthorized } from "./_response.ts";
+import { handleCors } from '../_shared/cors.ts';
 import { handleMeta } from "./routes/meta.ts";
 import { handleGoals } from "./routes/goals.ts";
 import { handleMeetings } from "./routes/meetings.ts";
@@ -12,9 +13,8 @@ import { handleWebhooks } from "./routes/webhooks.ts";
 
 serve(async (req: Request) => {
   // CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   // Normaliza o path: remove prefixo do slug da função (/functions/v1/public-api no externo,
   // /public-api no runtime interno do Supabase) e o prefixo de versão /v1
@@ -34,7 +34,7 @@ serve(async (req: Request) => {
       companyName: "",
       keyPrefix: "",
       permissions: [],
-    });
+    }, req);
   }
 
   // Autenticação via X-Api-Key
@@ -44,7 +44,7 @@ serve(async (req: Request) => {
   // Roteamento por prefixo de path
   try {
     if (path === "/me" || path === "/openapi.json") {
-      return handleMeta(path, ctx);
+      return handleMeta(path, ctx, req);
     }
     if (path.startsWith("/goals")) {
       return handleGoals(req, path, ctx);

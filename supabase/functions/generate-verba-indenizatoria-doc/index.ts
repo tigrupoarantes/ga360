@@ -1,11 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 function sanitizeError(error: unknown): string {
   if (!error) return "unknown_error";
@@ -58,16 +54,15 @@ interface GenerateRequest {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -81,7 +76,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "invalid_token" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -91,7 +86,7 @@ serve(async (req: Request) => {
     if (!companyId || !employeeCpf || !competencia || !templateId) {
       return new Response(
         JSON.stringify({ error: "companyId, employeeCpf, competencia e templateId são obrigatórios" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -111,7 +106,7 @@ serve(async (req: Request) => {
     if (tplError || !template) {
       return new Response(JSON.stringify({ error: "Template não encontrado" }), {
         status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -131,7 +126,7 @@ serve(async (req: Request) => {
     if (!mesNome) {
       return new Response(
         JSON.stringify({ error: "Mês inválido na competência fornecida" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -153,7 +148,7 @@ serve(async (req: Request) => {
     if (verbaError) {
       return new Response(
         JSON.stringify({ error: "Falha ao consultar verba", details: verbaError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -169,7 +164,7 @@ serve(async (req: Request) => {
     if (!verbaRow && !adiantRow) {
       return new Response(
         JSON.stringify({ error: "Nenhuma verba encontrada para este funcionário/competência" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 404, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -325,7 +320,7 @@ serve(async (req: Request) => {
     if (storageError) {
       return new Response(
         JSON.stringify({ error: "Falha ao salvar PDF no Storage", details: storageError.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -360,7 +355,7 @@ serve(async (req: Request) => {
     if (insertError || !docRecord) {
       return new Response(
         JSON.stringify({ error: "Falha ao criar registro do documento", details: insertError?.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -545,14 +540,14 @@ serve(async (req: Request) => {
         storagePath,
         status: sendToSign ? "sent_to_sign" : "draft",
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   } catch (error) {
     return new Response(
       JSON.stringify({ error: "internal_error", details: sanitizeError(error) }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   }

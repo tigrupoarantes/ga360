@@ -3,23 +3,18 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { AgentError, RequestBody } from "./config.ts";
 import { runMetasAgent } from "./core.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Não autorizado", code: "AUTH_INVALID" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -33,7 +28,7 @@ serve(async (req: Request) => {
     if (authError || !userData?.user) {
       return new Response(JSON.stringify({ error: "Token inválido", code: "AUTH_INVALID" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -43,13 +38,13 @@ serve(async (req: Request) => {
     if (!body.companyId || !body.message?.trim()) {
       return new Response(JSON.stringify({ error: "companyId e message são obrigatórios", code: "INPUT_INVALID" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
     const result = await runMetasAgent(supabaseAdmin, userId, body);
     return new Response(JSON.stringify(result.payload), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       status: result.status,
     });
   } catch (error: any) {
@@ -65,7 +60,7 @@ serve(async (req: Request) => {
         : new AgentError("INTERNAL_ERROR", error?.message || "Erro interno", 500);
 
     return new Response(JSON.stringify({ error: mappedError.message, code: mappedError.code }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       status: mappedError.status,
     });
   }

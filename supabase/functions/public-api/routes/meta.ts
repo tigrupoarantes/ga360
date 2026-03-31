@@ -1,8 +1,8 @@
 // routes/meta.ts — GET /me e GET /openapi.json
 import type { ApiKeyContext } from "../_auth.ts";
-import { ok } from "../_response.ts";
+import { ok, getCorsHeaders } from "../_response.ts";
 
-export function handleMeta(path: string, ctx: ApiKeyContext): Response {
+export function handleMeta(path: string, ctx: ApiKeyContext, req?: Request): Response {
   if (path === "/me") {
     return ok({
       company_id: ctx.companyId,
@@ -13,16 +13,16 @@ export function handleMeta(path: string, ctx: ApiKeyContext): Response {
   }
 
   if (path === "/openapi.json") {
-    return openApiSpec(ctx);
+    return openApiSpec(ctx, req);
   }
 
   return new Response(JSON.stringify({ error: "Not found", code: "NOT_FOUND" }), {
     status: 404,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(req ? getCorsHeaders(req) : {}) },
   });
 }
 
-function openApiSpec(_ctx: ApiKeyContext): Response {
+function openApiSpec(_ctx: ApiKeyContext, req?: Request): Response {
   const baseUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/public-api/v1`;
 
   const spec = {
@@ -471,6 +471,6 @@ function openApiSpec(_ctx: ApiKeyContext): Response {
   };
 
   return new Response(JSON.stringify(spec, null, 2), {
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    headers: { "Content-Type": "application/json", ...(req ? getCorsHeaders(req) : {}) },
   });
 }

@@ -1,10 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
+import { checkRateLimit, getClientIP, tooManyRequests } from '../_shared/rate-limit.ts';
 
 interface Verify2FARequest {
   userId: string;
@@ -13,21 +10,32 @@ interface Verify2FARequest {
 
 serve(async (req) => {
   // Handle CORS preflight requests
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Rate limit: máximo 10 verificações por IP por hora
+    const ip = getClientIP(req);
+    const rateCheck = await checkRateLimit(supabase, {
+      key: ip,
+      endpoint: "verify-2fa",
+      maxRequests: 10,
+      windowSeconds: 3600,
+    });
+    if (!rateCheck.allowed) {
+      return tooManyRequests(rateCheck.retryAfterSeconds, getCorsHeaders(req));
+    }
+
     const { userId, code }: Verify2FARequest = await req.json();
 
     if (!userId || !code) {
       return new Response(
         JSON.stringify({ error: "userId e code são obrigatórios" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -46,7 +54,7 @@ serve(async (req) => {
       console.log("Código não encontrado ou expirado:", fetchError);
       return new Response(
         JSON.stringify({ error: "Código expirado ou inválido. Solicite um novo código." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -60,7 +68,7 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ error: "Muitas tentativas incorretas. Solicite um novo código." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -77,7 +85,7 @@ serve(async (req) => {
         JSON.stringify({ 
           error: `Código incorreto. ${remainingAttempts > 0 ? `${remainingAttempts} tentativas restantes.` : 'Última tentativa.'}` 
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -105,13 +113,13 @@ serve(async (req) => {
         message: "Código verificado com sucesso",
         method: codeRecord.method,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   } catch (error: any) {
     console.error("Erro em verify-2fa-code:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 });

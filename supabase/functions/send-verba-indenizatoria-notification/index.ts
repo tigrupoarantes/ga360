@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 function sanitizeError(error: unknown): string {
   if (!error) return "unknown_error";
@@ -32,16 +28,15 @@ interface NotificationRequest {
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -55,7 +50,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "invalid_token" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -65,7 +60,7 @@ serve(async (req: Request) => {
     if (!documentId || !type) {
       return new Response(JSON.stringify({ error: "documentId e type são obrigatórios" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -84,7 +79,7 @@ serve(async (req: Request) => {
     if (docError || !doc) {
       return new Response(JSON.stringify({ error: "Documento não encontrado" }), {
         status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -92,7 +87,7 @@ serve(async (req: Request) => {
     if (!emailTo) {
       return new Response(
         JSON.stringify({ error: "E-mail do funcionário não disponível" }),
-        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 422, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -204,7 +199,7 @@ serve(async (req: Request) => {
       const errData = await emailResp.json().catch(() => ({}));
       return new Response(
         JSON.stringify({ error: "Falha ao enviar e-mail", details: errData }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        { status: 502, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
       );
     }
 
@@ -233,14 +228,14 @@ serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({ ok: true, to: emailTo }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   } catch (error) {
     return new Response(
       JSON.stringify({ error: "internal_error", details: sanitizeError(error) }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   }

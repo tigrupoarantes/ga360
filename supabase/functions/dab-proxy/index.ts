@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
 const ALLOWED_PATHS = new Set([
   // GA360 - RH / Gestão de Pessoas
@@ -301,7 +297,7 @@ function buildPagedQueryCandidates(pageSize: number, pageIndex: number): Array<R
   ];
 }
 
-function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[] {
+function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest, req: Request): string[] {
   const sanitizedBaseUrl = sanitizeBaseUrl(baseUrl);
   const base = sanitizedBaseUrl.endsWith("/") ? sanitizedBaseUrl : `${sanitizedBaseUrl}/`;
 
@@ -313,7 +309,7 @@ function buildCandidateUrls(baseUrl: string, payload: DabProxyRequest): string[]
   if (!ALLOWED_PATHS.has(normalized)) {
     throw new Response(
       JSON.stringify({ error: "path_not_allowed", allowedPaths: [...ALLOWED_PATHS] }),
-      { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 403, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   }
 
@@ -530,16 +526,15 @@ async function resolveLogCompanyId(
 }
 
 serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -558,7 +553,7 @@ serve(async (req: Request) => {
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "invalid_token" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -566,7 +561,7 @@ serve(async (req: Request) => {
     if (!payload.path && !payload.nextLink) {
       return new Response(JSON.stringify({ error: "path_or_nextLink_required" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -576,7 +571,7 @@ serve(async (req: Request) => {
     );
 
     const connection = await getConnectionConfig(supabaseService, payload.connectionId);
-    const candidateUrls = buildCandidateUrls(connection.baseUrl, payload);
+    const candidateUrls = buildCandidateUrls(connection.baseUrl, payload, req);
 
     const isEmployeesPath = Boolean(payload.path && normalizePath(payload.path) === "funcionarios");
     const shouldLogSync = payload.logSync === true || (isEmployeesPath && payload.allPages === true);
@@ -661,7 +656,7 @@ serve(async (req: Request) => {
           }),
           {
             status: 502,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
           },
         );
       }
@@ -797,7 +792,7 @@ serve(async (req: Request) => {
                 }),
                 {
                   status: pageResponse.status,
-                  headers: { ...corsHeaders, "Content-Type": "application/json" },
+                  headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
                 },
               );
             }
@@ -846,7 +841,7 @@ serve(async (req: Request) => {
             }),
             {
               status: 200,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
             },
           );
         }
@@ -894,7 +889,7 @@ serve(async (req: Request) => {
 
         return new Response(JSON.stringify(normalizedBody), {
           status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
         });
       }
 
@@ -930,7 +925,7 @@ serve(async (req: Request) => {
       }),
       {
         status: upstreamResponse?.status || 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   } catch (error) {
@@ -942,7 +937,7 @@ serve(async (req: Request) => {
       JSON.stringify({ error: "internal_error", details: sanitizeError(error) }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       },
     );
   }

@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleCors } from '../_shared/cors.ts';
 
 const SYSTEM_PROMPT = `Você é um analista de dados corporativos especializado em gerar relatórios executivos para o sistema GA 360 do Grupo Arantes.
 
@@ -69,9 +65,8 @@ async function getOpenAIConfig(supabase: any): Promise<{ apiKey: string; model: 
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  const corsResponse = handleCors(req);
+  if (corsResponse) return corsResponse;
 
   try {
     const { query, filters } = await req.json();
@@ -79,7 +74,7 @@ serve(async (req) => {
     if (!query) {
       return new Response(
         JSON.stringify({ error: "Query is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 400, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
       );
     }
 
@@ -257,13 +252,13 @@ Por favor, gere um relatório completo e profissional baseado na solicitação a
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 429, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
         );
       }
       if (response.status === 401) {
         return new Response(
           JSON.stringify({ error: "API Key inválida. Verifique a configuração em Configurações > IA." }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 401, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
         );
       }
       const errorText = await response.text();
@@ -272,13 +267,13 @@ Por favor, gere um relatório completo e profissional baseado na solicitação a
     }
 
     return new Response(response.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "text/event-stream" },
     });
   } catch (error) {
     console.error("Error in generate-report function:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } }
     );
   }
 });
