@@ -31,4 +31,9 @@ supabase/.temp/
 
 # Local dev caches / machine-specific artifacts
 .npm-cache/
+.npm-cache-deploy/
+.npm-cache-vercel/
 .vite-dev.err
+
+# Claude Code worktrees
+.claude/worktrees/
