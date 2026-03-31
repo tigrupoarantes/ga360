@@ -60,7 +60,7 @@ serve(async (req: Request) => {
     }
 
     const body = (await req.json()) as SendRequest;
-    const { companyId, delayMs = 8000, limit = 10 } = body; // lotes de 10, 8s entre cada
+    const { companyId, delayMs = 3000, limit = 5 } = body; // lotes de 5, 3s entre cada
 
     if (!companyId) {
       return new Response(JSON.stringify({ error: "companyId required" }), {
@@ -120,7 +120,7 @@ serve(async (req: Request) => {
         );
 
         if (isRateLimit && attempt < maxRetries) {
-          const backoff = Math.pow(2, attempt + 1) * 5000; // 10s, 20s, 40s
+          const backoff = Math.pow(2, attempt + 1) * 3000; // 6s, 12s, 24s
           console.log(`[send-drafts] rate limit hit, retry ${attempt + 1}/${maxRetries} in ${backoff}ms`);
           await new Promise(r => setTimeout(r, backoff));
           continue;

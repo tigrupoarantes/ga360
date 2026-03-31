@@ -72,15 +72,15 @@ export default function VerbasIndenizatorias() {
     }
 
     setSendingDrafts(true);
-    const batchSize = 10;
+    const batchSize = 5;
     const toastId = toast.loading(
-      `Enviando lote de ${Math.min(pendingCount, batchSize)} documento(s) para D4Sign... (~${Math.ceil(Math.min(pendingCount, batchSize) * 10 / 60)} min)`,
+      `Enviando lote de ${Math.min(pendingCount, batchSize)} documento(s) para D4Sign...`,
       { duration: Infinity },
     );
 
     try {
       const resp = await supabase.functions.invoke('send-drafts-to-d4sign', {
-        body: { companyId: selectedCompanyId, delayMs: 8000, limit: batchSize },
+        body: { companyId: selectedCompanyId, delayMs: 3000, limit: batchSize },
       });
       if (resp.error) throw resp.error;
       const result = resp.data;
