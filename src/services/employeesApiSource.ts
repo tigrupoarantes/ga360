@@ -1119,6 +1119,8 @@ export async function syncEmployeesFromDab(
       const accountingLabel = resolveAccountingLabel(employee);
       const accountingCode = resolveAccountingCode(employee);
       const uniqueKey = buildEmployeeUniqueKey(contractCompanyId, employee.id_funcionario);
+      const terminationDate = normalizeDate(employee.data_demissao) || null;
+      const isActive = terminationDate ? false : normalizeSituacaoToIsActive(employee.situacao_raw);
 
       if (contractCompanyId) {
         companyResolvedCount += 1;
@@ -1139,6 +1141,7 @@ export async function syncEmployeesFromDab(
         age: normalizeInteger(employee.idade),
         first_job: normalizeFirstJob(employee.primeiro_emprego),
         hire_date: normalizeDate(employee.data_admissao),
+        termination_date: terminationDate,
         position: employee.cargo || null,
         unidade: resolveUnit(employee),
         department: employee.departamento || null,
@@ -1161,7 +1164,7 @@ export async function syncEmployeesFromDab(
         contract_company_id: contractCompanyId,
         accounting_company_id: accountingCompanyId,
         company_id: contractCompanyId,
-        is_active: normalizeSituacaoToIsActive(employee.situacao_raw),
+        is_active: isActive,
         synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -1322,6 +1325,8 @@ export async function syncEmployeesFromDab(
     const accountingCompanyId = resolveAccountingCompanyId(employee, companyLookup);
     const accountingLabel = resolveAccountingLabel(employee);
     const accountingCode = resolveAccountingCode(employee);
+    const terminationDate = normalizeDate(employee.data_demissao) || null;
+    const isActive = terminationDate ? false : normalizeSituacaoToIsActive(employee.situacao_raw);
 
     if (contractCompanyId) {
       companyResolvedCount += 1;
@@ -1342,6 +1347,7 @@ export async function syncEmployeesFromDab(
       age: normalizeInteger(employee.idade),
       first_job: normalizeFirstJob(employee.primeiro_emprego),
       hire_date: normalizeDate(employee.data_admissao),
+      termination_date: terminationDate,
       position: employee.cargo || null,
       unidade: resolveUnit(employee),
       department: employee.departamento || null,
@@ -1364,7 +1370,7 @@ export async function syncEmployeesFromDab(
       contract_company_id: contractCompanyId,
       accounting_company_id: accountingCompanyId,
       company_id: contractCompanyId,
-      is_active: normalizeSituacaoToIsActive(employee.situacao_raw),
+      is_active: isActive,
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

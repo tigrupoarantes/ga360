@@ -212,6 +212,19 @@ function normalizeSituacao(value: number | string | boolean | null | undefined):
   return true;
 }
 
+function normalizeDate(value: string | null | undefined): string | null {
+  if (!value || !value.trim()) return null;
+  const trimmed = value.trim();
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  // ISO format: "2026-03-15T00:00:00..." → "2026-03-15"
+  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) return trimmed.substring(0, 10);
+  // BR format: "15/03/2026" → "2026-03-15"
+  const brMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+  return null;
+}
+
 function normalizeEmployeeRecord(emp: EmployeeRecord): EmployeeRecord {
   const cpf = normalizeCpf(emp.cpf ?? emp.CPF);
   const externalId = emp.id || emp.external_id || emp.id_funcionario || cpf;
@@ -444,7 +457,7 @@ serve(async (req) => {
         const cpfSource = cpf || emp.registration_number || externalId;
         const resolvedEmail = emp.email || getEmailByCpf(cpfSource);
 
-        const employeeData = {
+        const employeeData: Record<string, any> = {
           company_id: companyId,
           external_id: externalId,
           source_system: sourceSystem,
@@ -460,6 +473,7 @@ serve(async (req) => {
           registration_number: emp.registration_number || cpf || null,
           hire_date: emp.hire_date || null,
           is_active: isActive,
+          termination_date: normalizeDate(emp.data_demissao ?? emp.Data_Demissao ?? null),
           metadata: emp.metadata || null,
           synced_at: syncTimestamp,
           // Campos CNH
@@ -467,6 +481,11 @@ serve(async (req) => {
           cnh_categoria: cnhCategoria || null,
           cnh_validade: cnhValidade || null
         };
+
+        // Se tem data de demissão, forçar inativo
+        if (employeeData.termination_date) {
+          employeeData.is_active = false;
+        }
 
         let employeeId: string;
 

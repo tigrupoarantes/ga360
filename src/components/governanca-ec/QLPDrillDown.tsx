@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { TurnoverAnalytics } from "./TurnoverAnalytics";
 import { useQuery } from "@tanstack/react-query";
 import { supabaseExternal } from "@/integrations/supabase/external-client";
 import { Card } from "@/components/ui/card";
@@ -47,6 +48,9 @@ interface Employee {
   accounting_company: {
     name: string;
   } | null;
+  termination_date: string | null;
+  lider_direto_id: string | null;
+  lider_direto: { id: string; full_name: string } | null;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -189,12 +193,11 @@ export function QLPDrillDown() {
   const [analyticsPeriod, setAnalyticsPeriod] = useState<string>("all");
 
   const { data: employees, isLoading } = useQuery({
-    queryKey: ["qlp-employees", viewMode],
+    queryKey: ["qlp-employees-all", viewMode],
     queryFn: async () => {
       const { data, error } = await supabaseExternal
         .from("external_employees")
-        .select("id, full_name, email, gender, age, birth_date, hire_date, position, department, unidade, is_active, is_disabled, company_id, contract_company_id, accounting_company_id, accounting_group, metadata, contract_company:companies!external_employees_contract_company_id_fkey(name), accounting_company:companies!external_employees_accounting_company_id_fkey(name)")
-        .eq("is_active", true)
+        .select("id, full_name, email, gender, age, birth_date, hire_date, position, department, unidade, is_active, is_disabled, company_id, contract_company_id, accounting_company_id, accounting_group, termination_date, lider_direto_id, metadata, contract_company:companies!external_employees_contract_company_id_fkey(name), accounting_company:companies!external_employees_accounting_company_id_fkey(name), lider_direto:external_employees!external_employees_lider_direto_id_fkey(id, full_name)")
         .eq("source_system", "dab_api")
         .order("full_name");
 
@@ -203,12 +206,17 @@ export function QLPDrillDown() {
     },
   });
 
+  const activeEmployees = useMemo(() =>
+    employees?.filter(e => e.is_active !== false) || [],
+    [employees]
+  );
+
   const topLevelGroups = useMemo(() => {
-    if (!employees) return [];
+    if (!activeEmployees.length) return [];
 
     const map = new Map<string, GroupItem>();
 
-    for (const employee of employees) {
+    for (const employee of activeEmployees) {
       const company = getTopCompany(employee, viewMode);
       const key = getCompanyKey(company);
       const current = map.get(key) || { id: company.id, name: company.name, count: 0 };
@@ -217,16 +225,16 @@ export function QLPDrillDown() {
     }
 
     return Array.from(map.values()).sort((a, b) => b.count - a.count);
-  }, [employees, viewMode]);
+  }, [activeEmployees, viewMode]);
 
   const employeesInCompany = useMemo(() => {
-    if (!employees || !selectedCompany) return [];
+    if (!activeEmployees.length || !selectedCompany) return [];
 
-    return employees.filter((employee) => {
+    return activeEmployees.filter((employee) => {
       const company = getTopCompany(employee, viewMode);
       return selectedCompany.id === null ? company.id === null : company.id === selectedCompany.id;
     });
-  }, [employees, selectedCompany, viewMode]);
+  }, [activeEmployees, selectedCompany, viewMode]);
 
   const unitGroups = useMemo(() => {
     const map = new Map<string, number>();
@@ -250,11 +258,11 @@ export function QLPDrillDown() {
   const finalEmployees = useMemo(() => employeesInUnit, [employeesInUnit]);
 
   const contextEmployees = useMemo(() => {
-    if (!employees) return [];
-    if (drillLevel === 0) return employees;
+    if (!activeEmployees.length) return [];
+    if (drillLevel === 0) return activeEmployees;
     if (drillLevel === 1) return employeesInCompany;
     return finalEmployees;
-  }, [employees, drillLevel, employeesInCompany, finalEmployees]);
+  }, [activeEmployees, drillLevel, employeesInCompany, finalEmployees]);
 
   const analyticsEmployees = useMemo(() => {
     if (!employees) return [];
@@ -359,6 +367,18 @@ export function QLPDrillDown() {
         (key) => metadata[key] !== undefined,
       );
     });
+  }, [analyticsEmployees]);
+
+  const leaderData = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>();
+    for (const e of analyticsEmployees) {
+      if (!e.lider_direto) continue;
+      const key = e.lider_direto.id;
+      const cur = map.get(key) || { name: e.lider_direto.full_name, count: 0 };
+      cur.count += 1;
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 15);
   }, [analyticsEmployees]);
 
   const chartTickStyle = { fill: "hsl(var(--muted-foreground))", fontSize: 12 };
@@ -669,8 +689,27 @@ export function QLPDrillDown() {
               </p>
             </Card>
           </div>
+
+          {leaderData.length > 0 && (
+            <Card className="p-4">
+              <p className="text-sm text-muted-foreground mb-2">Headcount por Líder (Top 15)</p>
+              <div className="h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={leaderData} layout="vertical" margin={{ left: 8, right: 24 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} tick={chartTickStyle} axisLine={{ stroke: chartColors.grid }} tickLine={{ stroke: chartColors.grid }} />
+                    <YAxis type="category" dataKey="name" width={160} tick={{ ...chartTickStyle, fontSize: 11 }} axisLine={{ stroke: chartColors.grid }} tickLine={{ stroke: chartColors.grid }} />
+                    <Tooltip formatter={(value: number) => [`${value}`, "Subordinados"]} contentStyle={tooltipContentStyle} />
+                    <Bar dataKey="count" name="Subordinados" fill="hsl(var(--chart-4))" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          )}
         </div>
       </div>
+
+      <TurnoverAnalytics employees={employees || []} />
 
       {drillLevel === 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -846,6 +846,7 @@ export type Database = {
           registration_number: string | null
           source_system: string | null
           synced_at: string | null
+          termination_date: string | null
           unidade: string | null
           updated_at: string | null
         }
@@ -883,6 +884,7 @@ export type Database = {
           registration_number?: string | null
           source_system?: string | null
           synced_at?: string | null
+          termination_date?: string | null
           unidade?: string | null
           updated_at?: string | null
         }
@@ -920,6 +922,7 @@ export type Database = {
           registration_number?: string | null
           source_system?: string | null
           synced_at?: string | null
+          termination_date?: string | null
           unidade?: string | null
           updated_at?: string | null
         }

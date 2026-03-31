@@ -78,6 +78,7 @@ interface ExternalEmployee {
   cod_vendedor: string | null;
   lider_direto_id: string | null;
   lider_direto?: LeaderProfile | null;
+  termination_date: string | null;
 }
 
 export function ExternalEmployeesList() {
@@ -96,6 +97,8 @@ export function ExternalEmployeesList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [unidadeFilter, setUnidadeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<'active' | 'terminated' | 'all'>('active');
+  const [leaderFilter, setLeaderFilter] = useState<string>('all');
   const [linkFilter, setLinkFilter] = useState<string>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [departments, setDepartments] = useState<string[]>([]);
@@ -121,15 +124,15 @@ export function ExternalEmployeesList() {
     if (canViewAllCompanies) {
       fetchConvertibleCount();
     }
-  }, [selectedCompanyId, canViewAllCompanies]);
+  }, [selectedCompanyId, canViewAllCompanies, statusFilter]);
 
   useEffect(() => {
     filterEmployees();
-  }, [employees, searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter]);
+  }, [employees, searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter, leaderFilter]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter, rowsPerPage]);
+  }, [searchTerm, departmentFilter, unidadeFilter, linkFilter, companyFilter, leaderFilter, statusFilter, rowsPerPage]);
 
   useEffect(() => {
     if (!syncingApi || !syncStartedAt) return;
@@ -180,9 +183,15 @@ export function ExternalEmployeesList() {
           let query = supabase
             .from('external_employees')
             .select(selectClause)
-            .eq('is_active', true)
             .order('full_name', { ascending: true })
             .range(from, to);
+
+          if (statusFilter === 'active') {
+            query = query.eq('is_active', true);
+          } else if (statusFilter === 'terminated') {
+            query = query.eq('is_active', false);
+          }
+          // 'all' — no filter applied
 
           if (forceDabApi) {
             query = query.eq('source_system', 'dab_api');
@@ -301,6 +310,10 @@ export function ExternalEmployeesList() {
       );
     }
 
+    if (leaderFilter !== 'all') {
+      filtered = filtered.filter(e => e.lider_direto?.id === leaderFilter);
+    }
+
     setFilteredEmployees(filtered);
   };
 
@@ -381,7 +394,7 @@ export function ExternalEmployeesList() {
   };
 
   const exportToCsv = () => {
-    const headers = ['Empresa', 'CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Sexo', 'Data Nascimento', 'Idade', 'Primeiro Emprego', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
+    const headers = ['Empresa', 'CPF', 'Matrícula', 'Nome', 'Email', 'Telefone', 'Sexo', 'Data Nascimento', 'Idade', 'Primeiro Emprego', 'Departamento', 'Cargo', 'Unidade', 'Data Admissão', 'Data Demissão', 'Status', 'Cód. Vendedor', 'Líder Direto', 'Vinculado'];
     const rows = filteredEmployees.map(e => [
       e.companies?.name || e.company_id || '',
       e.cpf || '',
@@ -397,6 +410,8 @@ export function ExternalEmployeesList() {
       e.position || '',
       e.unidade || '',
       e.hire_date ? format(new Date(e.hire_date), 'dd/MM/yyyy') : '',
+      e.termination_date ? format(new Date(e.termination_date), 'dd/MM/yyyy') : '',
+      e.is_active ? 'Ativo' : 'Desligado',
       e.cod_vendedor || '',
       e.lider_direto?.full_name || '',
       e.linked_profile_id ? 'Sim' : 'Não'
@@ -429,6 +444,18 @@ export function ExternalEmployeesList() {
     const end = start + rowsPerPage;
     return filteredEmployees.slice(start, end);
   }, [filteredEmployees, currentPage, rowsPerPage]);
+
+  const leaders = useMemo(() => {
+    const map = new Map<string, string>();
+    employees.forEach(e => {
+      if (e.lider_direto?.full_name) {
+        map.set(e.lider_direto.id, e.lider_direto.full_name);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [employees]);
 
   const pageStart = filteredEmployees.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
   const pageEnd = Math.min(currentPage * rowsPerPage, filteredEmployees.length);
@@ -813,6 +840,30 @@ export function ExternalEmployeesList() {
               <SelectItem value="unlinked">Não vinculados</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'active' | 'terminated' | 'all')}>
+            <SelectTrigger className="w-full sm:w-[160px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Ativos</SelectItem>
+              <SelectItem value="terminated">Desligados</SelectItem>
+              <SelectItem value="all">Todos</SelectItem>
+            </SelectContent>
+          </Select>
+          {leaders.length > 0 && (
+            <Select value={leaderFilter} onValueChange={setLeaderFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <UserCircle className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Líder" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos líderes</SelectItem>
+                {leaders.map(leader => (
+                  <SelectItem key={leader.id} value={leader.id}>{leader.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* Stats */}
@@ -865,6 +916,9 @@ export function ExternalEmployeesList() {
                   <TableHead>Cargo</TableHead>
                   <TableHead>Unidade</TableHead>
                   <TableHead>Líder</TableHead>
+                  {statusFilter !== 'active' && (
+                    <TableHead>Data Demissão</TableHead>
+                  )}
                   <TableHead className="text-center">Vínculo</TableHead>
                   <TableHead className="text-center">Ações</TableHead>
                 </TableRow>
@@ -943,6 +997,11 @@ export function ExternalEmployeesList() {
                         </TooltipProvider>
                       ) : '-'}
                     </TableCell>
+                    {statusFilter !== 'active' && (
+                      <TableCell className="text-sm text-muted-foreground">
+                        {employee.termination_date ? format(new Date(employee.termination_date), 'dd/MM/yyyy', { locale: ptBR }) : '—'}
+                      </TableCell>
+                    )}
                     <TableCell className="text-center">
                       <TooltipProvider>
                         <Tooltip>
