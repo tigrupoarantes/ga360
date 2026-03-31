@@ -442,6 +442,7 @@ serve(async (req: Request) => {
               companyId,
               payload: { fileBase64: pdfBase64, fileName, name: fileName },
             }),
+            signal: AbortSignal.timeout(15_000),
           });
 
           const uploadResult = await uploadResp.json();
@@ -462,6 +463,7 @@ serve(async (req: Request) => {
                   companyId,
                   payload: { documentUuid: d4signDocUuid, webhookUrl },
                 }),
+                signal: AbortSignal.timeout(15_000),
               });
 
               // Adicionar signatário (com validação de resposta)
@@ -481,6 +483,7 @@ serve(async (req: Request) => {
                       signers: [{ email: signerEmailToUse, act: "1", foreign: "0", foreignLang: "" }],
                     },
                   }),
+                  signal: AbortSignal.timeout(15_000),
                 });
                 addSignerBody = await addSignerRes.json().catch(() => ({})) as Record<string, unknown>;
                 // Considerar sucesso se HTTP 200 e resposta não contém erro explícito
@@ -529,6 +532,7 @@ serve(async (req: Request) => {
                       message: `Por favor, assine o documento de Verba Indenizatoria referente a competencia ${formatCompetencia(competencia)}.`,
                     },
                   }),
+                  signal: AbortSignal.timeout(15_000),
                 });
                 sendBody = await sendRes.json().catch(() => ({})) as Record<string, unknown>;
                 sentToSign = sendRes.ok && (sendBody?.ok !== false) && !sendBody?.error;

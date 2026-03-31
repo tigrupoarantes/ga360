@@ -66,6 +66,7 @@ async function callD4Sign(
   method: string,
   body?: unknown,
   isFileUpload = false,
+  timeoutMs = 25_000,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -81,17 +82,29 @@ async function callD4Sign(
     fetchBody = JSON.stringify(body);
   }
 
-  const response = await fetch(url, { method, headers, body: fetchBody });
-  const text = await response.text();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  let data: unknown;
   try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
+    const response = await fetch(url, { method, headers, body: fetchBody, signal: controller.signal });
+    clearTimeout(timeoutId);
 
-  return { ok: response.ok, status: response.status, data };
+    const text = await response.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { raw: text };
+    }
+
+    return { ok: response.ok, status: response.status, data };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return { ok: false, status: 408, data: { error: `D4Sign API timeout (${timeoutMs}ms)` } };
+    }
+    throw err;
+  }
 }
 
 serve(async (req: Request) => {

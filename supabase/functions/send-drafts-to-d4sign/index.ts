@@ -60,7 +60,7 @@ serve(async (req: Request) => {
     }
 
     const body = (await req.json()) as SendRequest;
-    const { companyId, delayMs = 3000, limit = 5 } = body; // lotes de 5, 3s entre cada
+    const { companyId, delayMs = 3000, limit = 2 } = body; // lotes de 2, 3s entre cada
 
     if (!companyId) {
       return new Response(JSON.stringify({ error: "companyId required" }), {
@@ -102,13 +102,34 @@ serve(async (req: Request) => {
         const headers: Record<string, string> = { Accept: "application/json" };
         let fetchBody: BodyInit | undefined;
         if (body instanceof FormData) {
-          // FormData não pode ser reutilizado após consume — reclonar se retry
           fetchBody = body;
         } else if (body !== undefined) {
           headers["Content-Type"] = "application/json";
           fetchBody = JSON.stringify(body);
         }
-        const resp = await fetch(url, { method, headers, body: fetchBody });
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20_000);
+
+        let resp: Response;
+        try {
+          resp = await fetch(url, { method, headers, body: fetchBody, signal: controller.signal });
+          clearTimeout(timeoutId);
+        } catch (err) {
+          clearTimeout(timeoutId);
+          // Timeout: tratar como rate limit para retry
+          if (err instanceof DOMException && err.name === "AbortError") {
+            if (attempt < maxRetries) {
+              const backoff = Math.pow(2, attempt + 1) * 3000;
+              console.log(`[send-drafts] timeout hit, retry ${attempt + 1}/${maxRetries} in ${backoff}ms`);
+              await new Promise(r => setTimeout(r, backoff));
+              continue;
+            }
+            return { ok: false, status: 408, data: { error: "D4Sign API timeout" } };
+          }
+          throw err;
+        }
+
         const text = await resp.text();
         let data: unknown;
         try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
@@ -272,8 +293,16 @@ serve(async (req: Request) => {
     const sent = results.filter(r => r.status === "sent_to_sign").length;
     const errors = results.filter(r => r.status === "error").length;
 
+    // Contar rascunhos restantes para o frontend saber se deve continuar
+    const { count: remainingCount } = await supabase
+      .from("verba_indenizatoria_documents")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .in("d4sign_status", ["draft", "error"])
+      .not("generated_file_path", "is", null);
+
     return new Response(
-      JSON.stringify({ ok: true, sent, errors, total: results.length, results }),
+      JSON.stringify({ ok: true, sent, errors, total: results.length, remaining: remainingCount ?? 0, results }),
       { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   } catch (error) {

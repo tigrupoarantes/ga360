@@ -64,45 +64,88 @@ export default function VerbasIndenizatorias() {
 
   async function handleSendDrafts() {
     if (!selectedCompanyId || sendingDrafts) return;
+    setSendingDrafts(true);
 
-    const pendingCount = draftCount;
-    if (pendingCount === 0) {
+    // Buscar total real de rascunhos (nao so da pagina visivel)
+    const { count: totalDrafts } = await supabase
+      .from('verba_indenizatoria_documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', selectedCompanyId)
+      .in('d4sign_status', ['draft', 'error'])
+      .not('generated_file_path', 'is', null);
+
+    if (!totalDrafts || totalDrafts === 0) {
       toast.info('Nenhum rascunho pendente para enviar');
+      setSendingDrafts(false);
       return;
     }
 
-    setSendingDrafts(true);
-    const batchSize = 5;
+    let totalSent = 0;
+    let totalErrors = 0;
+    let remaining = totalDrafts;
+    let consecutiveFailures = 0;
+    const batchSize = 2;
+
     const toastId = toast.loading(
-      `Enviando lote de ${Math.min(pendingCount, batchSize)} documento(s) para D4Sign...`,
+      `Iniciando envio de ${totalDrafts} documento(s) para D4Sign...`,
       { duration: Infinity },
     );
 
-    try {
-      const resp = await supabase.functions.invoke('send-drafts-to-d4sign', {
-        body: { companyId: selectedCompanyId, delayMs: 3000, limit: batchSize },
-      });
-      if (resp.error) throw resp.error;
-      const result = resp.data;
-      const sent = result?.sent ?? 0;
-      const errors = result?.errors ?? 0;
-      const remaining = pendingCount - sent;
+    // Loop automatico: envia lotes de 2 ate acabar
+    while (remaining > 0 && consecutiveFailures < 3) {
+      try {
+        const resp = await supabase.functions.invoke('send-drafts-to-d4sign', {
+          body: { companyId: selectedCompanyId, delayMs: 3000, limit: batchSize },
+        });
+        if (resp.error) throw resp.error;
 
-      toast.dismiss(toastId);
-      if (sent > 0 && errors === 0) {
-        toast.success(`${sent} enviado(s) com sucesso!${remaining > 0 ? ` Restam ${remaining} — clique novamente.` : ''}`);
-      } else if (sent > 0) {
-        toast.warning(`${sent} enviado(s), ${errors} erro(s).${remaining > 0 ? ` Restam ${remaining}.` : ''}`);
-      } else {
-        toast.error(`Nenhum enviado. ${errors} erro(s). Rate limit da D4Sign — aguarde 1 min e tente novamente.`);
+        const result = resp.data;
+        const sent = result?.sent ?? 0;
+        const errors = result?.errors ?? 0;
+        remaining = result?.remaining ?? 0;
+
+        totalSent += sent;
+        totalErrors += errors;
+
+        if (sent === 0 && errors > 0) {
+          consecutiveFailures++;
+        } else {
+          consecutiveFailures = 0;
+        }
+
+        toast.loading(
+          `D4Sign: ${totalSent} enviado(s), ${totalErrors} erro(s), ${remaining} restante(s)...`,
+          { id: toastId, duration: Infinity },
+        );
+
+        // Delay entre lotes para API respirar
+        if (remaining > 0) {
+          await new Promise(r => setTimeout(r, 5000));
+        }
+      } catch (err: any) {
+        consecutiveFailures++;
+        totalErrors++;
+        toast.loading(
+          `Erro no lote. ${totalSent} enviado(s), ${totalErrors} erro(s). Tentando novamente...`,
+          { id: toastId, duration: Infinity },
+        );
+        // Espera maior apos erro
+        await new Promise(r => setTimeout(r, 10000));
       }
-      refetch();
-    } catch (err: any) {
-      toast.dismiss(toastId);
-      toast.error('Erro ao enviar: ' + (err?.message || 'falha na chamada'));
-    } finally {
-      setSendingDrafts(false);
     }
+
+    // Toast final
+    toast.dismiss(toastId);
+    if (totalSent > 0 && totalErrors === 0) {
+      toast.success(`Concluido! ${totalSent} documento(s) enviado(s) para D4Sign.`);
+    } else if (totalSent > 0) {
+      toast.warning(`${totalSent} enviado(s), ${totalErrors} erro(s).${remaining > 0 ? ` ${remaining} nao enviado(s).` : ''}`);
+    } else {
+      toast.error(`Nenhum documento enviado. ${totalErrors} erro(s). Verifique a conexao com D4Sign.`);
+    }
+
+    refetch();
+    setSendingDrafts(false);
   }
 
   async function handleSyncD4Sign() {
@@ -166,7 +209,7 @@ export default function VerbasIndenizatorias() {
           </div>
 
           <div className="flex gap-2">
-            {draftCount > 0 && (
+            {(draftCount > 0 || sendingDrafts) && (
               <Button
                 variant="default"
                 size="sm"
@@ -174,8 +217,8 @@ export default function VerbasIndenizatorias() {
                 disabled={sendingDrafts}
                 className="bg-orange-600 hover:bg-orange-700"
               >
-                <Send className={`h-4 w-4 mr-2 ${sendingDrafts ? 'animate-spin' : ''}`} />
-                {sendingDrafts ? `Enviando ${draftCount}...` : `Enviar ${draftCount} rascunho(s)`}
+                <Send className={`h-4 w-4 mr-2 ${sendingDrafts ? 'animate-pulse' : ''}`} />
+                {sendingDrafts ? 'Enviando...' : `Enviar ${draftCount} rascunho(s)`}
               </Button>
             )}
             <Button

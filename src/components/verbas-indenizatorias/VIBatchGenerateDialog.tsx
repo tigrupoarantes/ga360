@@ -148,6 +148,9 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
     if (!token) return;
 
     for (let i = 0; i < empList.length; i++) {
+      // Throttle: 1s delay entre chamadas (exceto primeira)
+      if (i > 0) await new Promise(r => setTimeout(r, 1000));
+
       const emp = empList[i];
       try {
         const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-verba-indenizatoria-doc`;
@@ -163,7 +166,7 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
             employeeCpf: emp.cpf,
             competencia,
             templateId,
-            sendToSign: true,
+            sendToSign: false,
             signerEmail: emp.email ?? undefined,
             eventType,
           }),
@@ -356,7 +359,7 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
           <div className="space-y-4 py-2">
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-              <span>Gerando e enviando documentos para assinatura...</span>
+              <span>Gerando documentos como rascunho...</span>
             </div>
             <Progress value={progress} className="h-2" />
             <p className="text-xs text-center text-muted-foreground">
@@ -375,7 +378,7 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
                       </TableCell>
                       <TableCell className="py-2 font-medium text-sm">{r.nome}</TableCell>
                       <TableCell className="py-2 text-xs text-muted-foreground">
-                        {r.ok ? 'Enviado para assinatura' : r.error}
+                        {r.ok ? 'Rascunho gerado' : r.error}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -427,7 +430,8 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
 
             {okCount > 0 && (
               <p className="text-xs text-muted-foreground text-center">
-                Os funcionários receberão um e-mail da D4Sign com o link para assinar o documento.
+                Documentos gerados como rascunho. Feche esta janela e clique em
+                <strong> "Enviar rascunho(s)" </strong> para enviar todos a D4Sign automaticamente.
               </p>
             )}
           </div>
@@ -442,7 +446,7 @@ export function VIBatchGenerateDialog({ companyId, open, onClose, defaultCompete
                 disabled={selected.size === 0 || !templateId || batchMutation.isPending}
               >
                 <SendHorizonal className="h-4 w-4 mr-2" />
-                Gerar e enviar {selected.size > 0 ? `(${selected.size})` : ''}
+                Gerar rascunhos {selected.size > 0 ? `(${selected.size})` : ''}
               </Button>
             </>
           )}
