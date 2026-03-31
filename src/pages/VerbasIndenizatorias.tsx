@@ -59,19 +59,42 @@ export default function VerbasIndenizatorias() {
   const documents = data?.rows ?? [];
   const total = data?.total ?? 0;
 
+  // Conta drafts pendentes para mostrar no botão
+  const draftCount = documents.filter((d: any) => d.d4sign_status === 'draft' || d.d4sign_status === 'error').length;
+
   async function handleSendDrafts() {
     if (!selectedCompanyId || sendingDrafts) return;
+
+    const pendingCount = draftCount;
+    if (pendingCount === 0) {
+      toast.info('Nenhum rascunho pendente para enviar');
+      return;
+    }
+
     setSendingDrafts(true);
+    const toastId = toast.loading(`Enviando ${pendingCount} documento(s) para D4Sign... (~${Math.ceil(pendingCount * 7 / 60)} min)`, { duration: Infinity });
+
     try {
       const resp = await supabase.functions.invoke('send-drafts-to-d4sign', {
-        body: { companyId: selectedCompanyId, delayMs: 2000 },
+        body: { companyId: selectedCompanyId, delayMs: 5000 },
       });
       if (resp.error) throw resp.error;
       const result = resp.data;
-      toast.success(`${result?.sent ?? 0} enviado(s), ${result?.errors ?? 0} erro(s) de ${result?.total ?? 0} documentos`);
+      const sent = result?.sent ?? 0;
+      const errors = result?.errors ?? 0;
+
+      toast.dismiss(toastId);
+      if (sent > 0 && errors === 0) {
+        toast.success(`${sent} documento(s) enviado(s) com sucesso!`);
+      } else if (sent > 0 && errors > 0) {
+        toast.warning(`${sent} enviado(s), ${errors} com erro de ${result?.total} total`);
+      } else {
+        toast.error(`Nenhum documento enviado. ${errors} erro(s). Verifique rate limit da D4Sign.`);
+      }
       refetch();
     } catch (err: any) {
-      toast.error('Erro ao enviar rascunhos: ' + (err?.message || 'falha na chamada'));
+      toast.dismiss(toastId);
+      toast.error('Erro ao enviar: ' + (err?.message || 'falha na chamada'));
     } finally {
       setSendingDrafts(false);
     }
@@ -138,15 +161,18 @@ export default function VerbasIndenizatorias() {
           </div>
 
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSendDrafts}
-              disabled={sendingDrafts}
-            >
-              <Send className={`h-4 w-4 mr-2 ${sendingDrafts ? 'animate-pulse' : ''}`} />
-              {sendingDrafts ? 'Enviando...' : 'Enviar rascunhos'}
-            </Button>
+            {draftCount > 0 && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleSendDrafts}
+                disabled={sendingDrafts}
+                className="bg-orange-600 hover:bg-orange-700"
+              >
+                <Send className={`h-4 w-4 mr-2 ${sendingDrafts ? 'animate-spin' : ''}`} />
+                {sendingDrafts ? `Enviando ${draftCount}...` : `Enviar ${draftCount} rascunho(s)`}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

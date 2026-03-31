@@ -60,7 +60,7 @@ serve(async (req: Request) => {
     }
 
     const body = (await req.json()) as SendRequest;
-    const { companyId, delayMs = 2000, limit } = body;
+    const { companyId, delayMs = 5000, limit } = body;
 
     if (!companyId) {
       return new Response(JSON.stringify({ error: "companyId required" }), {
