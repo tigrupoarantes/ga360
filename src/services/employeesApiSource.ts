@@ -1378,6 +1378,7 @@ export async function syncEmployeesFromDab(
       accounting_company_id: accountingCompanyId,
       company_id: contractCompanyId,
       is_active: isActive,
+      cpf_lider: normalizeDocument((employee as DabEmployee & { CPF_Lider?: string | null }).CPF_Lider ?? (employee as DabEmployee & { cpf_lider?: string | null }).cpf_lider ?? null) || null,
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1450,47 +1451,13 @@ export async function syncEmployeesFromDab(
     }
   }
 
-  // Passada de líder: mapear lider_direto_id via CPF_Lider
-  // Coleta CPFs dos líderes referenciados no lote atual
-  const cpfLiderSet = new Set<string>();
-  for (const employee of normalizedEmployees) {
-    const raw = employee as DabEmployee & { CPF_Lider?: string | null };
-    const cpfLider = normalizeDocument(raw.CPF_Lider ?? raw.cpf_lider ?? null);
-    if (cpfLider) cpfLiderSet.add(cpfLider);
-  }
-
-  if (cpfLiderSet.size > 0) {
-    // Busca os UUIDs de todos os líderes por CPF de uma vez
-    const { data: liderRows } = await supabase
-      .from("external_employees")
-      .select("id, cpf")
-      .eq("source_system", SOURCE_SYSTEM)
-      .in("cpf", Array.from(cpfLiderSet));
-
-    const cpfToLiderUuid = new Map<string, string>();
-    for (const row of liderRows || []) {
-      if (row.cpf) cpfToLiderUuid.set(row.cpf, row.id);
-    }
-
-    for (const employee of normalizedEmployees) {
-      const raw = employee as DabEmployee & { CPF_Lider?: string | null };
-      const cpfLider = normalizeDocument(raw.CPF_Lider ?? raw.cpf_lider ?? null);
-      if (!cpfLider) continue;
-
-      const liderUuid = cpfToLiderUuid.get(cpfLider);
-      if (!liderUuid) continue;
-
-      // Encontrar o UUID do próprio funcionário
-      const contractCompanyId = resolveContractCompanyId(employee, companyLookup) || null;
-      const uniqueKey = buildEmployeeUniqueKey(contractCompanyId, employee.id_funcionario);
-      const employeeUuid = existingByUniqueKey.get(uniqueKey);
-      if (!employeeUuid) continue;
-
-      await supabase
-        .from("external_employees")
-        .update({ lider_direto_id: liderUuid })
-        .eq("id", employeeUuid);
-    }
+  // Resolver lider_direto_id via cpf_lider em um único UPDATE batch (função SQL)
+  const { data: liderBatchCount, error: liderBatchError } = await supabase
+    .rpc("resolve_lider_direto_batch", { p_source_system: SOURCE_SYSTEM });
+  if (liderBatchError) {
+    console.error("[employeesApiSource] Erro no batch de líderes:", liderBatchError);
+  } else {
+    console.log(`[employeesApiSource] Líderes resolvidos em batch: ${liderBatchCount} registros`);
   }
 
   let deactivated = 0;

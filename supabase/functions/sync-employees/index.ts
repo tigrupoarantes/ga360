@@ -485,7 +485,8 @@ serve(async (req) => {
           // Campos CNH
           cnh_numero: cnhNumero || null,
           cnh_categoria: cnhCategoria || null,
-          cnh_validade: cnhValidade || null
+          cnh_validade: cnhValidade || null,
+          cpf_lider: normalizeCpf(emp.CPF_Lider ?? emp.cpf_lider) || null,
         };
 
         // Se tem data de demissão, forçar inativo
@@ -536,41 +537,13 @@ serve(async (req) => {
       }
     }
 
-    // Segunda passada: mapear lider_direto_id via CPF_Lider
-    // Constrói mapa CPF normalizado → UUID (do lote atual, evita queries extras)
-    const cpfToUuidMap = new Map<string, string>();
-    for (const { cpf, id } of processedEmployees) {
-      if (cpf) cpfToUuidMap.set(cpf.replace(/\D/g, ''), id);
-    }
-
-    for (const emp of normalizedEmployees) {
-      const cpfLider = normalizeCpf(emp.CPF_Lider ?? emp.cpf_lider);
-      if (!cpfLider) continue;
-
-      const externalId = emp.id || emp.external_id;
-      const employee = processedEmployees.find(e => e.externalId === externalId);
-      if (!employee) continue;
-
-      // 1. Buscar UUID do líder no lote atual (sem query extra)
-      let liderUuid: string | null = cpfToUuidMap.get(cpfLider) || null;
-
-      // 2. Fallback: buscar no banco por cpf (líder pode estar em sync anterior)
-      if (!liderUuid) {
-        const { data: liderData } = await supabase
-          .from('external_employees')
-          .select('id')
-          .eq('cpf', cpfLider)
-          .eq('source_system', sourceSystem)
-          .maybeSingle();
-        liderUuid = liderData?.id || null;
-      }
-
-      if (liderUuid) {
-        await supabase
-          .from('external_employees')
-          .update({ lider_direto_id: liderUuid })
-          .eq('id', employee.id);
-      }
+    // Segunda passada: resolver lider_direto_id via cpf_lider em um único UPDATE batch
+    const { data: liderBatchCount, error: liderBatchError } = await supabase
+      .rpc('resolve_lider_direto_batch', { p_source_system: sourceSystem });
+    if (liderBatchError) {
+      console.error('[sync-employees] Erro no batch de líderes:', liderBatchError);
+    } else {
+      console.log(`[sync-employees] Líderes resolvidos em batch: ${liderBatchCount} registros`);
     }
 
     // === Etapa 3: Inativar funcionários ausentes ===
