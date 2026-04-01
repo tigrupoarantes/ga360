@@ -2,8 +2,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders, handleCors } from "../_shared/cors.ts";
 
-// Envia documentos draft/error para D4Sign com throttling.
-// Usa service_role direto — não depende de JWT do usuário.
+// Processa 1 documento, 1 etapa por vez para D4Sign.
+// Etapas: draft → uploaded → signers_added → sent_to_sign
+// Cada invocação faz no máximo 1 chamada API à D4Sign (cabe no timeout de 60s).
 
 function sanitizeError(error: unknown): string {
   if (!error) return "unknown_error";
@@ -22,16 +23,8 @@ function sanitize(text: string): string {
   return text.replace(/[^\x00-\x7F]/g, (char) => map[char] ?? "?");
 }
 
-function formatCompetencia(competencia: string): string {
-  const [year, month] = competencia.split("-");
-  const months = ["Janeiro","Fevereiro","Marco","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-  return `${months[parseInt(month, 10) - 1]}/${year}`;
-}
-
 interface SendRequest {
   companyId: string;
-  delayMs?: number; // delay entre cada envio (default: 2000ms)
-  limit?: number;   // máximo de documentos a enviar (default: todos)
 }
 
 serve(async (req: Request) => {
@@ -39,7 +32,7 @@ serve(async (req: Request) => {
   if (corsResponse) return corsResponse;
 
   try {
-    // Auth: verificar usuário
+    // Auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
@@ -60,7 +53,7 @@ serve(async (req: Request) => {
     }
 
     const body = (await req.json()) as SendRequest;
-    const { companyId, delayMs = 3000, limit = 2 } = body; // lotes de 2, 3s entre cada
+    const { companyId } = body;
 
     if (!companyId) {
       return new Response(JSON.stringify({ error: "companyId required" }), {
@@ -68,13 +61,12 @@ serve(async (req: Request) => {
       });
     }
 
-    // Service role para todas as operações D4Sign
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Buscar config D4Sign
+    // Config D4Sign
     const { data: d4config } = await supabase
       .from("d4sign_config")
       .select("token_api, crypt_key, safe_id, base_url")
@@ -97,212 +89,237 @@ serve(async (req: Request) => {
       return url.toString();
     }
 
-    async function callD4Sign(url: string, method: string, body?: unknown, maxRetries = 3): Promise<{ ok: boolean; status: number; data: unknown }> {
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        const headers: Record<string, string> = { Accept: "application/json" };
-        let fetchBody: BodyInit | undefined;
-        if (body instanceof FormData) {
-          fetchBody = body;
-        } else if (body !== undefined) {
-          headers["Content-Type"] = "application/json";
-          fetchBody = JSON.stringify(body);
-        }
+    // Fetch com timeout de 50s (cabe no limite de 60s da Edge Function)
+    async function callD4Sign(url: string, method: string, fetchBody?: BodyInit, contentType?: string): Promise<{ ok: boolean; status: number; data: unknown }> {
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (contentType) headers["Content-Type"] = contentType;
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20_000);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 50_000);
 
-        let resp: Response;
-        try {
-          resp = await fetch(url, { method, headers, body: fetchBody, signal: controller.signal });
-          clearTimeout(timeoutId);
-        } catch (err) {
-          clearTimeout(timeoutId);
-          // Timeout: tratar como rate limit para retry
-          if (err instanceof DOMException && err.name === "AbortError") {
-            if (attempt < maxRetries) {
-              const backoff = Math.pow(2, attempt + 1) * 3000;
-              console.log(`[send-drafts] timeout hit, retry ${attempt + 1}/${maxRetries} in ${backoff}ms`);
-              await new Promise(r => setTimeout(r, backoff));
-              continue;
-            }
-            return { ok: false, status: 408, data: { error: "D4Sign API timeout" } };
-          }
-          throw err;
-        }
-
+      try {
+        const resp = await fetch(url, { method, headers, body: fetchBody, signal: controller.signal });
+        clearTimeout(timeoutId);
         const text = await resp.text();
         let data: unknown;
         try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
-
-        // Rate limit: retry com backoff exponencial
-        const isRateLimit = !resp.ok && (
-          resp.status === 429 || resp.status === 401 ||
-          (typeof data === "object" && data !== null && JSON.stringify(data).includes("tempo limite"))
-        );
-
-        if (isRateLimit && attempt < maxRetries) {
-          const backoff = Math.pow(2, attempt + 1) * 3000; // 6s, 12s, 24s
-          console.log(`[send-drafts] rate limit hit, retry ${attempt + 1}/${maxRetries} in ${backoff}ms`);
-          await new Promise(r => setTimeout(r, backoff));
-          continue;
-        }
-
         return { ok: resp.ok, status: resp.status, data };
+      } catch (err) {
+        clearTimeout(timeoutId);
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return { ok: false, status: 408, data: { error: "D4Sign API timeout (50s)" } };
+        }
+        throw err;
       }
-      return { ok: false, status: 429, data: { error: "max retries exceeded" } };
-    }
-
-    // Buscar documentos draft + error
-    let query = supabase
-      .from("verba_indenizatoria_documents")
-      .select("id, employee_name, employee_cpf, employee_email, competencia, generated_file_path, d4sign_status, d4sign_signer_email")
-      .eq("company_id", companyId)
-      .in("d4sign_status", ["draft", "error"])
-      .not("generated_file_path", "is", null)
-      .order("employee_name");
-
-    if (limit) query = query.limit(limit);
-
-    const { data: docs, error: queryError } = await query;
-
-    if (queryError || !docs?.length) {
-      return new Response(JSON.stringify({ ok: true, sent: 0, message: "Nenhum documento pendente" }), {
-        status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const webhookUrl = Deno.env.get("D4SIGN_WEBHOOK_URL") || `${supabaseUrl}/functions/v1/d4sign-webhook`;
     const webhookSecret = Deno.env.get("D4SIGN_WEBHOOK_SECRET");
 
-    const results: Array<{ name: string; cpf: string; status: string; error?: string }> = [];
+    // Buscar 1 documento que precisa da próxima ação (prioridade: signers_added > uploaded > draft)
+    const { data: doc } = await supabase
+      .from("verba_indenizatoria_documents")
+      .select("id, employee_name, employee_cpf, employee_email, competencia, generated_file_path, d4sign_status, d4sign_signer_email, d4sign_document_uuid")
+      .eq("company_id", companyId)
+      .in("d4sign_status", ["draft", "uploaded", "signers_added"])
+      .not("generated_file_path", "is", null)
+      .order("d4sign_status") // draft < signers_added < uploaded (alpha sort avança os mais prontos primeiro)
+      .limit(1)
+      .maybeSingle();
 
-    for (let i = 0; i < docs.length; i++) {
-      const doc = docs[i];
+    if (!doc) {
+      return new Response(
+        JSON.stringify({ ok: true, sent: 0, action: "none", message: "Nenhum documento pendente" }),
+        { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
+      );
+    }
 
-      // Throttle: delay entre envios (exceto o primeiro)
-      if (i > 0) {
-        await new Promise(r => setTimeout(r, delayMs));
-      }
+    let action = "";
+    let newStatus = "";
+    let errorMsg: string | null = null;
+    let success = false;
 
-      try {
-        // 1. Download do PDF do Storage
+    try {
+      // ── ETAPA 1: draft → uploaded (upload PDF para D4Sign) ──
+      if (doc.d4sign_status === "draft") {
+        action = "upload";
+
         const { data: pdfData, error: dlError } = await supabase.storage
           .from("verbas-indenizatorias")
           .download(doc.generated_file_path);
 
         if (dlError || !pdfData) {
-          results.push({ name: doc.employee_name, cpf: doc.employee_cpf, status: "error", error: "PDF não encontrado no Storage" });
-          continue;
-        }
+          errorMsg = "PDF não encontrado no Storage";
+        } else {
+          const pdfBytes = new Uint8Array(await pdfData.arrayBuffer());
+          const fileName = `verba_${sanitize(doc.employee_name).replace(/\s+/g, "_")}_${doc.competencia}.pdf`;
 
-        const pdfBytes = new Uint8Array(await pdfData.arrayBuffer());
-        const pdfBase64 = btoa(String.fromCharCode(...pdfBytes));
-        const fileName = `verba_${sanitize(doc.employee_name).replace(/\s+/g, "_")}_${doc.competencia}.pdf`;
+          const blob = new Blob([pdfBytes], { type: "application/pdf" });
+          const formData = new FormData();
+          formData.append("file", blob, fileName);
+          formData.append("name", fileName);
 
-        // 2. Upload para D4Sign
-        const blob = new Blob([pdfBytes], { type: "application/pdf" });
-        const formData = new FormData();
-        formData.append("file", blob, fileName);
-        formData.append("name", fileName);
+          const uploadUrl = buildUrl(`documents/${d4config.safe_id}/upload`);
+          const result = await callD4Sign(uploadUrl, "POST", formData);
 
-        const uploadUrl = buildUrl(`documents/${d4config.safe_id}/upload`);
-        const uploadResult = await callD4Sign(uploadUrl, "POST", formData);
+          if (!result.ok) {
+            errorMsg = `upload: ${JSON.stringify(result.data).slice(0, 200)}`;
+          } else {
+            const d4data = result.data as Record<string, unknown>;
+            const uuid = (d4data?.uuid as string) || ((d4data?.document as Record<string, unknown>)?.uuid as string);
 
-        if (!uploadResult.ok) {
-          const errMsg = JSON.stringify(uploadResult.data).slice(0, 200);
-          await supabase.from("verba_indenizatoria_documents").update({ d4sign_status: "error", d4sign_error_message: `upload: ${errMsg}` }).eq("id", doc.id);
-          results.push({ name: doc.employee_name, cpf: doc.employee_cpf, status: "error", error: `upload D4Sign: ${errMsg}` });
-          continue;
-        }
-
-        const d4data = uploadResult.data as Record<string, unknown>;
-        const d4signDocUuid = (d4data?.uuid as string) || ((d4data?.document as Record<string, unknown>)?.uuid as string);
-
-        if (!d4signDocUuid) {
-          await supabase.from("verba_indenizatoria_documents").update({ d4sign_status: "error", d4sign_error_message: "upload ok mas uuid não retornado" }).eq("id", doc.id);
-          results.push({ name: doc.employee_name, cpf: doc.employee_cpf, status: "error", error: "uuid não retornado" });
-          continue;
-        }
-
-        // 3. Registrar webhook
-        const webhookBody: Record<string, string> = { url: webhookUrl };
-        if (webhookSecret) webhookBody.token = webhookSecret;
-        await callD4Sign(buildUrl(`documents/${d4signDocUuid}/webhooks`), "POST", webhookBody);
-
-        // 4. Adicionar signatário
-        const signerEmail = doc.employee_email || doc.d4sign_signer_email;
-        let signerAdded = false;
-
-        if (signerEmail) {
-          const addSignerResult = await callD4Sign(
-            buildUrl(`documents/${d4signDocUuid}/createlist`),
-            "POST",
-            { signers: [{ email: signerEmail, act: "1", foreign: "0", foreignLang: "" }] },
-          );
-          signerAdded = addSignerResult.ok;
-
-          if (!signerAdded) {
-            const errMsg = JSON.stringify(addSignerResult.data).slice(0, 200);
-            await supabase.from("verba_indenizatoria_logs").insert({
-              document_id: doc.id, action: "error",
-              details: { step: "add_signer", email: signerEmail, response: addSignerResult.data },
-              performed_by: user.id,
-            });
+            if (!uuid) {
+              errorMsg = "upload ok mas uuid não retornado";
+            } else {
+              await supabase.from("verba_indenizatoria_documents").update({
+                d4sign_document_uuid: uuid,
+                d4sign_safe_uuid: d4config.safe_id,
+                d4sign_status: "uploaded",
+                d4sign_error_message: null,
+              }).eq("id", doc.id);
+              newStatus = "uploaded";
+              success = true;
+            }
           }
         }
+      }
 
-        // 5. Enviar para assinatura (com delay para D4Sign processar)
-        let sentToSign = false;
-        if (signerAdded) {
-          await new Promise(r => setTimeout(r, 2000)); // D4Sign precisa processar
+      // ── ETAPA 2: uploaded → signers_added (webhook + signatário) ──
+      else if (doc.d4sign_status === "uploaded") {
+        action = "add_signer";
+        const uuid = doc.d4sign_document_uuid;
 
-          const sendResult = await callD4Sign(
-            buildUrl(`documents/${d4signDocUuid}/sendtosigner`),
+        if (!uuid) {
+          errorMsg = "documento sem uuid D4Sign";
+        } else {
+          // Registrar webhook
+          const webhookBody: Record<string, string> = { url: webhookUrl };
+          if (webhookSecret) webhookBody.token = webhookSecret;
+          await callD4Sign(
+            buildUrl(`documents/${uuid}/webhooks`),
             "POST",
-            {},
+            JSON.stringify(webhookBody),
+            "application/json",
           );
-          sentToSign = sendResult.ok;
-        }
 
-        // 6. Atualizar registro
-        const finalStatus = sentToSign ? "sent_to_sign" : signerAdded ? "error" : "error";
+          // Adicionar signatário
+          const signerEmail = doc.employee_email || doc.d4sign_signer_email;
+
+          if (!signerEmail) {
+            errorMsg = "email do signatário vazio";
+          } else {
+            const result = await callD4Sign(
+              buildUrl(`documents/${uuid}/createlist`),
+              "POST",
+              JSON.stringify({ signers: [{ email: signerEmail, act: "1", foreign: "0", foreignLang: "" }] }),
+              "application/json",
+            );
+
+            if (!result.ok) {
+              errorMsg = `add_signer: ${JSON.stringify(result.data).slice(0, 200)}`;
+              await supabase.from("verba_indenizatoria_logs").insert({
+                document_id: doc.id, action: "error",
+                details: { step: "add_signer", email: signerEmail, response: result.data },
+                performed_by: user.id,
+              });
+            } else {
+              await supabase.from("verba_indenizatoria_documents").update({
+                d4sign_status: "signers_added",
+                d4sign_signer_email: signerEmail,
+                d4sign_error_message: null,
+              }).eq("id", doc.id);
+              newStatus = "signers_added";
+              success = true;
+            }
+          }
+        }
+      }
+
+      // ── ETAPA 3: signers_added → sent_to_sign (enviar para assinatura) ──
+      else if (doc.d4sign_status === "signers_added") {
+        action = "send_to_sign";
+        const uuid = doc.d4sign_document_uuid;
+
+        if (!uuid) {
+          errorMsg = "documento sem uuid D4Sign";
+        } else {
+          const result = await callD4Sign(
+            buildUrl(`documents/${uuid}/sendtosigner`),
+            "POST",
+            JSON.stringify({}),
+            "application/json",
+          );
+
+          if (!result.ok) {
+            errorMsg = `send_to_sign: ${JSON.stringify(result.data).slice(0, 200)}`;
+          } else {
+            await supabase.from("verba_indenizatoria_documents").update({
+              d4sign_status: "sent_to_sign",
+              d4sign_sent_at: new Date().toISOString(),
+              d4sign_error_message: null,
+            }).eq("id", doc.id);
+
+            await supabase.from("verba_indenizatoria_logs").insert({
+              document_id: doc.id,
+              action: "sent_to_sign",
+              details: { source: "send-drafts-to-d4sign", d4sign_uuid: uuid },
+              performed_by: user.id,
+            });
+
+            newStatus = "sent_to_sign";
+            success = true;
+          }
+        }
+      }
+
+      // Se houve erro, marcar como error
+      if (errorMsg) {
         await supabase.from("verba_indenizatoria_documents").update({
-          d4sign_document_uuid: d4signDocUuid,
-          d4sign_safe_uuid: d4config.safe_id,
-          d4sign_status: finalStatus,
-          d4sign_signer_email: signerEmail || null,
-          d4sign_sent_at: sentToSign ? new Date().toISOString() : null,
-          d4sign_error_message: !sentToSign ? `signer: ${signerAdded ? "ok" : "falhou"}, send: ${sentToSign ? "ok" : "falhou"}` : null,
+          d4sign_status: "error",
+          d4sign_error_message: errorMsg,
         }).eq("id", doc.id);
 
         await supabase.from("verba_indenizatoria_logs").insert({
           document_id: doc.id,
-          action: sentToSign ? "sent_to_sign" : "error",
-          details: { source: "send-drafts-to-d4sign", d4sign_uuid: d4signDocUuid, signer: signerEmail, sent: sentToSign },
+          action: "error",
+          details: { source: "send-drafts-to-d4sign", step: action, error: errorMsg },
           performed_by: user.id,
         });
-
-        results.push({ name: doc.employee_name, cpf: doc.employee_cpf, status: finalStatus });
-        console.log(`[send-drafts] ${i + 1}/${docs.length} ${doc.employee_name}: ${finalStatus}`);
-      } catch (err) {
-        results.push({ name: doc.employee_name, cpf: doc.employee_cpf, status: "error", error: sanitizeError(err) });
       }
+    } catch (err) {
+      errorMsg = sanitizeError(err);
+      await supabase.from("verba_indenizatoria_documents").update({
+        d4sign_status: "error",
+        d4sign_error_message: `${action}: ${errorMsg}`,
+      }).eq("id", doc.id).then(() => {});
     }
 
-    const sent = results.filter(r => r.status === "sent_to_sign").length;
-    const errors = results.filter(r => r.status === "error").length;
-
-    // Contar rascunhos restantes para o frontend saber se deve continuar
-    const { count: remainingCount } = await supabase
+    // Contar documentos ainda pendentes (inclui os em etapas intermediárias)
+    const { count: pendingCount } = await supabase
       .from("verba_indenizatoria_documents")
       .select("id", { count: "exact", head: true })
       .eq("company_id", companyId)
-      .in("d4sign_status", ["draft", "error"])
+      .in("d4sign_status", ["draft", "uploaded", "signers_added"])
       .not("generated_file_path", "is", null);
 
+    const sent = success && newStatus === "sent_to_sign" ? 1 : 0;
+    const advanced = success ? 1 : 0;
+    const errors = errorMsg ? 1 : 0;
+
+    console.log(`[send-drafts] ${doc.employee_name}: ${action} → ${success ? newStatus : "error"} | pending: ${pendingCount}`);
+
     return new Response(
-      JSON.stringify({ ok: true, sent, errors, total: results.length, remaining: remainingCount ?? 0, results }),
+      JSON.stringify({
+        ok: true,
+        sent,        // 1 se completou todas as etapas (sent_to_sign)
+        advanced,    // 1 se avançou para próxima etapa
+        errors,
+        action,
+        status: success ? newStatus : "error",
+        name: doc.employee_name,
+        pending: pendingCount ?? 0,
+      }),
       { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   } catch (error) {

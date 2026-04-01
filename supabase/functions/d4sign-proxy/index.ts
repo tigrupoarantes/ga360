@@ -66,7 +66,7 @@ async function callD4Sign(
   method: string,
   body?: unknown,
   isFileUpload = false,
-  timeoutMs = 25_000,
+  timeoutMs = 50_000,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
   const headers: Record<string, string> = {
     Accept: "application/json",

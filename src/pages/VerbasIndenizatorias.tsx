@@ -67,55 +67,65 @@ export default function VerbasIndenizatorias() {
     setSendingDrafts(true);
 
     let totalSent = 0;
+    let totalAdvanced = 0;
     let totalErrors = 0;
     let consecutiveFailures = 0;
-    const batchSize = 2;
 
     const toastId = toast.loading(
-      `Iniciando envio de rascunhos para D4Sign...`,
+      `Iniciando envio para D4Sign...`,
       { duration: Infinity },
     );
 
-    // Loop automatico: envia lotes de 2 ate a Edge Function retornar sent=0
-    while (consecutiveFailures < 3) {
+    // Loop automatico: processa 1 documento, 1 etapa por vez
+    // Etapas: draft → uploaded → signers_added → sent_to_sign
+    while (consecutiveFailures < 5) {
       try {
         const resp = await supabase.functions.invoke('send-drafts-to-d4sign', {
-          body: { companyId: selectedCompanyId, delayMs: 3000, limit: batchSize },
+          body: { companyId: selectedCompanyId },
         });
         if (resp.error) throw resp.error;
 
         const result = resp.data;
         const sent = result?.sent ?? 0;
+        const advanced = result?.advanced ?? 0;
         const errors = result?.errors ?? 0;
-        const batchRemaining = result?.remaining ?? 0;
+        const pending = result?.pending ?? 0;
+        const action = result?.action ?? '';
+        const name = result?.name ?? '';
 
-        // Nada enviado e nenhum erro = acabaram os rascunhos
-        if (sent === 0 && errors === 0) break;
+        // Nada processado = acabaram os documentos pendentes
+        if (advanced === 0 && errors === 0) break;
 
         totalSent += sent;
+        totalAdvanced += advanced;
         totalErrors += errors;
 
-        if (sent === 0 && errors > 0) {
+        if (advanced === 0 && errors > 0) {
           consecutiveFailures++;
         } else {
           consecutiveFailures = 0;
         }
 
+        const statusMsg = action === 'upload' ? 'Upload'
+          : action === 'add_signer' ? 'Signatario'
+          : action === 'send_to_sign' ? 'Enviado'
+          : action;
+
         toast.loading(
-          `D4Sign: ${totalSent} enviado(s), ${totalErrors} erro(s)${batchRemaining > 0 ? `, ${batchRemaining} restante(s)` : ''}...`,
+          `D4Sign: ${name} → ${statusMsg} | ${totalSent} completo(s), ${pending} pendente(s)${totalErrors > 0 ? `, ${totalErrors} erro(s)` : ''}`,
           { id: toastId, duration: Infinity },
         );
 
-        // Delay entre lotes para API respirar
-        await new Promise(r => setTimeout(r, 5000));
+        // Delay entre chamadas (2s — cada chamada faz so 1 acao)
+        await new Promise(r => setTimeout(r, 2000));
       } catch (err: any) {
         consecutiveFailures++;
         totalErrors++;
         toast.loading(
-          `Erro no lote. ${totalSent} enviado(s), ${totalErrors} erro(s). Tentando novamente...`,
+          `Erro na chamada. ${totalSent} completo(s), ${totalErrors} erro(s). Tentando novamente...`,
           { id: toastId, duration: Infinity },
         );
-        await new Promise(r => setTimeout(r, 10000));
+        await new Promise(r => setTimeout(r, 5000));
       }
     }
 
@@ -123,10 +133,10 @@ export default function VerbasIndenizatorias() {
     toast.dismiss(toastId);
     if (totalSent > 0 && totalErrors === 0) {
       toast.success(`Concluido! ${totalSent} documento(s) enviado(s) para D4Sign.`);
-    } else if (totalSent > 0) {
-      toast.warning(`${totalSent} enviado(s), ${totalErrors} erro(s).`);
+    } else if (totalSent > 0 || totalAdvanced > 0) {
+      toast.warning(`${totalSent} enviado(s), ${totalAdvanced} etapa(s) avancada(s), ${totalErrors} erro(s).`);
     } else {
-      toast.error(`Nenhum documento enviado. ${totalErrors} erro(s). Verifique a conexao com D4Sign.`);
+      toast.error(`Nenhum documento processado. ${totalErrors} erro(s). Verifique a conexao com D4Sign.`);
     }
 
     refetch();
