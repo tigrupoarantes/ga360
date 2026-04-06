@@ -363,6 +363,35 @@ export function useCockpitVIConfig(companyId: string | null) {
   });
 }
 
+export function useVIReprocess() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      documentId: string;
+      companyId: string;
+      signerEmail?: string;
+    }) => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Não autenticado');
+
+      return callEdgeFunction<{ ok: true; newStatus: string; documentId: string; previousError: string }>(
+        token,
+        'reprocess-vi-error',
+        params,
+      );
+    },
+    onSuccess: (_, vars) => {
+      toast.success('Documento preparado para reprocessamento');
+      queryClient.invalidateQueries({ queryKey: ['verbas-indenizatorias', vars.companyId] });
+    },
+    onError: (err: Error) => {
+      toast.error(`Erro ao reprocessar: ${err.message}`);
+    },
+  });
+}
+
 export function useVIDelete() {
   const queryClient = useQueryClient();
 

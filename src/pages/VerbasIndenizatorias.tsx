@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ArrowLeft, Plus, RefreshCw, AlertTriangle, Building2, Users, CloudDownload, Send } from 'lucide-react';
+import { ArrowLeft, Plus, RefreshCw, AlertTriangle, Building2, Users, CloudDownload, Send, RotateCcw } from 'lucide-react';
 import { VIStatusDashboard } from '@/components/verbas-indenizatorias/VIStatusDashboard';
 import { VIFilters } from '@/components/verbas-indenizatorias/VIFilters';
 import { VIDocumentTable } from '@/components/verbas-indenizatorias/VIDocumentTable';
@@ -28,6 +28,7 @@ export default function VerbasIndenizatorias() {
   const [batchOpen, setBatchOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [sendingDrafts, setSendingDrafts] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
 
   // Buscar UUID do card "Verbas Indenizatórias" para verificar permissão granular
   const { data: viCardId } = useQuery<string | null>({
@@ -59,8 +60,9 @@ export default function VerbasIndenizatorias() {
   const documents = data?.rows ?? [];
   const total = data?.total ?? 0;
 
-  // Conta drafts pendentes para mostrar no botão
-  const draftCount = documents.filter((d: any) => d.d4sign_status === 'draft' || d.d4sign_status === 'error').length;
+  // Conta drafts pendentes e erros separadamente
+  const draftCount = documents.filter((d: any) => ['draft', 'uploaded', 'signers_added'].includes(d.d4sign_status)).length;
+  const errorCount = documents.filter((d: any) => d.d4sign_status === 'error').length;
 
   async function handleSendDrafts() {
     if (!selectedCompanyId || sendingDrafts) return;
@@ -166,6 +168,63 @@ export default function VerbasIndenizatorias() {
     }
   }
 
+  async function handleReprocessErrors() {
+    if (!selectedCompanyId || reprocessing) return;
+    setReprocessing(true);
+
+    const errorDocs = documents.filter((d: any) => d.d4sign_status === 'error');
+    let reprocessed = 0;
+    let failed = 0;
+
+    const toastId = toast.loading(`Reprocessando 0 de ${errorDocs.length}...`, { duration: Infinity });
+
+    for (const doc of errorDocs) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('Não autenticado');
+
+        const resp = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reprocess-vi-error`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ documentId: doc.id, companyId: selectedCompanyId }),
+          },
+        );
+
+        if (resp.ok) {
+          reprocessed++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+
+      toast.loading(
+        `Reprocessando ${reprocessed + failed} de ${errorDocs.length}...`,
+        { id: toastId, duration: Infinity },
+      );
+    }
+
+    toast.dismiss(toastId);
+    if (reprocessed > 0 && failed === 0) {
+      toast.success(`${reprocessed} documento(s) preparado(s). Clique em "Enviar rascunhos" para processá-los.`);
+    } else if (reprocessed > 0) {
+      toast.warning(`${reprocessed} preparado(s), ${failed} não puderam ser reprocessados (verifique o email do signatário).`);
+    } else {
+      toast.error(`Nenhum documento reprocessado. Verifique os detalhes de cada erro.`);
+    }
+
+    refetch();
+    setReprocessing(false);
+  }
+
   function handleFiltersChange(newFilters: VIQueryFilters) {
     setFilters(newFilters);
   }
@@ -204,12 +263,24 @@ export default function VerbasIndenizatorias() {
           </div>
 
           <div className="flex gap-2">
+            {(errorCount > 0 || reprocessing) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReprocessErrors}
+                disabled={reprocessing || sendingDrafts}
+                className="text-orange-600 border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+              >
+                <RotateCcw className={`h-4 w-4 mr-2 ${reprocessing ? 'animate-spin' : ''}`} />
+                {reprocessing ? 'Reprocessando...' : `Reprocessar ${errorCount} erro(s)`}
+              </Button>
+            )}
             {(draftCount > 0 || sendingDrafts) && (
               <Button
                 variant="default"
                 size="sm"
                 onClick={handleSendDrafts}
-                disabled={sendingDrafts}
+                disabled={sendingDrafts || reprocessing}
                 className="bg-orange-600 hover:bg-orange-700"
               >
                 <Send className={`h-4 w-4 mr-2 ${sendingDrafts ? 'animate-pulse' : ''}`} />

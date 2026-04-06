@@ -63,6 +63,9 @@ verify_jwt = false
 [functions.d4sign-webhook]
 verify_jwt = false
 
+[functions.reprocess-vi-error]
+verify_jwt = true
+
 [functions.sync-employees]
 verify_jwt = false
 

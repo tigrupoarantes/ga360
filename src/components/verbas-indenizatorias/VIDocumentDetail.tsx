@@ -7,11 +7,12 @@ import { Separator } from '@/components/ui/separator';
 import { VIStatusBadge } from './VIStatusBadge';
 import { VIDocumentPreview } from './VIDocumentPreview';
 import { VITimelineLog } from './VITimelineLog';
-import { useVIResend, useVICancel, useVIDelete, VI_DELETABLE_STATUSES } from '@/hooks/useVerbasIndenizatorias';
+import { useVIResend, useVICancel, useVIDelete, useVIReprocess, VI_DELETABLE_STATUSES } from '@/hooks/useVerbasIndenizatorias';
 import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Mail, XCircle, Eye, Download, Trash2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Mail, XCircle, Eye, Download, Trash2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props {
@@ -40,8 +41,11 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
   const resendMutation = useVIResend();
   const cancelMutation = useVICancel();
   const deleteMutation = useVIDelete();
+  const reprocessMutation = useVIReprocess();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
+  const [reprocessEmail, setReprocessEmail] = useState('');
 
   if (!doc) return null;
 
@@ -119,6 +123,77 @@ export function VIDocumentDetail({ document: doc, companyId, open, onClose }: Pr
           {doc.d4sign_error_message && (
             <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
               <strong>Erro:</strong> {doc.d4sign_error_message}
+            </div>
+          )}
+
+          {/* Reprocessar documento com erro */}
+          {doc.d4sign_status === 'error' && (
+            <div className="space-y-2">
+              {(() => {
+                const errMsg = (doc.d4sign_error_message || '').toLowerCase();
+                const isEmailError = errMsg.includes('email') || errMsg.includes('signat');
+
+                if (isEmailError) {
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        O erro está relacionado ao email do signatário. Informe o email correto para reprocessar.
+                      </p>
+                      <Input
+                        type="email"
+                        placeholder="Email do signatário"
+                        value={reprocessEmail}
+                        onChange={(e) => setReprocessEmail(e.target.value)}
+                      />
+                      <Button
+                        variant="outline"
+                        className="w-full text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                        disabled={!reprocessEmail || reprocessMutation.isPending}
+                        onClick={() =>
+                          reprocessMutation.mutate(
+                            { documentId: doc.id, companyId, signerEmail: reprocessEmail },
+                            { onSuccess: () => { setReprocessEmail(''); onClose(); } },
+                          )
+                        }
+                      >
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        {reprocessMutation.isPending ? 'Reprocessando...' : 'Reprocessar com novo email'}
+                      </Button>
+                    </div>
+                  );
+                }
+
+                return confirmReprocess ? (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                      disabled={reprocessMutation.isPending}
+                      onClick={() =>
+                        reprocessMutation.mutate(
+                          { documentId: doc.id, companyId },
+                          { onSuccess: () => { setConfirmReprocess(false); onClose(); } },
+                        )
+                      }
+                    >
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      {reprocessMutation.isPending ? 'Reprocessando...' : 'Confirmar'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => setConfirmReprocess(false)}>
+                      Cancelar
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                    onClick={() => setConfirmReprocess(true)}
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reprocessar
+                  </Button>
+                );
+              })()}
             </div>
           )}
 

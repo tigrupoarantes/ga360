@@ -42,6 +42,11 @@ const ACTION_CONFIG: Record<string, { label: string; icon: React.ReactNode; colo
     icon: <RotateCcw className="h-4 w-4" />,
     color: 'bg-purple-500',
   },
+  reprocess: {
+    label: 'Reprocessado',
+    icon: <RotateCcw className="h-4 w-4" />,
+    color: 'bg-orange-500',
+  },
   error: {
     label: 'Erro',
     icon: <XCircle className="h-4 w-4" />,
@@ -63,6 +68,9 @@ function formatDetails(action: string, details: Record<string, unknown> | null):
   if (!details) return null;
   if (action === 'sent_to_sign' && details.d4sign_uuid) {
     return `UUID D4Sign: ${String(details.d4sign_uuid).slice(0, 8)}...`;
+  }
+  if (action === 'reprocess' && details.previous_error) {
+    return `Erro anterior: ${String(details.previous_error).slice(0, 100)}`;
   }
   if (action === 'error' && details.message) {
     return String(details.message);
