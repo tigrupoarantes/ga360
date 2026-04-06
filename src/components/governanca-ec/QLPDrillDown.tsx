@@ -197,12 +197,18 @@ export function QLPDrillDown() {
     queryFn: async () => {
       const { data, error } = await supabaseExternal
         .from("external_employees")
-        .select("id, full_name, email, gender, age, birth_date, hire_date, position, department, unidade, is_active, is_disabled, company_id, contract_company_id, accounting_company_id, accounting_group, termination_date, lider_direto_id, metadata, contract_company:companies!external_employees_contract_company_id_fkey(name), accounting_company:companies!external_employees_accounting_company_id_fkey(name), lider_direto:external_employees!external_employees_lider_direto_id_fkey(id, full_name)")
+        .select("id, full_name, email, gender, age, birth_date, hire_date, position, department, unidade, is_active, is_disabled, company_id, contract_company_id, accounting_company_id, accounting_group, termination_date, lider_direto_id, metadata, contract_company:companies!contract_company_id(name), accounting_company:companies!accounting_company_id(name), lider_direto:external_employees!lider_direto_id(id, full_name)")
         .eq("source_system", "dab_api")
         .order("full_name");
 
       if (error) throw error;
-      return data as Employee[];
+      // PostgREST retorna arrays para joins ambíguos — normalizar para objeto singular
+      return (data ?? []).map((row: any) => ({
+        ...row,
+        contract_company: Array.isArray(row.contract_company) ? row.contract_company[0] ?? null : row.contract_company,
+        accounting_company: Array.isArray(row.accounting_company) ? row.accounting_company[0] ?? null : row.accounting_company,
+        lider_direto: Array.isArray(row.lider_direto) ? row.lider_direto[0] ?? null : row.lider_direto,
+      })) as Employee[];
     },
   });
 
