@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { BlobReader, ZipReader, BlobWriter } from "https://esm.sh/@zip.js/zip.js@2.7.52";
+import { BlobWriter, ZipReader } from "https://deno.land/x/zipjs/index.js";
 
 // Webhook público da D4Sign — sem auth Bearer
 // Valida por token secreto no header X-D4Sign-Token
@@ -118,7 +118,7 @@ serve(async (req: Request) => {
           const downloadResp = await fetch(downloadUrl.toString(), {
             method: "POST",
             headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify({ type: "0" }),
+            body: JSON.stringify({ type: 0 }),
           });
 
           if (downloadResp.ok) {
@@ -142,46 +142,76 @@ serve(async (req: Request) => {
               const contentType = fileResp.headers.get("content-type") || "";
               console.log("[d4sign-webhook] file download status:", fileResp.status, "content-type:", contentType, "size:", fileResp.headers.get("content-length"));
 
-              if (fileResp.ok) {
-                let fileBytes = new Uint8Array(await fileResp.arrayBuffer());
+              if (fileResp.ok && fileResp.body) {
+                const tmpId = crypto.randomUUID();
+                const downloadPath = `/tmp/${tmpId}_download`;
                 const storagePath = `${doc.company_id}/signed/${doc.competencia}/${doc.employee_cpf}_signed.pdf`;
 
-                // Verificar magic bytes: %PDF (PDF) ou PK (ZIP)
-                const isPdf = fileBytes.length > 4 && fileBytes[0] === 0x25 && fileBytes[1] === 0x50 && fileBytes[2] === 0x44 && fileBytes[3] === 0x46;
-                const isZip = fileBytes.length > 4 && fileBytes[0] === 0x50 && fileBytes[1] === 0x4B;
-                console.log("[d4sign-webhook] format:", isPdf ? "PDF" : isZip ? "ZIP" : "unknown", "size:", fileBytes.length);
+                // Salvar arquivo no /tmp (ephemeral storage) — evita corrupção em memória
+                await Deno.writeFile(downloadPath, fileResp.body);
+                const fileInfo = await Deno.stat(downloadPath);
+                console.log("[d4sign-webhook] file saved to /tmp, size:", fileInfo.size);
 
-                // D4Sign retorna ZIP com o PDF dentro — extrair o primeiro .pdf
-                let uploadData: Uint8Array | Blob = fileBytes;
+                // Ler magic bytes para detectar formato
+                const headerFile = await Deno.open(downloadPath, { read: true });
+                const header = new Uint8Array(4);
+                await headerFile.read(header);
+                headerFile.close();
+
+                const isPdf = header[0] === 0x25 && header[1] === 0x50 && header[2] === 0x44 && header[3] === 0x46; // %PDF
+                const isZip = header[0] === 0x50 && header[1] === 0x4B; // PK
+                console.log("[d4sign-webhook] format:", isPdf ? "PDF" : isZip ? "ZIP" : "UNKNOWN",
+                  "magic:", Array.from(header).map(b => b.toString(16).padStart(2, "0")).join(" "));
+
+                let uploadBlob: Blob;
 
                 if (isZip) {
-                  try {
-                    const zipBlob = new Blob([fileBytes]);
-                    const zipReader = new ZipReader(new BlobReader(zipBlob));
-                    const entries = await zipReader.getEntries();
-                    console.log("[d4sign-webhook] ZIP entries:", entries.map((e: any) => `${e.filename} (${e.uncompressedSize}b)`));
-                    const pdfEntry = entries.find((e: any) => e.filename.toLowerCase().endsWith(".pdf"));
+                  // Abrir ZIP via ReadableStream (padrão recomendado pelo Supabase)
+                  const file = await Deno.open(downloadPath, { read: true });
+                  const zipReader = new ZipReader(file.readable);
+                  const entries = await zipReader.getEntries();
 
-                    if (pdfEntry && pdfEntry.getData) {
-                      const pdfBlob = await pdfEntry.getData(new BlobWriter("application/pdf"));
-                      uploadData = new Uint8Array(await pdfBlob.arrayBuffer());
-                      console.log("[d4sign-webhook] PDF extraído do ZIP:", pdfEntry.filename, "size:", (uploadData as Uint8Array).length);
-                    } else {
-                      // Sem .pdf no ZIP — salvar o ZIP todo como fallback
-                      console.warn("[d4sign-webhook] ZIP não contém .pdf. Entries:", entries.map((e: any) => e.filename));
-                    }
+                  console.log("[d4sign-webhook] ZIP entries:", entries.map((e: any) => `${e.filename} (${e.uncompressedSize}b)`));
+
+                  const pdfEntry = entries.find((e: any) =>
+                    e.filename.toLowerCase().endsWith(".pdf") && !e.directory);
+
+                  if (!pdfEntry || !pdfEntry.getData) {
                     await zipReader.close();
-                  } catch (zipErr) {
-                    console.error("[d4sign-webhook] Erro ao descompactar ZIP:", sanitizeError(zipErr));
+                    throw new Error(`ZIP não contém .pdf. Entries: ${entries.map((e: any) => e.filename).join(", ")}`);
                   }
+
+                  const blobWriter = new BlobWriter("application/pdf");
+                  uploadBlob = await pdfEntry.getData(blobWriter);
+                  await zipReader.close();
+
+                  console.log("[d4sign-webhook] PDF extraído do ZIP:", pdfEntry.filename, "size:", uploadBlob.size);
+
+                  // Validar que o conteúdo extraído é realmente um PDF
+                  const pdfHeader = new Uint8Array(await uploadBlob.slice(0, 4).arrayBuffer());
+                  if (pdfHeader[0] !== 0x25 || pdfHeader[1] !== 0x50 || pdfHeader[2] !== 0x44 || pdfHeader[3] !== 0x46) {
+                    throw new Error(`Conteúdo extraído não é PDF válido. Header: ${Array.from(pdfHeader).map(b => b.toString(16)).join(" ")}`);
+                  }
+                  console.log("[d4sign-webhook] PDF validado com sucesso (magic bytes %PDF OK)");
+                } else if (isPdf) {
+                  // Já é PDF — ler do /tmp como Blob
+                  const pdfBytes = await Deno.readFile(downloadPath);
+                  uploadBlob = new Blob([pdfBytes], { type: "application/pdf" });
+                  console.log("[d4sign-webhook] arquivo já é PDF, size:", uploadBlob.size);
+                } else {
+                  throw new Error(`Formato desconhecido. Magic bytes: ${Array.from(header).map(b => b.toString(16)).join(" ")}`);
                 }
+
+                // Cleanup /tmp
+                try { await Deno.remove(downloadPath); } catch { /* ignore */ }
 
                 // Deletar arquivo antigo se existir (evitar corrupção por upsert)
                 await supabase.storage.from("verbas-indenizatorias").remove([storagePath]);
 
+                // Upload como Blob direto (recomendado pela doc do Supabase)
                 const { error: uploadError } = await supabase.storage
                   .from("verbas-indenizatorias")
-                  .upload(storagePath, uploadData, {
+                  .upload(storagePath, uploadBlob, {
                     contentType: "application/pdf",
                   });
 
@@ -189,7 +219,7 @@ serve(async (req: Request) => {
                   console.error("[d4sign-webhook] Erro no upload Storage:", uploadError.message);
                 } else {
                   extraFields.signed_file_path = storagePath;
-                  console.log("[d4sign-webhook] PDF assinado salvo em", storagePath, "size:", uploadData instanceof Blob ? (uploadData as Blob).size : (uploadData as Uint8Array).length);
+                  console.log("[d4sign-webhook] PDF assinado salvo em", storagePath, "size:", uploadBlob.size);
                 }
               } else {
                 console.error("[d4sign-webhook] download do PDF falhou:", fileResp.status);
@@ -204,7 +234,18 @@ serve(async (req: Request) => {
           console.warn("d4sign-webhook: d4sign_config não encontrada para download");
         }
       } catch (downloadErr) {
-        console.error("d4sign-webhook: erro ao baixar doc assinado:", sanitizeError(downloadErr));
+        const errMsg = sanitizeError(downloadErr);
+        console.error("[d4sign-webhook] erro ao processar doc assinado:", errMsg);
+        // Logar erro no banco para diagnóstico
+        await supabase.from("verba_indenizatoria_logs").insert({
+          document_id: doc.id,
+          action: "error",
+          details: {
+            step: "download_signed_pdf",
+            error: errMsg,
+            d4sign_uuid: d4signDocumentUuid,
+          },
+        });
       }
     } else if (type_post === "2") {
       // Documento cancelado
