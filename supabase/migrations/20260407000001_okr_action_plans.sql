@@ -77,6 +77,16 @@ CREATE INDEX IF NOT EXISTS idx_okr_action_tasks_status
 ALTER TABLE okr_action_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE okr_action_tasks ENABLE ROW LEVEL SECURITY;
 
+-- Drop policies existentes para idempotência
+DROP POLICY IF EXISTS "okr_action_plans_select" ON okr_action_plans;
+DROP POLICY IF EXISTS "okr_action_plans_insert" ON okr_action_plans;
+DROP POLICY IF EXISTS "okr_action_plans_update" ON okr_action_plans;
+DROP POLICY IF EXISTS "okr_action_plans_delete" ON okr_action_plans;
+DROP POLICY IF EXISTS "okr_action_tasks_select" ON okr_action_tasks;
+DROP POLICY IF EXISTS "okr_action_tasks_insert" ON okr_action_tasks;
+DROP POLICY IF EXISTS "okr_action_tasks_update" ON okr_action_tasks;
+DROP POLICY IF EXISTS "okr_action_tasks_delete" ON okr_action_tasks;
+
 -- okr_action_plans: SELECT — apenas empresas que o usuário tem acesso
 CREATE POLICY "okr_action_plans_select"
   ON okr_action_plans FOR SELECT
