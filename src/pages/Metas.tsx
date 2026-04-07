@@ -285,7 +285,9 @@ function normalizeImportText(value: string | null | undefined) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ");
+    .replace(/&/g, " e ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function parseImportNumber(value: string | null | undefined): number | null {
