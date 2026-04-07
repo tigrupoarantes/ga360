@@ -1368,6 +1368,111 @@ export type Database = {
           },
         ]
       }
+      okr_action_plans: {
+        Row: {
+          id: string
+          company_id: string | null
+          objective_id: string
+          title: string
+          description: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          company_id?: string | null
+          objective_id: string
+          title: string
+          description?: string | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          company_id?: string | null
+          objective_id?: string
+          title?: string
+          description?: string | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "okr_action_plans_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "okr_action_plans_objective_id_fkey"
+            columns: ["objective_id"]
+            isOneToOne: false
+            referencedRelation: "okr_objectives"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      okr_action_tasks: {
+        Row: {
+          id: string
+          action_plan_id: string
+          title: string
+          description: string | null
+          assignee_id: string
+          start_date: string
+          end_date: string
+          status: string
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          action_plan_id: string
+          title: string
+          description?: string | null
+          assignee_id: string
+          start_date: string
+          end_date: string
+          status?: string
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          action_plan_id?: string
+          title?: string
+          description?: string | null
+          assignee_id?: string
+          start_date?: string
+          end_date?: string
+          status?: string
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "okr_action_tasks_action_plan_id_fkey"
+            columns: ["action_plan_id"]
+            isOneToOne: false
+            referencedRelation: "okr_action_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "okr_action_tasks_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       okr_key_result_updates: {
         Row: {
           created_at: string | null

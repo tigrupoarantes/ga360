@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { KeyResultFormDialog } from "./KeyResultFormDialog";
 import { KeyResultUpdateDialog } from "./KeyResultUpdateDialog";
+import { ActionPlanSection } from "./ActionPlanSection";
 import { cn } from "@/lib/utils";
 
 interface ObjectiveCardProps {
@@ -216,6 +217,11 @@ export function ObjectiveCard({
               )}
             </div>
           )}
+
+          {/* Planos de Ação SMART */}
+          <div className="mt-1 border-t border-border/30 pt-1">
+            <ActionPlanSection objectiveId={objective.id} />
+          </div>
         </CardContent>
       </Card>
 
