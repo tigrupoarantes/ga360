@@ -19,6 +19,9 @@ export default function OKRs() {
           <p className="text-muted-foreground">
             Objectives and Key Results {selectedCompany ? `- ${selectedCompany.name}` : ""}
           </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            <span className="font-medium">SMART</span> — Específicas · Mensuráveis · Atingíveis · Relevantes · Temporais
+          </p>
         </div>
 
         {!selectedCompany && (
