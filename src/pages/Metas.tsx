@@ -21,15 +21,25 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
   CalendarDays,
   Loader2,
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Target,
   Trash2,
+  Trophy,
   Upload,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/external-client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -48,12 +58,13 @@ interface Goal {
   current_value: number;
   start_date: string | null;
   end_date: string | null;
-  cadence: "monthly" | "activity" | "quarterly" | "annual";
+  cadence: "monthly" | "activity" | "quarterly" | "annual" | "semester";
   status: "active" | "completed" | "paused" | "cancelled";
   indicator_type?: string | null;
   evaluation_points?: number | null;
   gamification_weight?: number | null;
   effective_value?: number | null;
+  kpi_n1?: string | null;
   created_at: string;
 }
 
@@ -168,37 +179,52 @@ const formatWeight = (value: number | null | undefined) => {
   return Number.isInteger(value) ? String(value) : value.toLocaleString("pt-BR");
 };
 
-type ImportHeader =
-  | "EMPRESA"
-  | "ÁREA / DEPARTAMENTO"
-  | "TIPO INDICADOR"
-  | "PILAR ESTRATÉGICO"
-  | "KPI"
-  | "META"
-  | "PONTOS POR AVALIAÇÃO"
-  | "FRENQUENCIA AVALIAÇÃO"
-  | "EFETIVO";
+const cadenceLabel: Record<Goal["cadence"], string> = {
+  monthly: "Mensal",
+  quarterly: "Trimestral",
+  semester: "Semestral",
+  annual: "Anual",
+  activity: "Atividade",
+};
 
-type ImportRow = Record<ImportHeader, string>;
+const indicatorBadgeClass: Record<string, string> = {
+  PROJETO: "bg-blue-500/15 text-blue-600 border-blue-500/40",
+  PROCESSO: "bg-amber-500/15 text-amber-600 border-amber-500/40",
+  PERFORMANCE: "bg-emerald-500/15 text-emerald-600 border-emerald-500/40",
+};
 
-interface ImportPreviewRow {
-  rowNumber: number;
-  raw: ImportRow;
-  companyId: string | null;
-  companyName: string | null;
-  areaId: string | null;
-  areaName: string | null;
-  goalType: Goal["type"];
-  cadence: Goal["cadence"];
-  pillar: Goal["pillar"];
-  targetValue: number | null;
-  currentValue: number;
-  evaluationPoints: number | null;
-  effectiveValue: number | null;
-  errors: string[];
-}
+const pillarLabel: Record<NonNullable<Goal["pillar"]>, string> = {
+  FAT: "Faturamento",
+  RT: "Rentabilidade",
+  CO: "Clima Org.",
+  MS: "Market Share",
+  SC: "Satisfação Cliente",
+  DN: "Distribuição Num.",
+  ESG: "ESG",
+};
 
-const REQUIRED_IMPORT_HEADERS: ImportHeader[] = [
+const computeGoalPoints = (goal: Goal) => {
+  const weight = goal.gamification_weight ?? 1;
+  const evalPoints = goal.evaluation_points;
+  if (evalPoints != null && evalPoints > 0) {
+    return {
+      responsible: Math.round(evalPoints * weight),
+      creator: Math.round(evalPoints * 0.4 * weight),
+      basis: `${evalPoints} × peso ${formatWeight(weight)}`,
+    };
+  }
+  return {
+    responsible: Math.round(50 * weight),
+    creator: Math.round(20 * weight),
+    basis: `Fallback legacy (peso ${formatWeight(weight)})`,
+  };
+};
+
+type ImportFormat = "legacy" | "pe2026";
+
+type ImportRow = Record<string, string>;
+
+const LEGACY_REQUIRED_HEADERS = [
   "EMPRESA",
   "ÁREA / DEPARTAMENTO",
   "TIPO INDICADOR",
@@ -208,7 +234,50 @@ const REQUIRED_IMPORT_HEADERS: ImportHeader[] = [
   "PONTOS POR AVALIAÇÃO",
   "FRENQUENCIA AVALIAÇÃO",
   "EFETIVO",
-];
+] as const;
+
+const PE2026_REQUIRED_HEADERS = [
+  "EMPRESA",
+  "ÁREA",
+  "INDICADOR",
+  "PILAR",
+  "KPI (N1)",
+  "AÇÃO",
+  "PONTOS POR AVALIACAO",
+  "FREQUENCIA AVALIAÇÃO",
+] as const;
+
+interface ImportPreviewRow {
+  rowNumber: number;
+  raw: ImportRow;
+  format: ImportFormat;
+  companyId: string | null;
+  companyName: string | null;
+  areaId: string | null;
+  areaName: string | null;
+  title: string;
+  kpiN1: string | null;
+  description: string | null;
+  goalType: Goal["type"];
+  cadence: Goal["cadence"];
+  pillar: Goal["pillar"];
+  indicatorType: string | null;
+  targetValue: number | null;
+  currentValue: number;
+  evaluationPoints: number | null;
+  effectiveValue: number | null;
+  errors: string[];
+}
+
+function detectImportFormat(headers: string[]): ImportFormat {
+  const norm = headers.map((h) => h.trim().toUpperCase());
+  if (norm.includes("KPI (N1)") && norm.includes("AÇÃO")) return "pe2026";
+  return "legacy";
+}
+
+function getRequiredHeaders(format: ImportFormat): readonly string[] {
+  return format === "pe2026" ? PE2026_REQUIRED_HEADERS : LEGACY_REQUIRED_HEADERS;
+}
 
 function normalizeImportText(value: string | null | undefined) {
   return String(value || "")
@@ -244,6 +313,7 @@ function parseImportNumber(value: string | null | undefined): number | null {
 function mapImportCadence(value: string): Goal["cadence"] {
   const normalized = normalizeImportText(value);
   if (normalized.includes("trimes")) return "quarterly";
+  if (normalized.includes("semestr")) return "semester";
   if (normalized.includes("anual")) return "annual";
   if (normalized.includes("atividade")) return "activity";
   return "monthly";
@@ -253,6 +323,7 @@ function mapImportGoalType(value: string): Goal["type"] {
   const normalized = normalizeImportText(value);
   if (normalized.includes("process")) return "activity";
   if (normalized.includes("performance")) return "numeric";
+  if (normalized.includes("projet")) return "numeric";
   return "hybrid";
 }
 
@@ -309,7 +380,7 @@ function detectCsvDelimiter(headerLine: string) {
 export default function Metas() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { checkPermission } = useAuth();
+  const { checkPermission, user } = useAuth();
   const { selectedCompanyId } = useCompany();
   const db = supabase as unknown as DynamicSupabaseClient;
 
@@ -319,6 +390,9 @@ export default function Metas() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [pillarFilter, setPillarFilter] = useState<string>("all");
+  const [indicatorFilter, setIndicatorFilter] = useState<string>("all");
+  const [definedFilter, setDefinedFilter] = useState<string>("all");
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
 
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
@@ -383,7 +457,7 @@ export default function Metas() {
       let query = db
         .from<Goal[]>("goals")
         .select(
-          "id, company_id, area_id, title, description, type, pillar, unit, target_value, current_value, start_date, end_date, cadence, status, indicator_type, evaluation_points, gamification_weight, effective_value, created_at"
+          "id, company_id, area_id, title, description, type, pillar, unit, target_value, current_value, start_date, end_date, cadence, status, indicator_type, evaluation_points, gamification_weight, effective_value, kpi_n1, created_at"
         )
         .order("created_at", { ascending: false });
 
@@ -394,6 +468,46 @@ export default function Metas() {
       const { data, error } = await query;
       if (error) throw error;
       return (data || []) as Goal[];
+    },
+  });
+
+  // Summary de gamificação do usuário (pontos via metas + nivel)
+  const gamificationSummaryQuery = useQuery({
+    queryKey: ["metas", "gamification-summary", user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      const [pointsRes, userPointsRes] = await Promise.all([
+        db
+          .from<Array<{ points: number; action_type: string }>>("points_history")
+          .select("points, action_type")
+          .eq("user_id", user!.id),
+        db
+          .from<{ total_points_earned: number; level: number; points: number }>("user_points")
+          .select("total_points_earned, level, points")
+          .eq("user_id", user!.id)
+          .single(),
+      ]);
+      const history = (pointsRes.data || []) as Array<{ points: number; action_type: string }>;
+      const goalPoints = history
+        .filter((h) => h.action_type === "goal_achieved" || h.action_type === "goal_achieved_team")
+        .reduce((sum, h) => sum + (h.points || 0), 0);
+      const goalCount = history.filter(
+        (h) => h.action_type === "goal_achieved" || h.action_type === "goal_achieved_team"
+      ).length;
+      const userPoints = (userPointsRes.data || null) as
+        | { total_points_earned: number; level: number; points: number }
+        | null;
+      const level = userPoints?.level ?? 1;
+      const totalPts = userPoints?.total_points_earned ?? 0;
+      const nextLevelPts = level * level * 100;
+      return {
+        goalPoints,
+        goalCount,
+        totalPoints: totalPts,
+        level,
+        nextLevelPts,
+        ptsToNext: Math.max(nextLevelPts - totalPts, 0),
+      };
     },
   });
 
@@ -429,14 +543,57 @@ export default function Metas() {
 
     return (goalsQuery.data || []).filter((goal) => {
       const statusMatch = statusFilter === "all" || goal.status === statusFilter;
+      const pillarMatch = pillarFilter === "all" || goal.pillar === pillarFilter;
+      const indicatorMatch =
+        indicatorFilter === "all" || (goal.indicator_type ?? "").toUpperCase() === indicatorFilter;
+      const definedMatch =
+        definedFilter === "all" ||
+        (definedFilter === "defined" && goal.target_value !== null) ||
+        (definedFilter === "todefine" && goal.target_value === null);
       const searchMatch =
         term.length === 0 ||
         goal.title.toLowerCase().includes(term) ||
-        (goal.description ?? "").toLowerCase().includes(term);
+        (goal.description ?? "").toLowerCase().includes(term) ||
+        (goal.kpi_n1 ?? "").toLowerCase().includes(term);
 
-      return statusMatch && searchMatch;
+      return statusMatch && pillarMatch && indicatorMatch && definedMatch && searchMatch;
     });
-  }, [goalsQuery.data, searchTerm, statusFilter]);
+  }, [goalsQuery.data, searchTerm, statusFilter, pillarFilter, indicatorFilter, definedFilter]);
+
+  // Agrupar por ÁREA → INDICADOR → metas
+  const groupedByArea = useMemo(() => {
+    type IndicatorGroup = { indicator: string; goals: Goal[] };
+    type AreaGroup = { areaId: string | null; areaName: string; indicators: IndicatorGroup[]; total: number };
+
+    const map = new Map<string, AreaGroup>();
+    for (const goal of filteredGoals) {
+      const areaKey = goal.area_id ?? "__none__";
+      const areaName = goal.area_id ? areaNameMap.get(goal.area_id) ?? "Sem área" : "Sem área";
+      let group = map.get(areaKey);
+      if (!group) {
+        group = { areaId: goal.area_id, areaName, indicators: [], total: 0 };
+        map.set(areaKey, group);
+      }
+      const indicator = (goal.indicator_type ?? "OUTROS").toUpperCase();
+      let indicatorGroup = group.indicators.find((g) => g.indicator === indicator);
+      if (!indicatorGroup) {
+        indicatorGroup = { indicator, goals: [] };
+        group.indicators.push(indicatorGroup);
+      }
+      indicatorGroup.goals.push(goal);
+      group.total += 1;
+    }
+    // Ordenar áreas alfabeticamente, indicadores em ordem fixa
+    const indicatorOrder = ["PROJETO", "PERFORMANCE", "PROCESSO", "OUTROS"];
+    return Array.from(map.values())
+      .sort((a, b) => a.areaName.localeCompare(b.areaName))
+      .map((area) => ({
+        ...area,
+        indicators: area.indicators.sort(
+          (a, b) => indicatorOrder.indexOf(a.indicator) - indicatorOrder.indexOf(b.indicator)
+        ),
+      }));
+  }, [filteredGoals, areaNameMap]);
 
   const closeImportDialog = () => {
     setImportDialogOpen(false);
@@ -446,20 +603,34 @@ export default function Metas() {
     setImportSummary(null);
   };
 
-  const buildImportPreview = (rows: ImportRow[]) => {
+  const buildImportPreview = (rows: ImportRow[], format: ImportFormat) => {
     const previewRows: ImportPreviewRow[] = rows.map((row, index) => {
       const errors: string[] = [];
+      const isPe2026 = format === "pe2026";
+
+      // Mapeamento de campos por formato
       const companyNameRaw = row["EMPRESA"] || "";
-      const areaNameRaw = row["ÁREA / DEPARTAMENTO"] || "";
-      const kpi = row["KPI"] || "";
+      const areaNameRaw = isPe2026 ? row["ÁREA"] || "" : row["ÁREA / DEPARTAMENTO"] || "";
+      const indicatorRaw = isPe2026 ? row["INDICADOR"] || "" : row["TIPO INDICADOR"] || "";
+      const pilarRaw = isPe2026 ? row["PILAR"] || "" : row["PILAR ESTRATÉGICO"] || "";
+      const cadenceRaw = isPe2026 ? row["FREQUENCIA AVALIAÇÃO"] || "" : row["FRENQUENCIA AVALIAÇÃO"] || "";
+      const evalPointsRaw = isPe2026 ? row["PONTOS POR AVALIACAO"] || "" : row["PONTOS POR AVALIAÇÃO"] || "";
+
+      // Title vem de AÇÃO (PE2026) ou KPI (legacy)
+      const title = isPe2026 ? (row["AÇÃO"] || "").trim() : (row["KPI"] || "").trim();
+      // KPI N1 é categoria — só existe no formato novo
+      const kpiN1 = isPe2026 ? (row["KPI (N1)"] || "").trim() || null : null;
+      // Description vem de OBSERVAÇÃO DA META (PE2026) ou é construída (legacy)
+      const observation = isPe2026 ? (row["OBSERVAÇÃO DA META"] || "").trim() : "";
+
       const company =
         companyByNameMap.get(normalizeImportText(companyNameRaw)) ||
         (selectedCompanyId
           ? (companiesQuery.data || []).find((entry) => entry.id === selectedCompanyId) || null
           : null);
 
-      if (!company) errors.push("Empresa não encontrada");
-      if (!kpi.trim()) errors.push("KPI obrigatório");
+      if (!company) errors.push(`Empresa "${companyNameRaw}" não encontrada`);
+      if (!title) errors.push(isPe2026 ? "AÇÃO obrigatória" : "KPI obrigatório");
 
       const area =
         company && areaNameRaw.trim()
@@ -467,24 +638,41 @@ export default function Metas() {
           : null;
 
       if (areaNameRaw.trim() && !area) {
-        errors.push("Área/Departamento não encontrado");
+        errors.push(`Área "${areaNameRaw}" não cadastrada para esta empresa`);
       }
 
+      // META vem vazia no PE2026 — não bloquear
       const targetValue = parseImportNumber(row["META"]);
       const currentValue = parseImportNumber(row["EFETIVO"]) ?? 0;
-      const evaluationPoints = parseImportNumber(row["PONTOS POR AVALIAÇÃO"]);
+      const evaluationPoints = parseImportNumber(evalPointsRaw);
       const effectiveValue = parseImportNumber(row["EFETIVO"]);
+
+      // Description final
+      const description = isPe2026
+        ? observation || null
+        : ([
+            indicatorRaw ? `Tipo indicador: ${indicatorRaw}` : null,
+            pilarRaw ? `Pilar original: ${pilarRaw}` : null,
+            areaNameRaw ? `Área/Departamento origem: ${areaNameRaw}` : null,
+          ]
+            .filter(Boolean)
+            .join(" | ") || null);
 
       return {
         rowNumber: index + 2,
         raw: row,
+        format,
         companyId: company?.id || null,
         companyName: company?.name || null,
         areaId: area?.id || null,
         areaName: area?.name || null,
-        goalType: mapImportGoalType(row["TIPO INDICADOR"]),
-        cadence: mapImportCadence(row["FRENQUENCIA AVALIAÇÃO"]),
-        pillar: mapImportPillar(row["PILAR ESTRATÉGICO"]),
+        title,
+        kpiN1,
+        description,
+        goalType: mapImportGoalType(indicatorRaw),
+        cadence: mapImportCadence(cadenceRaw),
+        pillar: mapImportPillar(pilarRaw),
+        indicatorType: indicatorRaw.trim() ? indicatorRaw.trim().toUpperCase() : null,
         targetValue,
         currentValue,
         evaluationPoints,
@@ -515,24 +703,29 @@ export default function Metas() {
       }
 
       const delimiter = detectCsvDelimiter(lines[0]);
-      const headers = splitCsvLine(lines[0], delimiter) as ImportHeader[];
-      const missingHeaders = REQUIRED_IMPORT_HEADERS.filter((header) => !headers.includes(header));
+      const headers = splitCsvLine(lines[0], delimiter);
+      const format = detectImportFormat(headers);
+      const requiredHeaders = getRequiredHeaders(format);
+      const missingHeaders = requiredHeaders.filter((header) => !headers.includes(header));
 
       if (missingHeaders.length > 0) {
-        throw new Error(`Cabeçalhos ausentes: ${missingHeaders.join(", ")}`);
+        throw new Error(
+          `Cabeçalhos ausentes (formato ${format === "pe2026" ? "PE 2026" : "legacy"}): ${missingHeaders.join(", ")}`
+        );
       }
 
+      // Constrói rows preservando todos os headers presentes (não só os obrigatórios)
       const rows: ImportRow[] = lines.slice(1).map((line) => {
         const values = splitCsvLine(line, delimiter);
-        return REQUIRED_IMPORT_HEADERS.reduce((acc, header) => {
-          const index = headers.indexOf(header);
-          acc[header] = index >= 0 ? (values[index] || "") : "";
-          return acc;
-        }, {} as ImportRow);
+        const row: ImportRow = {};
+        headers.forEach((header, idx) => {
+          row[header] = values[idx] || "";
+        });
+        return row;
       });
 
       setImportFileName(file.name);
-      buildImportPreview(rows);
+      buildImportPreview(rows, format);
     } catch (error) {
       setImportFileName(file.name);
       setImportPreview([]);
@@ -700,37 +893,34 @@ export default function Metas() {
         throw new Error("Nenhuma linha válida encontrada para importação.");
       }
 
-      const payload = validRows.map((row) => {
-        const indicatorType = row.raw["TIPO INDICADOR"]?.trim() || null;
-        const areaDepartment = row.raw["ÁREA / DEPARTAMENTO"]?.trim();
-        const rawDescription = [
-          row.raw["KPI"]?.trim() ? null : null,
-          indicatorType ? `Tipo indicador: ${indicatorType}` : null,
-          row.raw["PILAR ESTRATÉGICO"]?.trim() ? `Pilar original: ${row.raw["PILAR ESTRATÉGICO"].trim()}` : null,
-          areaDepartment ? `Área/Departamento origem: ${areaDepartment}` : null,
-        ].filter(Boolean).join(" | ");
+      const payload = validRows.map((row) => ({
+        company_id: row.companyId,
+        area_id: row.areaId,
+        title: row.title,
+        description: row.description,
+        type: row.goalType,
+        pillar: row.pillar,
+        target_value: row.targetValue,
+        current_value: row.currentValue,
+        cadence: row.cadence,
+        status: "active" as Goal["status"],
+        indicator_type: row.indicatorType,
+        evaluation_points: row.evaluationPoints,
+        gamification_weight: 1,
+        effective_value: row.effectiveValue,
+        kpi_n1: row.kpiN1,
+      }));
 
-        return {
-          company_id: row.companyId,
-          area_id: row.areaId,
-          title: row.raw["KPI"].trim(),
-          description: rawDescription || null,
-          type: row.goalType,
-          pillar: row.pillar,
-          target_value: row.targetValue,
-          current_value: row.currentValue,
-          cadence: row.cadence,
-          status: "active" as Goal["status"],
-          indicator_type: indicatorType,
-          evaluation_points: row.evaluationPoints,
-          gamification_weight: 1,
-          effective_value: row.effectiveValue,
-        };
-      });
-
-      const { error } = await db.from("goals").insert(payload);
-      if (error) throw error;
-      return payload.length;
+      // Insert em chunks de 100 para evitar timeout em CSVs grandes (~520 linhas)
+      const CHUNK_SIZE = 100;
+      let inserted = 0;
+      for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
+        const chunk = payload.slice(i, i + CHUNK_SIZE);
+        const { error } = await db.from("goals").insert(chunk);
+        if (error) throw error;
+        inserted += chunk.length;
+      }
+      return inserted;
     },
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: goalsKey });
@@ -901,7 +1091,9 @@ export default function Metas() {
         <div className="flex items-center justify-between animate-fade-in">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Metas</h1>
-            <p className="text-muted-foreground mt-1">Gestão operacional do portal de metas (Fase 2)</p>
+            <p className="text-muted-foreground mt-1">
+              Portal de Metas — PE 2026 (CRESCER+ &amp; MELHOR) · agrupamento por área e indicador
+            </p>
           </div>
 
           {canCreate && (
@@ -931,16 +1123,54 @@ export default function Metas() {
           </Card>
         )}
 
+        {gamificationSummaryQuery.data && (
+          <Card className="p-4 bg-gradient-to-r from-primary/5 via-primary/10 to-transparent border-primary/20">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-primary/15 p-2">
+                  <Trophy className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Sua gamificação via Metas</p>
+                  <p className="text-xs text-muted-foreground">
+                    Os pontos das metas concluídas alimentam diretamente o ranking global.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <Badge variant="outline" className="text-xs">
+                  Nível {gamificationSummaryQuery.data.level}
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {gamificationSummaryQuery.data.totalPoints} pts totais
+                </Badge>
+                <Badge variant="secondary" className="text-xs">
+                  {gamificationSummaryQuery.data.goalPoints} pts via metas ({gamificationSummaryQuery.data.goalCount})
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {gamificationSummaryQuery.data.ptsToNext} pts para o próximo nível
+                </Badge>
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/gamificacao" className="gap-1">
+                    <Trophy className="h-3 w-3" />
+                    Ver ranking
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-4">
-            <Card className="p-4 animate-fade-in-up">
-              <div className="flex flex-wrap gap-4">
+            <Card className="p-4 animate-fade-in-up space-y-3">
+              <div className="flex flex-wrap gap-3">
                 <div className="flex-1 min-w-[240px]">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       type="search"
-                      placeholder="Buscar metas..."
+                      placeholder="Buscar por ação, KPI N1 ou descrição..."
                       className="pl-10"
                       value={searchTerm}
                       onChange={(event) => setSearchTerm(event.target.value)}
@@ -949,7 +1179,7 @@ export default function Metas() {
                 </div>
 
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-[140px]">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -958,6 +1188,47 @@ export default function Metas() {
                     <SelectItem value="completed">Concluída</SelectItem>
                     <SelectItem value="paused">Pausada</SelectItem>
                     <SelectItem value="cancelled">Cancelada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Select value={pillarFilter} onValueChange={setPillarFilter}>
+                  <SelectTrigger className="w-[170px]">
+                    <SelectValue placeholder="Pilar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos pilares</SelectItem>
+                    <SelectItem value="FAT">FAT — Faturamento</SelectItem>
+                    <SelectItem value="RT">RT — Rentabilidade</SelectItem>
+                    <SelectItem value="CO">CO — Clima Org.</SelectItem>
+                    <SelectItem value="MS">MS — Market Share</SelectItem>
+                    <SelectItem value="SC">SC — Satisfação Cliente</SelectItem>
+                    <SelectItem value="DN">DN — Distribuição Num.</SelectItem>
+                    <SelectItem value="ESG">ESG</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={indicatorFilter} onValueChange={setIndicatorFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Indicador" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos indicadores</SelectItem>
+                    <SelectItem value="PROJETO">Projeto</SelectItem>
+                    <SelectItem value="PERFORMANCE">Performance</SelectItem>
+                    <SelectItem value="PROCESSO">Processo</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={definedFilter} onValueChange={setDefinedFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Meta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas metas</SelectItem>
+                    <SelectItem value="defined">Já definidas</SelectItem>
+                    <SelectItem value="todefine">A definir</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -975,78 +1246,144 @@ export default function Metas() {
             ) : filteredGoals.length === 0 ? (
               <Card className="p-8 text-center text-muted-foreground">Nenhuma meta encontrada.</Card>
             ) : (
-              <div className="grid gap-4 animate-fade-in-up">
-                {filteredGoals.map((goal) => {
-                  const isSelected = goal.id === selectedGoalId;
-
-                  return (
-                    <Card
-                      key={goal.id}
-                      className={`p-4 cursor-pointer transition-colors ${
-                        isSelected ? "border-primary/60" : "hover:border-primary/30"
-                      }`}
-                      onClick={() => setSelectedGoalId(goal.id)}
+              <TooltipProvider delayDuration={200}>
+                <Accordion
+                  type="multiple"
+                  defaultValue={groupedByArea.slice(0, 3).map((g) => g.areaId ?? "__none__")}
+                  className="space-y-2 animate-fade-in-up"
+                >
+                  {groupedByArea.map((area) => (
+                    <AccordionItem
+                      key={area.areaId ?? "__none__"}
+                      value={area.areaId ?? "__none__"}
+                      className="border rounded-md bg-card"
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Target className="h-4 w-4 text-muted-foreground" />
-                            <h3 className="font-semibold text-foreground">{goal.title}</h3>
-                          </div>
-
-                          {goal.description && (
-                            <p className="text-sm text-muted-foreground">{goal.description}</p>
-                          )}
-
-                          <div className="flex flex-wrap items-center gap-2 text-xs">
-                            <Badge variant="secondary">{statusLabel[goal.status]}</Badge>
-                            <Badge variant="outline">{typeLabel[goal.type]}</Badge>
-                            <Badge variant="outline">Peso {formatWeight(goal.gamification_weight ?? 1)}</Badge>
-                            {goal.area_id && areaNameMap.get(goal.area_id) && (
-                              <Badge variant="outline">{areaNameMap.get(goal.area_id)}</Badge>
-                            )}
-                            <span className="text-muted-foreground">
-                              Progresso: {goal.current_value}
-                              {goal.target_value !== null ? ` / ${goal.target_value}` : ""}
-                              {goal.unit ? ` ${goal.unit}` : ""}
-                            </span>
-                          </div>
+                      <AccordionTrigger className="px-4 hover:no-underline">
+                        <div className="flex items-center gap-3 flex-1">
+                          <span className="font-semibold text-foreground">{area.areaName}</span>
+                          <Badge variant="outline">{area.total} {area.total === 1 ? "meta" : "metas"}</Badge>
                         </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-4 pb-4 space-y-4">
+                        {area.indicators.map((indGroup) => (
+                          <div key={indGroup.indicator} className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className={indicatorBadgeClass[indGroup.indicator] ?? "bg-muted"}
+                              >
+                                {indGroup.indicator}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {indGroup.goals.length} {indGroup.goals.length === 1 ? "item" : "itens"}
+                              </span>
+                            </div>
+                            <div className="grid gap-2">
+                              {indGroup.goals.map((goal) => {
+                                const isSelected = goal.id === selectedGoalId;
+                                const points = computeGoalPoints(goal);
+                                return (
+                                  <Card
+                                    key={goal.id}
+                                    className={`p-3 cursor-pointer transition-colors ${
+                                      isSelected ? "border-primary/60" : "hover:border-primary/30"
+                                    }`}
+                                    onClick={() => setSelectedGoalId(goal.id)}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="space-y-2 flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          {goal.kpi_n1 && (
+                                            <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+                                              {goal.kpi_n1}
+                                            </Badge>
+                                          )}
+                                          {goal.pillar && (
+                                            <Badge variant="outline" className="text-[10px]">
+                                              {goal.pillar} · {pillarLabel[goal.pillar]}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="flex items-start gap-2">
+                                          <Target className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                                          <h3 className="font-medium text-sm text-foreground">{goal.title}</h3>
+                                        </div>
 
-                        <div className="flex items-center gap-2">
-                          {canEdit && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openEditGoalDialog(goal);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          )}
-                          {canDelete && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDeleteGoal(goal);
-                              }}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
+                                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                                          <Badge variant="secondary">{statusLabel[goal.status]}</Badge>
+                                          <Badge variant="outline">{cadenceLabel[goal.cadence]}</Badge>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <Badge variant="outline" className="cursor-help inline-flex items-center gap-1">
+                                                <Sparkles className="h-3 w-3" />
+                                                {goal.evaluation_points ?? "—"} pts
+                                              </Badge>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="max-w-xs text-xs">
+                                              <p className="font-medium">Ao concluir esta meta:</p>
+                                              <p>+{points.responsible} pts (responsável)</p>
+                                              <p>+{points.creator} pts (criador, se diferente)</p>
+                                              <p className="text-muted-foreground mt-1">{points.basis}</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                          {goal.target_value === null ? (
+                                            <Badge
+                                              variant="outline"
+                                              className="bg-yellow-500/10 text-yellow-600 border-yellow-500/40"
+                                            >
+                                              Meta a definir
+                                            </Badge>
+                                          ) : (
+                                            <span className="text-muted-foreground">
+                                              {goal.current_value} / {goal.target_value}
+                                              {goal.unit ? ` ${goal.unit}` : ""}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {canEdit && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              openEditGoalDialog(goal);
+                                            }}
+                                          >
+                                            <Pencil className="h-3.5 w-3.5" />
+                                          </Button>
+                                        )}
+                                        {canDelete && (
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 text-destructive hover:text-destructive"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              handleDeleteGoal(goal);
+                                            }}
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </Card>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              </TooltipProvider>
             )}
           </div>
 
@@ -1062,8 +1399,13 @@ export default function Metas() {
                     <div>
                       <h2 className="text-lg font-semibold text-foreground">{selectedGoal.title}</h2>
                       <p className="text-sm text-muted-foreground mt-1">
-                        Cadência: {selectedGoal.cadence} • Status: {statusLabel[selectedGoal.status]}
+                        Cadência: {cadenceLabel[selectedGoal.cadence]} • Status: {statusLabel[selectedGoal.status]}
                       </p>
+                      {selectedGoal.kpi_n1 && (
+                        <Badge variant="secondary" className="mt-2 text-[10px] uppercase tracking-wide">
+                          {selectedGoal.kpi_n1}
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
@@ -1098,26 +1440,36 @@ export default function Metas() {
 
                   <div className="rounded-md border p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="font-medium">GamificaÃ§Ã£o</h3>
+                      <h3 className="font-medium">Gamificação</h3>
                       <Badge variant="outline">
                         Peso {formatWeight(selectedGoal.gamification_weight ?? 1)}
                       </Badge>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Peso da gamificaÃ§Ã£o</p>
-                        <p className="text-sm">{formatWeight(selectedGoal.gamification_weight ?? 1)}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-xs text-muted-foreground">Pontos por avaliaÃ§Ã£o</p>
-                        <p className="text-sm">{selectedGoal.evaluation_points ?? "â€”"}</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {selectedGoal.current_value >= (selectedGoal.target_value ?? Number.POSITIVE_INFINITY)
-                        ? "PontuaÃ§Ã£o de conclusÃ£o jÃ¡ enviada para a gamificaÃ§Ã£o."
-                        : "Ao concluir esta meta, a pontuaÃ§Ã£o considera o peso configurado. Esse peso nÃ£o altera o progresso da meta."}
-                    </p>
+                    {(() => {
+                      const pts = computeGoalPoints(selectedGoal);
+                      return (
+                        <>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Pontos por avaliação</p>
+                              <p className="text-sm">{selectedGoal.evaluation_points ?? "—"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">Ao concluir</p>
+                              <p className="text-sm">
+                                +{pts.responsible} resp · +{pts.creator} criador
+                              </p>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedGoal.target_value !== null &&
+                            selectedGoal.current_value >= selectedGoal.target_value
+                              ? "Pontuação de conclusão já enviada para a gamificação."
+                              : `Cálculo: ${pts.basis}. Não altera o progresso da meta.`}
+                          </p>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-2">
@@ -1308,10 +1660,11 @@ export default function Metas() {
           <div className="space-y-4">
             <Card className="p-4 space-y-3">
               <p className="text-sm text-muted-foreground">
-                Use o template <strong>Layout Portal Metas Ga360</strong>, salve a aba principal em
-                <strong> CSV UTF-8</strong> e envie o arquivo abaixo. O importador lê as colunas
-                EMPRESA, ÁREA / DEPARTAMENTO, TIPO INDICADOR, PILAR ESTRATÉGICO, KPI, META,
-                PONTOS POR AVALIAÇÃO, FRENQUENCIA AVALIAÇÃO e EFETIVO.
+                Use o template <strong>Layout Portal Metas Ga360</strong> (PE 2026), salve a aba principal em
+                <strong> CSV UTF-8</strong> e envie o arquivo abaixo. O importador detecta automaticamente
+                ambos os formatos: o novo PE 2026 (colunas EMPRESA, ÁREA, INDICADOR, PILAR, KPI (N1), AÇÃO,
+                PONTOS POR AVALIACAO, FREQUENCIA AVALIAÇÃO, META, OBSERVAÇÃO DA META) e o legacy.
+                Linhas com META vazia serão importadas como <strong>"A definir"</strong>.
               </p>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -1382,25 +1735,37 @@ export default function Metas() {
                         <th className="p-2 text-left">Linha</th>
                         <th className="p-2 text-left">Empresa</th>
                         <th className="p-2 text-left">Área</th>
-                        <th className="p-2 text-left">KPI</th>
-                        <th className="p-2 text-left">Tipo</th>
+                        <th className="p-2 text-left">KPI N1</th>
+                        <th className="p-2 text-left">Ação / Título</th>
+                        <th className="p-2 text-left">Indicador</th>
+                        <th className="p-2 text-left">Pilar</th>
                         <th className="p-2 text-left">Cadência</th>
+                        <th className="p-2 text-left">Pontos</th>
                         <th className="p-2 text-left">Meta</th>
-                        <th className="p-2 text-left">Efetivo</th>
                         <th className="p-2 text-left">Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {importPreview.map((row) => (
-                        <tr key={`${row.rowNumber}-${row.raw.KPI}`} className="border-t align-top">
+                        <tr key={`${row.rowNumber}-${row.title}`} className="border-t align-top">
                           <td className="p-2">{row.rowNumber}</td>
                           <td className="p-2">{row.companyName || row.raw["EMPRESA"] || "—"}</td>
-                          <td className="p-2">{row.areaName || row.raw["ÁREA / DEPARTAMENTO"] || "—"}</td>
-                          <td className="p-2 min-w-[260px]">{row.raw.KPI || "—"}</td>
-                          <td className="p-2">{row.raw["TIPO INDICADOR"] || "—"}</td>
+                          <td className="p-2">{row.areaName || "—"}</td>
+                          <td className="p-2 min-w-[140px]">{row.kpiN1 || "—"}</td>
+                          <td className="p-2 min-w-[260px]">{row.title || "—"}</td>
+                          <td className="p-2">{row.indicatorType || "—"}</td>
+                          <td className="p-2">{row.pillar || "—"}</td>
                           <td className="p-2">{row.cadence}</td>
-                          <td className="p-2">{row.targetValue ?? "—"}</td>
-                          <td className="p-2">{row.effectiveValue ?? "—"}</td>
+                          <td className="p-2">{row.evaluationPoints ?? "—"}</td>
+                          <td className="p-2">
+                            {row.targetValue !== null ? (
+                              row.targetValue
+                            ) : (
+                              <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/40">
+                                A definir
+                              </Badge>
+                            )}
+                          </td>
                           <td className="p-2">
                             {row.errors.length === 0 ? (
                               <Badge variant="secondary">Pronta</Badge>
@@ -1614,6 +1979,7 @@ export default function Metas() {
                 <SelectContent>
                   <SelectItem value="monthly">Mensal</SelectItem>
                   <SelectItem value="quarterly">Trimestral</SelectItem>
+                  <SelectItem value="semester">Semestral</SelectItem>
                   <SelectItem value="annual">Anual</SelectItem>
                   <SelectItem value="activity">Atividade</SelectItem>
                 </SelectContent>
