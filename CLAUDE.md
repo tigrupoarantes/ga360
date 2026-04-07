@@ -1,5 +1,30 @@
 # GA 360 — Guia para Claude Code
 
+## Planejamento Estratégico 2026 — Orientador Obrigatório
+
+> **Leia antes de qualquer coisa.** O PE 2026 é o norte estratégico de todo o desenvolvimento do GA360.
+
+**Documentos:**
+- Síntese Markdown: `docs/PLANEJAMENTO_ESTRATEGICO_2026.md` ← **ler sempre ao planejar features**
+- PDF completo: `docs/mvp - Livro Planejamento Estratégico 2026 - v1.pdf` (129 páginas)
+- Autor: Felipe F. Silva — Gerente de Planejamento Estratégico
+
+**Resumo do PE 2026:**
+- Tema do ano: **CRESCER+ & MELHOR** | Triênio: **TRANSFORMAÇÃO (2026–2028)**
+- Meta: **R$1 bilhão de faturamento**
+- 6 Prioridades: Rentabilidade · Excelência/Logística · Crescimento Comercial · Processo/Rotina · Pessoas · Dados/Transformação
+- 7 Pilares: Faturamento · Rentabilidade · Clima Organizacional · Market Share · Satisfação do Cliente · Distribuição Numérica · ESG
+- Scoring: 1000pts (Performance 60% + Processo 30% + Compliance 10%)
+- Empresas: Broker J Arantes · Chok Distribuidora · G4 Distribuidora · Chokdoce · Chok Agro
+
+**Regras obrigatórias:**
+1. **Toda nova feature deve ser justificada por ao menos uma das 6 Prioridades do PE.** Se não se encaixa em nenhuma, questionar a prioridade.
+2. **Usar a terminologia do PE.** "RPS" não é "daily meeting". "FGE" não é "quarterly review". "Matinal de Vendas" não é "morning standup".
+3. **Decisões estratégicas passam pelo Felipe Silva (GPE).** Mudanças que afetem KPIs, scoring, rituais de gestão ou estrutura do PE devem ser validadas com ele antes.
+4. **GA360 é o produto do Setor de Transformação.** O Setor de Transformação = Transformação Digital + Marketing + Planejamento Estratégico. O GA360 serve ao Setor de Transformação e ao grupo como um todo.
+
+---
+
 ## Sobre o Projeto
 
 Portal corporativo de gestão estratégica do **Grupo Arantes** (produto: GA 360 / CRESCER+).
@@ -250,6 +275,7 @@ Funções SQL de verificação:
 
 | Arquivo | Responsabilidade |
 |---------|-----------------|
+| `docs/PLANEJAMENTO_ESTRATEGICO_2026.md` | **NORTE ESTRATÉGICO** — ler antes de planejar qualquer feature |
 | `src/App.tsx` | Todas as rotas da aplicação |
 | `src/contexts/AuthContext.tsx` | Auth, roles, permissões |
 | `src/contexts/CompanyContext.tsx` | Empresa selecionada (multi-company) |
