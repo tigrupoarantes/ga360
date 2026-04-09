@@ -407,8 +407,13 @@ serve(async (req: Request) => {
       { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );
   } catch (error) {
+    console.error("verba-indenizatoria-query CATCH:", error);
     return new Response(
-      JSON.stringify({ error: "internal_error", details: sanitizeError(error) }),
+      JSON.stringify({
+        error: "internal_error",
+        details: sanitizeError(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
       {
         status: 500,
         headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
