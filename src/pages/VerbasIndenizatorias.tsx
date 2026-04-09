@@ -60,8 +60,8 @@ export default function VerbasIndenizatorias() {
   const documents = data?.rows ?? [];
   const total = data?.total ?? 0;
 
-  // Conta drafts pendentes e erros separadamente
-  const draftCount = documents.filter((d: any) => ['draft', 'uploaded', 'signers_added'].includes(d.d4sign_status)).length;
+  // Conta drafts (total real via stats do servidor) e erros (da página atual, pois o reprocessamento opera na página)
+  const draftCount = data?.stats?.pending ?? documents.filter((d: any) => ['draft', 'uploaded', 'signers_added'].includes(d.d4sign_status)).length;
   const errorCount = documents.filter((d: any) => d.d4sign_status === 'error').length;
 
   async function handleSendDrafts() {
@@ -343,7 +343,7 @@ export default function VerbasIndenizatorias() {
         )}
 
         {/* KPI cards */}
-        <VIStatusDashboard documents={documents} total={total} companyId={selectedCompanyId} />
+        <VIStatusDashboard documents={documents} total={total} companyId={selectedCompanyId} serverStats={data?.stats} />
 
         {/* Cards por CNPJ (empresa contábil) */}
         {filters.competencia && cnpjGroups.length > 0 && (

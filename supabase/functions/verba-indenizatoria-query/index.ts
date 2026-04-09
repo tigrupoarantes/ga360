@@ -10,7 +10,7 @@ function sanitizeError(error: unknown): string {
 }
 
 interface QueryRequest {
-  companyId: string;
+  companyId?: string;
   fetchEmployeesWithVerba?: boolean;
   fetchAccountingGroups?: boolean;
   fetchCnpjGroups?: boolean;
@@ -84,13 +84,6 @@ serve(async (req: Request) => {
       fetchLogs,
     } = body;
 
-    if (!companyId) {
-      return new Response(JSON.stringify({ error: "companyId é obrigatório" }), {
-        status: 400,
-        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-      });
-    }
-
     // Verificar permissão: super_admin ou permissão de card EC
     const { data: profile } = await supabase
       .from("profiles")
@@ -98,7 +91,17 @@ serve(async (req: Request) => {
       .eq("id", user.id)
       .maybeSingle();
 
-    const isSuperAdmin = profile?.role === "super_admin";
+    const userRole = profile?.role ?? "";
+    const isSuperAdmin = userRole === "super_admin";
+    const isLeadership = ["super_admin", "ceo", "diretor"].includes(userRole);
+
+    // companyId é obrigatório para roles não-liderança
+    if (!companyId && !isLeadership) {
+      return new Response(JSON.stringify({ error: "companyId é obrigatório" }), {
+        status: 400,
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      });
+    }
 
     if (!isSuperAdmin) {
       // Buscar UUID do card "Verbas Indenizatórias"
@@ -125,23 +128,25 @@ serve(async (req: Request) => {
         }
       }
 
-      // Verificar acesso à empresa
-      const { data: userCompany } = await supabase
-        .from("user_companies")
-        .select("company_id, all_companies")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle();
+      // Verificar acesso à empresa (pular se visão global de liderança)
+      if (companyId) {
+        const { data: userCompany } = await supabase
+          .from("user_companies")
+          .select("company_id, all_companies")
+          .eq("user_id", user.id)
+          .limit(1)
+          .maybeSingle();
 
-      const hasCompanyAccess =
-        userCompany?.all_companies ||
-        userCompany?.company_id === companyId;
+        const hasCompanyAccess =
+          userCompany?.all_companies ||
+          userCompany?.company_id === companyId;
 
-      if (!hasCompanyAccess) {
-        return new Response(JSON.stringify({ error: "forbidden" }), {
-          status: 403,
-          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-        });
+        if (!hasCompanyAccess) {
+          return new Response(JSON.stringify({ error: "forbidden" }), {
+            status: 403,
+            headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+          });
+        }
       }
     }
 
@@ -350,10 +355,10 @@ serve(async (req: Request) => {
     let query = supabase
       .from("verba_indenizatoria_documents")
       .select("*", { count: "exact" })
-      .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .range(offset, offset + pageSize - 1);
 
+    if (companyId) query = query.eq("company_id", companyId);
     if (competencia) query = query.eq("competencia", competencia);
     if (cpf) query = query.eq("employee_cpf", cpf);
     if (status) query = query.eq("d4sign_status", status);
@@ -368,6 +373,28 @@ serve(async (req: Request) => {
       );
     }
 
+    // Stats: contar por grupo de status (mesmos filtros, sem paginação)
+    let statsQuery = supabase
+      .from("verba_indenizatoria_documents")
+      .select("d4sign_status");
+
+    if (companyId) statsQuery = statsQuery.eq("company_id", companyId);
+    if (competencia) statsQuery = statsQuery.eq("competencia", competencia);
+    if (cpf) statsQuery = statsQuery.eq("employee_cpf", cpf);
+    if (status) statsQuery = statsQuery.eq("d4sign_status", status);
+    if (cnpj) statsQuery = statsQuery.eq("employee_accounting_cnpj", cnpj);
+
+    const { data: statusRows } = await statsQuery;
+
+    const stats = { signed: 0, pending: 0, awaiting: 0, errors: 0 };
+    for (const r of statusRows ?? []) {
+      const s = r.d4sign_status;
+      if (s === "signed") stats.signed++;
+      else if (["draft", "uploaded", "signers_added"].includes(s)) stats.pending++;
+      else if (["sent_to_sign", "waiting_signature"].includes(s)) stats.awaiting++;
+      else if (["error", "expired", "cancelled"].includes(s)) stats.errors++;
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -375,6 +402,7 @@ serve(async (req: Request) => {
         pageSize,
         total: count ?? 0,
         rows: rows ?? [],
+        stats,
       }),
       { status: 200, headers: { ...getCorsHeaders(req), "Content-Type": "application/json" } },
     );

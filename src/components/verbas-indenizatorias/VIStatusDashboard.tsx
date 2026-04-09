@@ -1,18 +1,24 @@
 import { useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { FileText, Clock, CheckCircle2, AlertCircle, PackageCheck } from 'lucide-react';
-import type { VIDocument } from '@/hooks/useVerbasIndenizatorias';
+import type { VIDocument, VIStats } from '@/hooks/useVerbasIndenizatorias';
 import { useD4SignBalance } from '@/hooks/useVerbasIndenizatorias';
 
 interface Props {
   documents: VIDocument[];
   total: number;
   companyId?: string | null;
+  serverStats?: VIStats;
 }
 
-export function VIStatusDashboard({ documents, total, companyId }: Props) {
+export function VIStatusDashboard({ documents, total, companyId, serverStats }: Props) {
   const { data: balance } = useD4SignBalance(companyId ?? null);
   const stats = useMemo(() => {
+    if (serverStats) {
+      const pct = total > 0 ? Math.round((serverStats.signed / total) * 100) : 0;
+      return { ...serverStats, pct };
+    }
+    // Fallback: computar a partir dos documentos da página (backward compat)
     const signed = documents.filter((d) => d.d4sign_status === 'signed').length;
     const pending = documents.filter((d) =>
       ['draft', 'uploaded', 'signers_added'].includes(d.d4sign_status),
@@ -25,7 +31,7 @@ export function VIStatusDashboard({ documents, total, companyId }: Props) {
     ).length;
     const pct = total > 0 ? Math.round((signed / total) * 100) : 0;
     return { signed, pending, awaiting, errors, pct };
-  }, [documents, total]);
+  }, [serverStats, documents, total]);
 
   const cards = [
     {

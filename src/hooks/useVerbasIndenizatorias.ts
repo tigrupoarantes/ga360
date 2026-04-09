@@ -65,11 +65,19 @@ export interface VIQueryFilters {
   pageSize?: number;
 }
 
+export interface VIStats {
+  signed: number;
+  pending: number;
+  awaiting: number;
+  errors: number;
+}
+
 interface VIQueryResult {
   rows: VIDocument[];
   total: number;
   page: number;
   pageSize: number;
+  stats?: VIStats;
 }
 
 async function callEdgeFunction<T>(
@@ -104,10 +112,10 @@ export function useVerbasIndenizatorias(
     queryFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
-      if (!token || !companyId) return { rows: [], total: 0, page: 1, pageSize: 50 };
+      if (!token) return { rows: [], total: 0, page: 1, pageSize: 50 };
 
       return callEdgeFunction<VIQueryResult>(token, 'verba-indenizatoria-query', {
-        companyId,
+        ...(companyId ? { companyId } : {}),
         ...(filters.competencia ? { competencia: filters.competencia } : {}),
         ...(filters.cpf ? { cpf: filters.cpf } : {}),
         ...(filters.status ? { status: filters.status } : {}),
@@ -117,7 +125,7 @@ export function useVerbasIndenizatorias(
         pageSize: filters.pageSize,
       });
     },
-    enabled: !!companyId,
+    enabled: true,
     staleTime: 30_000,
   });
 }
