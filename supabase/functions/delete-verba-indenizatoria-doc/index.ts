@@ -58,13 +58,13 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: profile } = await supabase
-      .from("profiles")
+    const { data: userRoleRow } = await supabase
+      .from("user_roles")
       .select("role")
-      .eq("id", user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
-    const isSuperAdmin = profile?.role === "super_admin";
+    const isSuperAdmin = userRoleRow?.role === "super_admin";
 
     if (!isSuperAdmin) {
       const { data: cardRow } = await supabase
