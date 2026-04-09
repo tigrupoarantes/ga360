@@ -85,13 +85,13 @@ serve(async (req: Request) => {
     } = body;
 
     // Verificar permissão: super_admin ou permissão de card EC
-    const { data: profile } = await supabase
-      .from("profiles")
+    const { data: userRoleRow } = await supabase
+      .from("user_roles")
       .select("role")
-      .eq("id", user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
-    const userRole = profile?.role ?? "";
+    const userRole = (userRoleRow?.role as string) ?? "";
     const isSuperAdmin = userRole === "super_admin";
     const isLeadership = ["super_admin", "ceo", "diretor"].includes(userRole);
 
