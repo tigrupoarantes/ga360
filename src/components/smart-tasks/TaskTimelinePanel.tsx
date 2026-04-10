@@ -91,9 +91,7 @@ export function TaskTimelinePanel({
     const offset = differenceInDays(start, minDate);
     const duration = Math.max(1, differenceInDays(end, start));
     const resolved = resolveStatus(task);
-    const assigneeName = task.assignee
-      ? `${task.assignee.first_name || ""} ${task.assignee.last_name || ""}`.trim()
-      : "—";
+    const assigneeName = task.assignee_name || "—";
 
     return {
       name: task.title.length > 30 ? task.title.substring(0, 30) + "..." : task.title,
@@ -217,9 +215,7 @@ export function TaskTimelinePanel({
                   <div className="space-y-0.5">
                     <p className="text-sm font-medium">{task.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      {task.assignee
-                        ? `${task.assignee.first_name || ""} ${task.assignee.last_name || ""}`.trim()
-                        : "Sem responsável"}{" "}
+                      {task.assignee_name || "Sem responsável"}{" "}
                       · {format(new Date(task.start_date), "dd/MM/yyyy", { locale: ptBR })} →{" "}
                       {format(new Date(task.end_date), "dd/MM/yyyy", { locale: ptBR })}
                     </p>

@@ -76,8 +76,12 @@ export default function OKRs() {
         .flatMap((o: any) => (o.okr_action_plans ?? []).map((p: any) => p.id))
         .filter(Boolean);
 
-      // Query 2: tasks for all action_plans (sem join profiles — FK aponta auth.users)
+      // Collect all employee IDs (owners + future assignees)
+      const ownerIds = objectives.map((o: any) => o.owner_id).filter(Boolean);
+
+      // Query 2: tasks for all action_plans
       let tasksMap: Record<string, TaskData[]> = {};
+      let allTaskAssigneeIds: string[] = [];
       if (planIds.length > 0) {
         const { data: tasks, error: taskError } = await supabase
           .from("okr_action_tasks")
@@ -85,19 +89,9 @@ export default function OKRs() {
           .in("action_plan_id", planIds);
         if (taskError) throw taskError;
 
-        // Query 3: fetch assignee names from profiles
-        const assigneeIds = [...new Set((tasks ?? []).map((t) => t.assignee_id).filter(Boolean))];
-        let profilesMap: Record<string, { first_name: string | null; last_name: string | null }> = {};
-        if (assigneeIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from("profiles")
-            .select("id, first_name, last_name")
-            .in("id", assigneeIds);
-          for (const p of profiles ?? []) {
-            profilesMap[p.id] = { first_name: p.first_name, last_name: p.last_name };
-          }
-        }
+        allTaskAssigneeIds = (tasks ?? []).map((t) => t.assignee_id).filter(Boolean);
 
+        // Will populate assignee_name after employee fetch
         for (const t of tasks ?? []) {
           const key = t.action_plan_id;
           if (!tasksMap[key]) tasksMap[key] = [];
@@ -108,8 +102,28 @@ export default function OKRs() {
             start_date: t.start_date,
             end_date: t.end_date,
             status: t.status,
-            assignee: profilesMap[t.assignee_id] ?? null,
+            assignee_name: null,
           });
+        }
+      }
+
+      // Query 3: fetch all employee names at once
+      const allEmployeeIds = [...new Set([...ownerIds, ...allTaskAssigneeIds])];
+      let employeeMap: Record<string, string> = {};
+      if (allEmployeeIds.length > 0) {
+        const { data: employees } = await supabase
+          .from("external_employees")
+          .select("id, full_name")
+          .in("id", allEmployeeIds);
+        for (const e of employees ?? []) {
+          employeeMap[e.id] = e.full_name;
+        }
+      }
+
+      // Fill assignee names in tasks
+      for (const tasks of Object.values(tasksMap)) {
+        for (const t of tasks) {
+          t.assignee_name = employeeMap[t.assignee_id] ?? null;
         }
       }
 
@@ -126,6 +140,8 @@ export default function OKRs() {
           end_date: obj.end_date,
           status: obj.status,
           progress: obj.progress,
+          owner_id: obj.owner_id ?? null,
+          owner_name: employeeMap[obj.owner_id] ?? null,
           defaultPlanId: firstPlan?.id ?? "",
           tasks,
         };
@@ -209,7 +225,8 @@ export default function OKRs() {
       end_date: plan.end_date,
       status: plan.status,
       progress: plan.progress,
-      owner_id: null,
+      owner_id: plan.owner_id,
+      owner_name: plan.owner_name,
       defaultPlanId: plan.defaultPlanId,
     });
     setPlanFormOpen(true);

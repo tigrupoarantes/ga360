@@ -24,10 +24,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useEmployees } from "./useEmployees";
+import { EmployeeCombobox } from "./EmployeeCombobox";
 
 const formSchema = z.object({
   title: z.string().min(1, "Título / objetivo é obrigatório"),
   description: z.string().optional(),
+  owner_id: z.string().min(1, "Responsável é obrigatório"),
   start_date: z.string().min(1, "Data de início é obrigatória"),
   end_date: z.string().min(1, "Data de término é obrigatória"),
 }).refine((d) => d.end_date >= d.start_date, {
@@ -46,6 +49,7 @@ export interface ActionPlanData {
   status: string;
   progress: number | null;
   owner_id: string | null;
+  owner_name?: string | null;
   defaultPlanId?: string;
 }
 
@@ -63,12 +67,14 @@ export function ActionPlanFormDialog({
   const { selectedCompany } = useCompany();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { data: employees = [] } = useEmployees(open);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "",
       description: "",
+      owner_id: "",
       start_date: new Date().toISOString().split("T")[0],
       end_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     },
@@ -79,6 +85,7 @@ export function ActionPlanFormDialog({
       form.reset({
         title: plan.title,
         description: plan.description || "",
+        owner_id: plan.owner_id || "",
         start_date: plan.start_date,
         end_date: plan.end_date,
       });
@@ -86,6 +93,7 @@ export function ActionPlanFormDialog({
       form.reset({
         title: "",
         description: "",
+        owner_id: "",
         start_date: new Date().toISOString().split("T")[0],
         end_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
       });
@@ -95,12 +103,12 @@ export function ActionPlanFormDialog({
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
       if (plan) {
-        // Update existing
         const { error } = await supabase
           .from("okr_objectives")
           .update({
             title: data.title,
             description: data.description || null,
+            owner_id: data.owner_id,
             start_date: data.start_date,
             end_date: data.end_date,
           })
@@ -113,6 +121,7 @@ export function ActionPlanFormDialog({
           .insert({
             title: data.title,
             description: data.description || null,
+            owner_id: data.owner_id,
             start_date: data.start_date,
             end_date: data.end_date,
             status: "active",
@@ -180,6 +189,24 @@ export function ActionPlanFormDialog({
                   <FormLabel>Descrição (opcional)</FormLabel>
                   <FormControl>
                     <Textarea placeholder="Detalhes do plano de ação..." rows={2} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="owner_id"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Responsável Macro *</FormLabel>
+                  <FormControl>
+                    <EmployeeCombobox
+                      employees={employees}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

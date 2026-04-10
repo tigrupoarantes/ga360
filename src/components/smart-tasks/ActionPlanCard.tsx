@@ -59,6 +59,8 @@ export interface ActionPlanWithTasks {
   end_date: string;
   status: string;
   progress: number | null;
+  owner_id: string | null;
+  owner_name: string | null;
   defaultPlanId: string;
   tasks: TaskData[];
 }
@@ -122,7 +124,13 @@ export function ActionPlanCard({
               {plan.description && (
                 <p className="text-sm text-muted-foreground truncate">{plan.description}</p>
               )}
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                {plan.owner_name && (
+                  <span className="flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    {plan.owner_name}
+                  </span>
+                )}
                 <span>
                   {format(new Date(plan.start_date), "dd/MM/yyyy", { locale: ptBR })} →{" "}
                   {format(new Date(plan.end_date), "dd/MM/yyyy", { locale: ptBR })}
@@ -249,9 +257,7 @@ export function ActionPlanCard({
                         <TableCell>
                           <span className="flex items-center gap-1">
                             <User className="h-3 w-3 text-muted-foreground" />
-                            {task.assignee
-                              ? `${task.assignee.first_name || ""} ${task.assignee.last_name || ""}`.trim()
-                              : "—"}
+                            {task.assignee_name || "—"}
                           </span>
                         </TableCell>
                         <TableCell>
