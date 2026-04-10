@@ -141,7 +141,7 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/okrs"
+                  path="/smart"
                   element={
                     <ProtectedRoute>
                       <OKRs />
