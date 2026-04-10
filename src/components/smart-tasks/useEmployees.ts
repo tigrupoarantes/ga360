@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/external-client";
-import { useCompany } from "@/contexts/CompanyContext";
 
 export interface Employee {
   id: string;
@@ -10,21 +9,18 @@ export interface Employee {
 }
 
 export function useEmployees(enabled: boolean) {
-  const { selectedCompany } = useCompany();
-
   return useQuery<Employee[]>({
-    queryKey: ["external-employees", selectedCompany?.id],
+    queryKey: ["external-employees-all"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("external_employees")
         .select("id, full_name, cpf")
-        .eq("company_id", selectedCompany?.id)
         .eq("is_active", true)
         .order("full_name");
       if (error) throw error;
       return (data ?? []) as Employee[];
     },
-    enabled: enabled && !!selectedCompany?.id,
+    enabled,
   });
 }
 
