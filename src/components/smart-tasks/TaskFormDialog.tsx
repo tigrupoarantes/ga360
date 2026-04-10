@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -29,6 +29,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Check, ChevronsUpDown, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const statusOptions = [
@@ -70,14 +77,11 @@ interface TaskFormDialogProps {
   task?: TaskData | null;
 }
 
-type ProfileRow = {
-  profiles: {
-    id: string;
-    first_name: string | null;
-    last_name: string | null;
-    is_active: boolean | null;
-  } | null;
-};
+interface Profile {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+}
 
 export function TaskFormDialog({
   open,
@@ -89,22 +93,49 @@ export function TaskFormDialog({
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
+  const [assigneeSearch, setAssigneeSearch] = useState("");
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
 
-  const { data: profiles = [] } = useQuery({
-    queryKey: ["profiles-by-company", selectedCompany?.id],
+  // Query profiles: buscar user_ids da empresa, depois nomes em profiles
+  const { data: profiles = [] } = useQuery<Profile[]>({
+    queryKey: ["profiles-by-company-v2", selectedCompany?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Step 1: get user_ids from user_companies
+      const { data: ucRows, error: ucError } = await supabase
         .from("user_companies")
-        .select("profiles!inner(id, first_name, last_name, is_active)")
+        .select("user_id")
         .eq("company_id", selectedCompany?.id);
-      if (error) throw error;
-      return ((data ?? []) as unknown as ProfileRow[])
-        .map((row) => row.profiles)
-        .filter((p): p is NonNullable<ProfileRow["profiles"]> => !!p && !!p.is_active)
-        .map((p) => ({ id: p.id, first_name: p.first_name, last_name: p.last_name }));
+      if (ucError) throw ucError;
+
+      const userIds = (ucRows ?? []).map((r) => r.user_id).filter(Boolean);
+      if (userIds.length === 0) return [];
+
+      // Step 2: get profiles for those user_ids
+      const { data: profileRows, error: profError } = await supabase
+        .from("profiles")
+        .select("id, first_name, last_name, is_active")
+        .in("id", userIds)
+        .eq("is_active", true);
+      if (profError) throw profError;
+
+      return (profileRows ?? []).map((p) => ({
+        id: p.id,
+        first_name: p.first_name,
+        last_name: p.last_name,
+      }));
     },
     enabled: open && !!selectedCompany?.id,
   });
+
+  // Filter profiles by search
+  const filteredProfiles = useMemo(() => {
+    if (!assigneeSearch.trim()) return profiles;
+    const term = assigneeSearch.toLowerCase();
+    return profiles.filter((p) => {
+      const fullName = `${p.first_name || ""} ${p.last_name || ""}`.toLowerCase();
+      return fullName.includes(term);
+    });
+  }, [profiles, assigneeSearch]);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -135,6 +166,7 @@ export function TaskFormDialog({
         status: "nao_iniciado",
       });
     }
+    setAssigneeSearch("");
   }, [task, form, open]);
 
   const mutation = useMutation({
@@ -183,6 +215,8 @@ export function TaskFormDialog({
     onError: (e: Error) => toast.error("Erro ao salvar tarefa: " + e.message),
   });
 
+  const selectedProfile = profiles.find((p) => p.id === form.watch("assignee_id"));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -206,26 +240,78 @@ export function TaskFormDialog({
               )}
             />
 
+            {/* Responsável com busca por nome */}
             <FormField
               control={form.control}
               name="assignee_id"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="flex flex-col">
                   <FormLabel>Responsável *</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecionar responsável" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {profiles.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.first_name} {p.last_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className={cn(
+                            "w-full justify-between font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          {selectedProfile
+                            ? `${selectedProfile.first_name || ""} ${selectedProfile.last_name || ""}`.trim()
+                            : "Buscar responsável..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <div className="flex items-center gap-2 px-3 py-2 border-b">
+                        <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <input
+                          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                          placeholder="Buscar por nome..."
+                          value={assigneeSearch}
+                          onChange={(e) => setAssigneeSearch(e.target.value)}
+                        />
+                      </div>
+                      <div className="max-h-60 overflow-y-auto p-1">
+                        {filteredProfiles.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            Nenhum colaborador encontrado
+                          </p>
+                        ) : (
+                          filteredProfiles.map((p) => {
+                            const name = `${p.first_name || ""} ${p.last_name || ""}`.trim();
+                            const isSelected = field.value === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                className={cn(
+                                  "flex items-center gap-2 w-full rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent",
+                                  isSelected && "bg-accent"
+                                )}
+                                onClick={() => {
+                                  field.onChange(p.id);
+                                  setAssigneeOpen(false);
+                                  setAssigneeSearch("");
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "h-4 w-4 shrink-0",
+                                    isSelected ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {name}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   <FormMessage />
                 </FormItem>
               )}
