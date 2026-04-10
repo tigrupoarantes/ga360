@@ -15,64 +15,151 @@ import {
 } from "@/components/ui/select";
 import { AlertCircle, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
-import { SmartTaskStats } from "@/components/smart-tasks/SmartTaskStats";
-import { SmartTaskFormDialog, type SmartTask } from "@/components/smart-tasks/SmartTaskFormDialog";
-import { SmartTaskTable, resolveStatus } from "@/components/smart-tasks/SmartTaskTable";
+import { isPast, isToday } from "date-fns";
+import { SmartPlanStats } from "@/components/smart-tasks/SmartPlanStats";
+import { ActionPlanCard, type ActionPlanWithTasks } from "@/components/smart-tasks/ActionPlanCard";
+import { ActionPlanFormDialog, type ActionPlanData } from "@/components/smart-tasks/ActionPlanFormDialog";
+import { TaskFormDialog, type TaskData } from "@/components/smart-tasks/TaskFormDialog";
+import { TaskTimelinePanel } from "@/components/smart-tasks/TaskTimelinePanel";
+
+type ResolvedPlanStatus = "nao_iniciado" | "em_andamento" | "concluido" | "atrasado" | "cancelado";
+
+function resolvePlanStatus(plan: { status: string; end_date: string }): ResolvedPlanStatus {
+  if (plan.status === "completed") return "concluido";
+  if (plan.status === "cancelled") return "cancelado";
+  const endDate = new Date(plan.end_date);
+  if (isPast(endDate) && !isToday(endDate)) return "atrasado";
+  if (plan.status === "active") return "em_andamento";
+  return "nao_iniciado";
+}
 
 export default function OKRs() {
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
+
+  // Filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<SmartTask | null>(null);
 
-  const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ["smart-tasks", selectedCompany?.id],
+  // Plan form
+  const [planFormOpen, setPlanFormOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<ActionPlanData | null>(null);
+
+  // Task form
+  const [taskFormOpen, setTaskFormOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<TaskData | null>(null);
+  const [taskActionPlanId, setTaskActionPlanId] = useState("");
+  const [taskObjectiveId, setTaskObjectiveId] = useState("");
+
+  // Timeline
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const [timelinePlan, setTimelinePlan] = useState<ActionPlanWithTasks | null>(null);
+
+  // Query: plans with nested tasks
+  const { data: plans = [], isLoading } = useQuery({
+    queryKey: ["smart-plans", selectedCompany?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("okr_objectives")
         .select(`
-          id, title, description, owner_id, start_date, end_date, status,
-          owner:profiles!okr_objectives_owner_id_fkey (first_name, last_name)
+          id, title, description, start_date, end_date, status, progress, owner_id,
+          okr_action_plans (
+            id,
+            okr_action_tasks (
+              id, title, assignee_id, start_date, end_date, status,
+              assignee:profiles!okr_action_tasks_assignee_id_fkey (first_name, last_name)
+            )
+          )
         `)
         .eq("company_id", selectedCompany?.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []) as SmartTask[];
+
+      // Flatten: objective → first action_plan tasks
+      return (data ?? []).map((obj): ActionPlanWithTasks => {
+        const firstPlan = obj.okr_action_plans?.[0];
+        const tasks: TaskData[] = (firstPlan?.okr_action_tasks ?? []).map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          assignee_id: t.assignee_id,
+          start_date: t.start_date,
+          end_date: t.end_date,
+          status: t.status,
+          assignee: t.assignee,
+        }));
+
+        return {
+          id: obj.id,
+          title: obj.title,
+          description: obj.description,
+          start_date: obj.start_date,
+          end_date: obj.end_date,
+          status: obj.status,
+          progress: obj.progress,
+          defaultPlanId: firstPlan?.id ?? "",
+          tasks,
+        };
+      });
     },
     enabled: !!selectedCompany?.id,
   });
 
-  const deleteTask = useMutation({
+  // Delete plan
+  const deletePlan = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from("okr_objectives").delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["smart-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["smart-plans"] });
+      toast.success("Plano excluído");
+    },
+    onError: () => toast.error("Erro ao excluir plano"),
+  });
+
+  // Delete task
+  const deleteTask = useMutation({
+    mutationFn: async ({ taskId, actionPlanId, objectiveId }: { taskId: string; actionPlanId: string; objectiveId: string }) => {
+      const { error } = await supabase.from("okr_action_tasks").delete().eq("id", taskId);
+      if (error) throw error;
+
+      // Recalculate progress
+      const { data: remaining } = await supabase
+        .from("okr_action_tasks")
+        .select("status")
+        .eq("action_plan_id", actionPlanId);
+
+      const total = remaining?.length ?? 0;
+      const done = remaining?.filter((t) => t.status === "concluido").length ?? 0;
+      const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+
+      await supabase.from("okr_objectives").update({ progress }).eq("id", objectiveId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["smart-plans"] });
       toast.success("Tarefa excluída");
     },
     onError: () => toast.error("Erro ao excluir tarefa"),
   });
 
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      const resolved = resolveStatus(t);
-      const matchesSearch =
+  // Filter plans
+  const filteredPlans = useMemo(() => {
+    return plans.filter((p) => {
+      const resolved = resolvePlanStatus(p);
+      const matchSearch =
         !search ||
-        t.title.toLowerCase().includes(search.toLowerCase()) ||
-        (t.description || "").toLowerCase().includes(search.toLowerCase());
-      const matchesStatus =
-        statusFilter === "all" || resolved === statusFilter;
-      return matchesSearch && matchesStatus;
+        p.title.toLowerCase().includes(search.toLowerCase()) ||
+        (p.description || "").toLowerCase().includes(search.toLowerCase());
+      const matchStatus = statusFilter === "all" || resolved === statusFilter;
+      return matchSearch && matchStatus;
     });
-  }, [tasks, search, statusFilter]);
+  }, [plans, search, statusFilter]);
 
+  // Stats
   const stats = useMemo(() => {
-    const counts = { total: tasks.length, naoIniciado: 0, emAndamento: 0, concluido: 0, atrasado: 0, cancelado: 0 };
-    for (const t of tasks) {
-      const s = resolveStatus(t);
+    const counts = { total: plans.length, naoIniciado: 0, emAndamento: 0, concluido: 0, atrasado: 0, cancelado: 0 };
+    for (const p of plans) {
+      const s = resolvePlanStatus(p);
       if (s === "nao_iniciado") counts.naoIniciado++;
       else if (s === "em_andamento") counts.emAndamento++;
       else if (s === "concluido") counts.concluido++;
@@ -80,16 +167,67 @@ export default function OKRs() {
       else if (s === "cancelado") counts.cancelado++;
     }
     return counts;
-  }, [tasks]);
+  }, [plans]);
 
-  const handleEdit = (task: SmartTask) => {
-    setEditingTask(task);
-    setIsFormOpen(true);
+  // Handlers
+  const handleEditPlan = (plan: ActionPlanWithTasks) => {
+    setEditingPlan({
+      id: plan.id,
+      title: plan.title,
+      description: plan.description,
+      start_date: plan.start_date,
+      end_date: plan.end_date,
+      status: plan.status,
+      progress: plan.progress,
+      owner_id: null,
+      defaultPlanId: plan.defaultPlanId,
+    });
+    setPlanFormOpen(true);
   };
 
-  const handleCloseForm = (open: boolean) => {
+  const handleDeletePlan = (id: string) => {
+    if (confirm("Tem certeza que deseja excluir este plano e todas as suas tarefas?")) {
+      deletePlan.mutate(id);
+    }
+  };
+
+  const handleAddTask = (plan: ActionPlanWithTasks) => {
+    setEditingTask(null);
+    setTaskActionPlanId(plan.defaultPlanId);
+    setTaskObjectiveId(plan.id);
+    setTaskFormOpen(true);
+  };
+
+  const handleEditTask = (task: TaskData, plan: ActionPlanWithTasks) => {
+    setEditingTask(task);
+    setTaskActionPlanId(plan.defaultPlanId);
+    setTaskObjectiveId(plan.id);
+    setTaskFormOpen(true);
+  };
+
+  const handleDeleteTask = (taskId: string, plan: ActionPlanWithTasks) => {
+    deleteTask.mutate({
+      taskId,
+      actionPlanId: plan.defaultPlanId,
+      objectiveId: plan.id,
+    });
+  };
+
+  const handleOpenTimeline = (plan: ActionPlanWithTasks) => {
+    setTimelinePlan(plan);
+    setTimelineOpen(true);
+  };
+
+  const closePlanForm = (open: boolean) => {
     if (!open) {
-      setIsFormOpen(false);
+      setPlanFormOpen(false);
+      setEditingPlan(null);
+    }
+  };
+
+  const closeTaskForm = (open: boolean) => {
+    if (!open) {
+      setTaskFormOpen(false);
       setEditingTask(null);
     }
   };
@@ -99,15 +237,15 @@ export default function OKRs() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Tarefas SMART</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Planos de Ação SMART</h1>
             <p className="text-muted-foreground">
               Específicas · Mensuráveis · Atingíveis · Relevantes · Temporais
               {selectedCompany ? ` — ${selectedCompany.name}` : ""}
             </p>
           </div>
-          <Button onClick={() => setIsFormOpen(true)}>
+          <Button onClick={() => setPlanFormOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Nova Tarefa
+            Novo Plano
           </Button>
         </div>
 
@@ -115,26 +253,25 @@ export default function OKRs() {
           <Alert>
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Selecione uma empresa no menu superior para visualizar as tarefas.
+              Selecione uma empresa no menu superior para visualizar os planos.
             </AlertDescription>
           </Alert>
         )}
 
         {selectedCompany && (
           <>
-            <SmartTaskStats {...stats} />
+            <SmartPlanStats {...stats} />
 
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar por título ou nome da tarefa..."
+                  placeholder="Buscar planos de ação..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9"
                 />
               </div>
-
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Filtrar status" />
@@ -150,20 +287,56 @@ export default function OKRs() {
               </Select>
             </div>
 
-            <SmartTaskTable
-              tasks={filteredTasks}
-              isLoading={isLoading}
-              onEdit={handleEdit}
-              onDelete={(id) => deleteTask.mutate(id)}
-            />
+            {isLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Carregando...</div>
+            ) : filteredPlans.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Nenhum plano de ação encontrado
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredPlans.map((plan) => (
+                  <ActionPlanCard
+                    key={plan.id}
+                    plan={plan}
+                    onEditPlan={() => handleEditPlan(plan)}
+                    onDeletePlan={() => handleDeletePlan(plan.id)}
+                    onAddTask={() => handleAddTask(plan)}
+                    onEditTask={(task) => handleEditTask(task, plan)}
+                    onDeleteTask={(taskId) => handleDeleteTask(taskId, plan)}
+                    onOpenTimeline={() => handleOpenTimeline(plan)}
+                  />
+                ))}
+              </div>
+            )}
           </>
         )}
 
-        <SmartTaskFormDialog
-          open={isFormOpen}
-          onOpenChange={handleCloseForm}
-          task={editingTask}
+        {/* Dialogs */}
+        <ActionPlanFormDialog
+          open={planFormOpen}
+          onOpenChange={closePlanForm}
+          plan={editingPlan}
         />
+
+        {taskActionPlanId && (
+          <TaskFormDialog
+            open={taskFormOpen}
+            onOpenChange={closeTaskForm}
+            actionPlanId={taskActionPlanId}
+            objectiveId={taskObjectiveId}
+            task={editingTask}
+          />
+        )}
+
+        {timelinePlan && (
+          <TaskTimelinePanel
+            open={timelineOpen}
+            onOpenChange={setTimelineOpen}
+            planTitle={timelinePlan.title}
+            tasks={timelinePlan.tasks}
+          />
+        )}
       </div>
     </MainLayout>
   );

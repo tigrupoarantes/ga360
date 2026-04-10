@@ -4,8 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/external-client";
-import { useCompany } from "@/contexts/CompanyContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCompany } from "@/contexts/CompanyContext";
 import {
   Dialog,
   DialogContent,
@@ -32,19 +32,19 @@ import {
 import { toast } from "sonner";
 
 const statusOptions = [
-  { value: "draft", label: "Não Iniciado" },
-  { value: "active", label: "Em Andamento" },
-  { value: "completed", label: "Concluído" },
-  { value: "cancelled", label: "Cancelado" },
+  { value: "nao_iniciado", label: "Não Iniciado" },
+  { value: "em_andamento", label: "Em Andamento" },
+  { value: "concluido", label: "Concluído" },
+  { value: "atrasado", label: "Atrasado" },
+  { value: "cancelado", label: "Cancelado" },
 ] as const;
 
 const formSchema = z.object({
-  title: z.string().min(1, "Título é obrigatório"),
-  description: z.string().min(1, "Nome da tarefa é obrigatório"),
-  owner_id: z.string().min(1, "Responsável é obrigatório"),
+  title: z.string().min(1, "Nome da tarefa é obrigatório"),
+  assignee_id: z.string().min(1, "Responsável é obrigatório"),
   start_date: z.string().min(1, "Data de início é obrigatória"),
   end_date: z.string().min(1, "Data de término é obrigatória"),
-  status: z.enum(["draft", "active", "completed", "cancelled"]),
+  status: z.enum(["nao_iniciado", "em_andamento", "concluido", "atrasado", "cancelado"]),
 }).refine((d) => d.end_date >= d.start_date, {
   message: "Data de término deve ser igual ou posterior à data de início",
   path: ["end_date"],
@@ -52,21 +52,22 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
-export interface SmartTask {
+export interface TaskData {
   id: string;
   title: string;
-  description: string | null;
-  owner_id: string | null;
+  assignee_id: string;
   start_date: string;
   end_date: string;
   status: string;
-  owner?: { first_name: string | null; last_name: string | null } | null;
+  assignee?: { first_name: string | null; last_name: string | null } | null;
 }
 
-interface SmartTaskFormDialogProps {
+interface TaskFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  task?: SmartTask | null;
+  actionPlanId: string;
+  objectiveId: string;
+  task?: TaskData | null;
 }
 
 type ProfileRow = {
@@ -78,13 +79,15 @@ type ProfileRow = {
   } | null;
 };
 
-export function SmartTaskFormDialog({
+export function TaskFormDialog({
   open,
   onOpenChange,
+  actionPlanId,
+  objectiveId,
   task,
-}: SmartTaskFormDialogProps) {
-  const { selectedCompany } = useCompany();
+}: TaskFormDialogProps) {
   const { user } = useAuth();
+  const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
 
   const { data: profiles = [] } = useQuery({
@@ -107,11 +110,10 @@ export function SmartTaskFormDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       title: "",
-      description: "",
-      owner_id: "",
+      assignee_id: "",
       start_date: new Date().toISOString().split("T")[0],
       end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      status: "draft",
+      status: "nao_iniciado",
     },
   });
 
@@ -119,8 +121,7 @@ export function SmartTaskFormDialog({
     if (task) {
       form.reset({
         title: task.title,
-        description: task.description || "",
-        owner_id: task.owner_id || "",
+        assignee_id: task.assignee_id,
         start_date: task.start_date,
         end_date: task.end_date,
         status: task.status as FormData["status"],
@@ -128,11 +129,10 @@ export function SmartTaskFormDialog({
     } else {
       form.reset({
         title: "",
-        description: "",
-        owner_id: "",
+        assignee_id: "",
         start_date: new Date().toISOString().split("T")[0],
         end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        status: "draft",
+        status: "nao_iniciado",
       });
     }
   }, [task, form, open]);
@@ -140,30 +140,43 @@ export function SmartTaskFormDialog({
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
       const payload = {
+        action_plan_id: actionPlanId,
         title: data.title,
-        description: data.description,
-        owner_id: data.owner_id,
+        assignee_id: data.assignee_id,
         start_date: data.start_date,
         end_date: data.end_date,
         status: data.status,
-        level: "individual" as const,
-        company_id: selectedCompany?.id,
         created_by: user?.id,
       };
 
       if (task) {
         const { error } = await supabase
-          .from("okr_objectives")
+          .from("okr_action_tasks")
           .update(payload)
           .eq("id", task.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("okr_objectives").insert(payload);
+        const { error } = await supabase.from("okr_action_tasks").insert(payload);
         if (error) throw error;
+      }
+
+      // Recalculate plan progress
+      const { data: allTasks } = await supabase
+        .from("okr_action_tasks")
+        .select("status")
+        .eq("action_plan_id", actionPlanId);
+
+      if (allTasks && allTasks.length > 0) {
+        const done = allTasks.filter((t) => t.status === "concluido").length;
+        const progress = Math.round((done / allTasks.length) * 100);
+        await supabase
+          .from("okr_objectives")
+          .update({ progress })
+          .eq("id", objectiveId);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["smart-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["smart-plans"] });
       toast.success(task ? "Tarefa atualizada" : "Tarefa criada");
       onOpenChange(false);
     },
@@ -174,7 +187,7 @@ export function SmartTaskFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{task ? "Editar Tarefa SMART" : "Nova Tarefa SMART"}</DialogTitle>
+          <DialogTitle>{task ? "Editar Tarefa" : "Nova Tarefa"}</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
@@ -184,23 +197,9 @@ export function SmartTaskFormDialog({
               name="title"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Título *</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Ex: Projeto Comercial Q2" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
                   <FormLabel>Nome da Tarefa *</FormLabel>
                   <FormControl>
-                    <Input placeholder="Ex: Revisar carteira Top 20 de clientes" {...field} />
+                    <Input placeholder="Ex: Realizar 3 cotações de troca de lâmpadas" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -209,7 +208,7 @@ export function SmartTaskFormDialog({
 
             <FormField
               control={form.control}
-              name="owner_id"
+              name="assignee_id"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Responsável *</FormLabel>

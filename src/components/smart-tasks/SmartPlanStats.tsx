@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ListChecks, Clock, Play, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { ClipboardList, Clock, Play, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 
-interface SmartTaskStatsProps {
+interface SmartPlanStatsProps {
   total: number;
   naoIniciado: number;
   emAndamento: number;
@@ -10,16 +10,16 @@ interface SmartTaskStatsProps {
   cancelado: number;
 }
 
-export function SmartTaskStats({
+export function SmartPlanStats({
   total,
   naoIniciado,
   emAndamento,
   concluido,
   atrasado,
   cancelado,
-}: SmartTaskStatsProps) {
+}: SmartPlanStatsProps) {
   const cards = [
-    { label: "Total", value: total, icon: ListChecks, color: "text-foreground" },
+    { label: "Total", value: total, icon: ClipboardList, color: "text-foreground" },
     { label: "Não Iniciado", value: naoIniciado, icon: Clock, color: "text-muted-foreground" },
     { label: "Em Andamento", value: emAndamento, icon: Play, color: "text-primary" },
     { label: "Concluído", value: concluido, icon: CheckCircle2, color: "text-green-500" },
