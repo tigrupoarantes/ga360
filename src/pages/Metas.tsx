@@ -44,6 +44,9 @@ import { supabase } from "@/integrations/supabase/external-client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCompany } from "@/contexts/CompanyContext";
+import { useEmployees } from "@/components/smart-tasks/useEmployees";
+import { EmployeeCombobox } from "@/components/smart-tasks/EmployeeCombobox";
+import { User } from "lucide-react";
 
 interface Goal {
   id: string;
@@ -65,6 +68,8 @@ interface Goal {
   gamification_weight?: number | null;
   effective_value?: number | null;
   kpi_n1?: string | null;
+  responsible_id?: string | null;
+  responsible_name?: string | null;
   created_at: string;
 }
 
@@ -130,6 +135,7 @@ type GoalFormData = {
   cadence: Goal["cadence"];
   status: Goal["status"];
   area_id: string;
+  responsible_id: string;
   gamification_weight: string;
 };
 
@@ -146,6 +152,7 @@ const defaultGoalFormData: GoalFormData = {
   cadence: "monthly",
   status: "active",
   area_id: "none",
+  responsible_id: "none",
   gamification_weight: "1",
 };
 
@@ -453,13 +460,15 @@ export default function Metas() {
     },
   });
 
+  const { data: employeesList = [] } = useEmployees(true);
+
   const goalsQuery = useQuery({
     queryKey: goalsKey,
     queryFn: async () => {
       let query = db
         .from<Goal[]>("goals")
         .select(
-          "id, company_id, area_id, title, description, type, pillar, unit, target_value, current_value, start_date, end_date, cadence, status, indicator_type, evaluation_points, gamification_weight, effective_value, kpi_n1, created_at"
+          "id, company_id, area_id, title, description, type, pillar, unit, target_value, current_value, start_date, end_date, cadence, status, indicator_type, evaluation_points, gamification_weight, effective_value, kpi_n1, responsible_id, created_at"
         )
         .order("created_at", { ascending: false });
 
@@ -469,7 +478,23 @@ export default function Metas() {
 
       const { data, error } = await query;
       if (error) throw error;
-      return (data || []) as Goal[];
+      const goals = (data || []) as Goal[];
+
+      // Resolve responsible names from external_employees
+      const respIds = [...new Set(goals.map((g) => g.responsible_id).filter(Boolean))] as string[];
+      let empMap: Record<string, string> = {};
+      if (respIds.length > 0) {
+        const { data: emps } = await db
+          .from("external_employees")
+          .select("id, full_name")
+          .in("id", respIds);
+        for (const e of emps ?? []) empMap[e.id] = e.full_name;
+      }
+
+      return goals.map((g) => ({
+        ...g,
+        responsible_name: g.responsible_id ? empMap[g.responsible_id] ?? null : null,
+      }));
     },
   });
 
@@ -812,6 +837,7 @@ export default function Metas() {
       cadence: goal.cadence,
       status: goal.status,
       area_id: goal.area_id ?? "none",
+      responsible_id: goal.responsible_id ?? "none",
       gamification_weight: String(goal.gamification_weight ?? 1),
     });
     setGoalDialogOpen(true);
@@ -845,6 +871,7 @@ export default function Metas() {
         cadence: goalFormData.cadence,
         status: goalFormData.status,
         area_id: goalFormData.area_id === "none" ? null : goalFormData.area_id,
+        responsible_id: goalFormData.responsible_id === "none" ? null : goalFormData.responsible_id,
         gamification_weight: gamificationWeight,
       };
 
@@ -1314,6 +1341,12 @@ export default function Metas() {
                                         <div className="flex flex-wrap items-center gap-2 text-xs">
                                           <Badge variant="secondary">{statusLabel[goal.status]}</Badge>
                                           <Badge variant="outline">{cadenceLabel[goal.cadence]}</Badge>
+                                          {goal.responsible_name && (
+                                            <span className="flex items-center gap-1 text-muted-foreground">
+                                              <User className="h-3 w-3" />
+                                              {goal.responsible_name}
+                                            </span>
+                                          )}
                                           <Tooltip>
                                             <TooltipTrigger asChild>
                                               <Badge variant="outline" className="cursor-help inline-flex items-center gap-1">
@@ -1889,6 +1922,18 @@ export default function Metas() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Responsável</Label>
+              <EmployeeCombobox
+                employees={employeesList}
+                value={goalFormData.responsible_id === "none" ? "" : goalFormData.responsible_id}
+                onChange={(value) =>
+                  setGoalFormData((prev) => ({ ...prev, responsible_id: value || "none" }))
+                }
+                placeholder="Buscar responsável por nome ou CPF..."
+              />
             </div>
 
             <div className="space-y-2">
