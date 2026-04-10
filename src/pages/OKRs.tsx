@@ -55,38 +55,58 @@ export default function OKRs() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelinePlan, setTimelinePlan] = useState<ActionPlanWithTasks | null>(null);
 
-  // Query: plans with nested tasks
+  // Query: plans with action_plans (sem nested 3 níveis — PostgREST não suporta)
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ["smart-plans", selectedCompany?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Query 1: objectives + action_plans
+      const { data: objectives, error: objError } = await supabase
         .from("okr_objectives")
         .select(`
           id, title, description, start_date, end_date, status, progress, owner_id,
-          okr_action_plans!okr_action_plans_objective_id_fkey (
-            id,
-            okr_action_tasks!okr_action_tasks_action_plan_id_fkey (
-              id, title, assignee_id, start_date, end_date, status,
-              assignee:profiles!okr_action_tasks_assignee_id_fkey (first_name, last_name)
-            )
-          )
+          okr_action_plans (id)
         `)
         .eq("company_id", selectedCompany?.id)
         .order("created_at", { ascending: false });
-      if (error) throw error;
+      if (objError) throw objError;
+      if (!objectives?.length) return [];
 
-      // Flatten: objective → first action_plan tasks
-      return (data ?? []).map((obj): ActionPlanWithTasks => {
+      // Collect all action_plan IDs
+      const planIds = objectives
+        .flatMap((o: any) => (o.okr_action_plans ?? []).map((p: any) => p.id))
+        .filter(Boolean);
+
+      // Query 2: tasks for all action_plans
+      let tasksMap: Record<string, TaskData[]> = {};
+      if (planIds.length > 0) {
+        const { data: tasks, error: taskError } = await supabase
+          .from("okr_action_tasks")
+          .select(`
+            id, title, assignee_id, start_date, end_date, status, action_plan_id,
+            assignee:profiles!okr_action_tasks_assignee_id_fkey (first_name, last_name)
+          `)
+          .in("action_plan_id", planIds);
+        if (taskError) throw taskError;
+
+        for (const t of tasks ?? []) {
+          const key = t.action_plan_id;
+          if (!tasksMap[key]) tasksMap[key] = [];
+          tasksMap[key].push({
+            id: t.id,
+            title: t.title,
+            assignee_id: t.assignee_id,
+            start_date: t.start_date,
+            end_date: t.end_date,
+            status: t.status,
+            assignee: t.assignee as any,
+          });
+        }
+      }
+
+      // Merge
+      return objectives.map((obj: any): ActionPlanWithTasks => {
         const firstPlan = obj.okr_action_plans?.[0];
-        const tasks: TaskData[] = (firstPlan?.okr_action_tasks ?? []).map((t: any) => ({
-          id: t.id,
-          title: t.title,
-          assignee_id: t.assignee_id,
-          start_date: t.start_date,
-          end_date: t.end_date,
-          status: t.status,
-          assignee: t.assignee,
-        }));
+        const tasks = firstPlan ? (tasksMap[firstPlan.id] ?? []) : [];
 
         return {
           id: obj.id,
