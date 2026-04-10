@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/external-client";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useCompany } from "@/contexts/CompanyContext";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle, Plus, Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { isPast, isToday } from "date-fns";
 import { SmartPlanStats } from "@/components/smart-tasks/SmartPlanStats";
@@ -60,14 +59,19 @@ export default function OKRs() {
     queryKey: ["smart-plans", selectedCompany?.id],
     queryFn: async () => {
       // Query 1: objectives + action_plans
-      const { data: objectives, error: objError } = await supabase
+      let objQuery = supabase
         .from("okr_objectives")
         .select(`
-          id, title, description, start_date, end_date, status, progress, owner_id,
+          id, title, description, start_date, end_date, status, progress, owner_id, company_id,
           okr_action_plans (id)
         `)
-        .eq("company_id", selectedCompany?.id)
         .order("created_at", { ascending: false });
+
+      if (selectedCompany) {
+        objQuery = objQuery.eq("company_id", selectedCompany.id);
+      }
+
+      const { data: objectives, error: objError } = await objQuery;
       if (objError) throw objError;
       if (!objectives?.length) return [];
 
@@ -147,7 +151,7 @@ export default function OKRs() {
         };
       });
     },
-    enabled: !!selectedCompany?.id,
+    enabled: true,
   });
 
   // Delete plan
@@ -296,67 +300,54 @@ export default function OKRs() {
           </Button>
         </div>
 
-        {!selectedCompany && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Selecione uma empresa no menu superior para visualizar os planos.
-            </AlertDescription>
-          </Alert>
-        )}
+        <SmartPlanStats {...stats} />
 
-        {selectedCompany && (
-          <>
-            <SmartPlanStats {...stats} />
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar planos de ação..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Filtrar status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os status</SelectItem>
+              <SelectItem value="nao_iniciado">Não Iniciado</SelectItem>
+              <SelectItem value="em_andamento">Em Andamento</SelectItem>
+              <SelectItem value="concluido">Concluído</SelectItem>
+              <SelectItem value="atrasado">Atrasado</SelectItem>
+              <SelectItem value="cancelado">Cancelado</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar planos de ação..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Filtrar status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os status</SelectItem>
-                  <SelectItem value="nao_iniciado">Não Iniciado</SelectItem>
-                  <SelectItem value="em_andamento">Em Andamento</SelectItem>
-                  <SelectItem value="concluido">Concluído</SelectItem>
-                  <SelectItem value="atrasado">Atrasado</SelectItem>
-                  <SelectItem value="cancelado">Cancelado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {isLoading ? (
-              <div className="text-center py-8 text-muted-foreground">Carregando...</div>
-            ) : filteredPlans.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Nenhum plano de ação encontrado
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {filteredPlans.map((plan) => (
-                  <ActionPlanCard
-                    key={plan.id}
-                    plan={plan}
-                    onEditPlan={() => handleEditPlan(plan)}
-                    onDeletePlan={() => handleDeletePlan(plan.id)}
-                    onAddTask={() => handleAddTask(plan)}
-                    onEditTask={(task) => handleEditTask(task, plan)}
-                    onDeleteTask={(taskId) => handleDeleteTask(taskId, plan)}
-                    onOpenTimeline={() => handleOpenTimeline(plan)}
-                  />
-                ))}
-              </div>
-            )}
-          </>
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">Carregando...</div>
+        ) : filteredPlans.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            Nenhum plano de ação encontrado
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredPlans.map((plan) => (
+              <ActionPlanCard
+                key={plan.id}
+                plan={plan}
+                onEditPlan={() => handleEditPlan(plan)}
+                onDeletePlan={() => handleDeletePlan(plan.id)}
+                onAddTask={() => handleAddTask(plan)}
+                onEditTask={(task) => handleEditTask(task, plan)}
+                onDeleteTask={(taskId) => handleDeleteTask(taskId, plan)}
+                onOpenTimeline={() => handleOpenTimeline(plan)}
+              />
+            ))}
+          </div>
         )}
 
         {/* Dialogs */}
