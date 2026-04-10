@@ -76,17 +76,27 @@ export default function OKRs() {
         .flatMap((o: any) => (o.okr_action_plans ?? []).map((p: any) => p.id))
         .filter(Boolean);
 
-      // Query 2: tasks for all action_plans
+      // Query 2: tasks for all action_plans (sem join profiles — FK aponta auth.users)
       let tasksMap: Record<string, TaskData[]> = {};
       if (planIds.length > 0) {
         const { data: tasks, error: taskError } = await supabase
           .from("okr_action_tasks")
-          .select(`
-            id, title, assignee_id, start_date, end_date, status, action_plan_id,
-            assignee:profiles!okr_action_tasks_assignee_id_fkey (first_name, last_name)
-          `)
+          .select("id, title, assignee_id, start_date, end_date, status, action_plan_id")
           .in("action_plan_id", planIds);
         if (taskError) throw taskError;
+
+        // Query 3: fetch assignee names from profiles
+        const assigneeIds = [...new Set((tasks ?? []).map((t) => t.assignee_id).filter(Boolean))];
+        let profilesMap: Record<string, { first_name: string | null; last_name: string | null }> = {};
+        if (assigneeIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id, first_name, last_name")
+            .in("id", assigneeIds);
+          for (const p of profiles ?? []) {
+            profilesMap[p.id] = { first_name: p.first_name, last_name: p.last_name };
+          }
+        }
 
         for (const t of tasks ?? []) {
           const key = t.action_plan_id;
@@ -98,7 +108,7 @@ export default function OKRs() {
             start_date: t.start_date,
             end_date: t.end_date,
             status: t.status,
-            assignee: t.assignee as any,
+            assignee: profilesMap[t.assignee_id] ?? null,
           });
         }
       }
