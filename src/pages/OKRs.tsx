@@ -63,9 +63,9 @@ export default function OKRs() {
         .from("okr_objectives")
         .select(`
           id, title, description, start_date, end_date, status, progress, owner_id,
-          okr_action_plans (
+          okr_action_plans!okr_action_plans_objective_id_fkey (
             id,
-            okr_action_tasks (
+            okr_action_tasks!okr_action_tasks_action_plan_id_fkey (
               id, title, assignee_id, start_date, end_date, status,
               assignee:profiles!okr_action_tasks_assignee_id_fkey (first_name, last_name)
             )
